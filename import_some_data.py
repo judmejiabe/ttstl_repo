@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-import os
 from pathlib import Path
+
+import pandas as pd 
 
 # 1. Import the downloader functions
 from ttstl.utils.data_downloader import (get_storage_client, 
                                          download_from_bucket, 
                                          import_to_pandas)
 
+
 def main():
-    # 2. (Option A) Rely on your environment variable:
-    #    Make sure you’ve already done:
-    #      export GOOGLE_APPLICATION_CREDENTIALS="/path/to/credentials.json"
-    #
-    #    In that case you don’t need to pass credentials_path below:
+    # 2. Specify your credentials
     credentials_path = 'credentials.json'
 
     # 3. Specify your bucket & blob
@@ -29,6 +27,9 @@ def main():
         bucket_name=            bucket_name,
         credentials_path=      credentials_path
     )
+
+    df = pd.read_parquet(local_path, engine = 'pyarrow')
+    print(df.head())
 
     print(f"Finished downloading to {local_path.resolve()} using credentials")
 

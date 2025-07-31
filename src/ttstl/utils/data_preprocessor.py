@@ -1,47 +1,49 @@
 __author__ = 'Juan Diego Mejia Becerra'
 __email__ = 'juanmejia.7565@gmail.com'
 
+import os
 from typing import List, Optional, Tuple
+import copy
 
 import numpy as np
 import pandas as pd
 import torch
 from sklearn.preprocessing import StandardScaler
 
-from ..backbone import CNNLSTMDataset
+from ..datasets.cnn_lstm_dataset import CNNLSTMDataset
 
-def preprocess_mbo_data_cnn_lstm(path : str, 
+def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame, 
                                  delta : float, 
                                  quantile: Optional[float] = 0.005) \
                                     -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-        Preprocesses the input data to prepare it for the CNN-LSTM model.
-        This function reads a Parquet file containing MBO data and 
-        generates features and a target variable to feed the backbone model.
-        It calculates the percentage change in 'micro' values over specified horizons 
-        and standardizes selected columns containing 'of'.
-        Args:
-            path (str): The path to the Parquet file containing the data.
-                The file should contain at least a 'timestamp' and a 'micro' column.
-            delta (float): Length of Sampling time bars (same unit as 'timestamp').
-            quantile (Optional[float]): If provided, the function conducts winsorization 
-                                        on the inputs columns based on the specified quantile.
-        Returns:
-            tuple: A tuple containing two pandas DataFrames:
-                - standardized_data: DataFrame containing the standardized features.
-                - target: DataFrame containing the target variable, which represents 
-                  the percentage change in 'micro' values over the specified horizons.
-                  Each column in the target DataFrame represents the percentage change
-                  over a specific horizon.
-        Notes:
-            - The function assumes that the input Parquet file contains 'timestamp' and 'micro' columns.
-            - The target variable is calculated as the percentage change in 'micro' values
-              over the specified time horizons, relative to the previous 'micro' value, multiplied by 1e3.
-            - Columns containing 'of' are selected for standardization using StandardScaler.
-            - Missing values in the 'micro' column after the horizon are filled with NaN.
-        """
+    Preprocesses MBO data for a CNN-LSTM model.
 
-    df = pd.read_parquet(path)
+    Args:
+        data (pd.DataFrame): Input DataFrame containing
+            - 'timestamp' (numeric): time of each observation,
+            - 'micro' (numeric): micro price values,
+            - order flow features (any column whose name contains 'of').
+        delta (float): Time horizon (same unit as 'timestamp') used to compute future micro returns.
+        quantile (Optional[float]): If provided, winsorization is applied to each standardized
+            order flow feature by clipping values below the lower quantile and above the upper
+            quantile. If None, no winsorization is applied.
+
+    Returns:
+        standardized_data (pd.DataFrame): Standardized (and optionally winsorized) order flow features.
+        target (pd.DataFrame): Contains two columns:
+            - 'timestamp': original timestamps,
+            - 'micro_return': percentage change in 'micro' over the horizon delta,
+              computed as (future_micro / current_micro - 1) * 1e3. Observations without a
+              future timestamp are assigned NaN.
+
+    Notes:
+        - Future micro values are selected as the last observation with timestamp <= timestamp + delta.
+        - StandardScaler is used to standardize order flow features.
+        - Winsorization (quantile-based clipping) is applied per feature if quantile is not None.
+    """
+
+    df = copy.deepcopy(data)
     
     # Convert to numpy arrays for faster operations
     timestamps = df['timestamp'].values
@@ -103,73 +105,57 @@ def preprocess_mbo_data_cnn_lstm(path : str,
     return standardized_data, target
 
 
-def get_datasets_cnn_lstm(folder_path : str, 
-                 file_names : List[str], 
+def get_dataset_cnn_lstm(data : pd.DataFrame,
                  delta : float, 
-                 train : Optional[bool] = True, 
+                 quantile: Optional[float] = 0.005,
+                 train : bool = True, 
                  window_size : Optional[int] = 100) \
-                    -> List[CNNLSTMDataset]:
-    """
-    Creates a list of CNNLSTMDataset objects from multiple MBO data files for CNN-LSTM training.
+                    -> CNNLSTMDataset:
+        """
+        Build a CNN-LSTM PyTorch dataset from preprocessed Market-by-Order (MBO) data.
 
-    This function processes multiple parquet files containing Market-by-Order (MBO) data,
-    preprocesses each file to generate features and targets, and creates PyTorch datasets
-    suitable for CNN-LSTM model training. The function handles both training and inference
-    modes with different data filtering strategies.
-    
-    Args:
-        folder_path (str): Path to the directory containing the parquet files.
-                          Should be a valid directory path or pathlib.Path object.
-        file_names (List[str]): List of parquet file names to process.
-                               Each file should contain MBO data with 'timestamp' and 'micro' columns.
-        delta (float): Time horizon for calculating micro price returns.
-                      Same unit as 'timestamp' column in the data files.
-        train (Optional[bool], default=True): Processing mode flag.
-                                            - True: Training mode - filters out rows with NaN targets
-                                            - False: Inference mode - keeps all data including NaN targets
-        window_size (Optional[int], default=100): Sequence length for the CNN-LSTM model.
-                                                 Number of consecutive observations to include in each sample.
-    
-    Returns:
-        List[CNNLSTMDataset]: List of PyTorch datasets, one for each input file.
-                             Each dataset contains:
-                             - Windowed input sequences (features)
-                             - Corresponding target values (micro returns)
-                             - Proper indexing for batch processing
-    
-    Raises:
-        FileNotFoundError: If any of the specified files don't exist in folder_path.
-        ValueError: If preprocessing fails due to missing required columns or invalid data.
-        
-    Notes:
-        - In training mode, the function automatically removes incomplete samples by finding
-          the first row where target values become NaN and truncating the dataset there.
-        - The timestamp column is removed from targets as it's not needed for model training.
-        - Input features are standardized and optionally winsorized during preprocessing.
-        - Each dataset is independent and can be used for separate model training or
-          combined for multi-file training scenarios.
-        - The function assumes that folder_path supports the '/' operator (pathlib.Path or similar).
-    """
+        This function applies preprocessing to compute micro price returns and standardize
+        features, then packages the results into sliding-window samples suitable for
+        training or inference with a CNN-LSTM model.
 
-    datasets = []
+        Args:
+            data (pd.DataFrame): 
+                Source MBO data. Must include the columns:
+                'timestamp', 'micro', 'BIDofk', 'ASKofk'.
+            delta (float): 
+                Time horizon (same unit as 'timestamp') over which to compute micro price returns.
+            quantile (Optional[float], default=0.005): 
+                Winsorization quantile used during feature preprocessing.
+            train (Optional[bool], default=True): 
+                If True, truncate data at the first occurrence of NaN in targets to remove
+                incomplete samples. If False, keep all samples (useful for inference).
+            window_size (Optional[int], default=100): 
+                Number of consecutive time steps in each input sequence.
 
-    for file_name in file_names:
+        Returns:
+            CNNLSTMDataset:
+                A PyTorch Dataset object containing:
+                - inputs: Tensor of shape (n_samples, window_size, n_features)
+                - targets: Tensor of shape (n_samples, n_target_outputs)
 
-        path = folder_path / file_name
-        inputs_df, target_df = preprocess_mbo_data_cnn_lstm(path, delta)
+        Raises:
+            ValueError:
+                If required columns are missing from the input DataFrame.
+        """
 
-        max_index = target_df[target_df.isna().any(axis=1)].index.min()
-        target_df.drop('timestamp', axis=1, inplace=True)
+        standardized_data, target = preprocess_mbo_data_cnn_lstm(data, delta, quantile)
+
+
+        max_index = target[target.isna().any(axis=1)].index.min()
+        target.drop('timestamp', axis=1, inplace=True)
 
         if train:
-            inputs = torch.from_numpy(np.array(inputs_df.iloc[:max_index])).float()
-            targets = torch.from_numpy(np.array(target_df.iloc[:max_index])).float()
+            inputs = torch.from_numpy(np.array(standardized_data.iloc[:max_index])).float()
+            targets = torch.from_numpy(np.array(target.iloc[:max_index])).float()
         else:
-            inputs = torch.from_numpy(np.array(inputs_df)).float()
-            targets = torch.from_numpy(np.array(target_df)).float()
+            inputs = torch.from_numpy(np.array(standardized_data)).float()
+            targets = torch.from_numpy(np.array(target)).float()
 
         dataset = CNNLSTMDataset(inputs, targets, window_size)
-        
-        datasets.append(dataset)
 
-    return datasets
+        return dataset

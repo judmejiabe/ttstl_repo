@@ -10,7 +10,8 @@ import gcsfs
 import pyarrow.parquet as pq
 from google.cloud import storage
 
-def get_storage_client(credentials_path: Optional[str] = None) -> storage.Client:
+def get_storage_client(credentials_path: Optional[str] = None)\
+      -> storage.Client:
     """
     Lazily create a GCS client. If credentials_path is provided, set the environment var.
     
@@ -49,7 +50,8 @@ def import_to_pandas(blob_name: str,
                      bucket_name: str,
                      credentials_path: str,
                      columns: Optional[list] = None,
-                     chunksize: Optional[int] = None) -> Union[Iterator[pd.DataFrame], pd.DataFrame]:
+                     chunksize: Optional[int] = None)\
+                          -> Union[Iterator[pd.DataFrame], pd.DataFrame]:
     """
     Stream or load data from a blob in Google Cloud Storage directly into pandas DataFrame(s).
 
@@ -71,12 +73,16 @@ def import_to_pandas(blob_name: str,
     gcs_path = f"{bucket_name}/{blob_name}"
 
     if blob_name.endswith('.csv'):
-        return pd.read_csv(f'gs://{gcs_path}', storage_options={'token': credentials_path}, usecols=columns, chunksize=chunksize)
+        return pd.read_csv(f'gs://{gcs_path}', 
+                           storage_options={'token': credentials_path}, 
+                           usecols=columns, chunksize=chunksize)
     elif blob_name.endswith('.parquet'):
         if chunksize:
             with fs.open(gcs_path, 'rb') as f:
                 pq_file = pq.ParquetFile(f)
-                return (batch.to_pandas() for batch in pq_file.iter_batches(batch_size=chunksize, columns=columns))
+                return (batch.to_pandas() for batch in \
+                        pq_file.iter_batches(batch_size=chunksize, 
+                                             columns=columns))
         else:
             with fs.open(gcs_path, 'rb') as f:
                 return pd.read_parquet(f, engine='pyarrow', columns=columns)

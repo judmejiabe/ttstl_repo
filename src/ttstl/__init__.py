@@ -7,12 +7,15 @@ __email__ = 'juanmejia.7565@gmail.com'
 __version__ = "0.1.0"
 
 # Import main classes and functions
-from .backbone import CNNLSTM, CNNLSTMDataset, Backbone
+from .backbone import Backbone
+from .architectures import CNNLSTM
+from .datasets import CNNLSTMDataset
 from .utils import (
     download_from_bucket,
     import_to_pandas,
+    get_storage_client,
     preprocess_mbo_data_cnn_lstm,
-    get_datasets_cnn_lstm
+    get_dataset_cnn_lstm
 )
 # Import core TTSTL components when implemented
 # from .adapter import *  # Add when you implement this
@@ -29,8 +32,9 @@ __all__ = [
     # Utility functions
     'download_from_bucket',
     'import_to_pandas',
+    'get_storage_client',
     'preprocess_mbo_data_cnn_lstm',
-    'get_datasets_cnn_lstm',
+    'get_dataset_cnn_lstm',
     
     # TTSTL core components (add as you implement)
     # 'TTSTLModel',
