@@ -77,7 +77,10 @@ def main():
     df_pt.set_index('timestamp', inplace=True)
     
 
-    print(backbone._select_stationary_variables(df_pt, kpss_drop = True))
+    full_covariate_set = backbone.select_stationary_variables(df_pt, kpss_drop = True)
+    backbone.drop_highly_correlated_variables(df_pt[full_covariate_set])
+
+    print(backbone.full_covariate_set)
     
 
 if __name__ == "__main__":

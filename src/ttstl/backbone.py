@@ -19,7 +19,7 @@ class Backbone():
         self.model = model
         self.device = next(self.model.parameters()).device
         self.delta_adapter = delta_adapter
-        self.full_variable_set = None
+        self.full_covariate_set = None
 
     def _one_epoch(self, 
                    train_loader : DataLoader,
@@ -106,7 +106,19 @@ class Backbone():
     
     def _run_stationarity_tests(self,
                                 series: pd.Series) -> dict:
-        
+        """Conducts the Augmented Dickey-Fuller (ADF), Philips Perron (PP), and
+        Kwiatkowski-Phillips-Schmidt-Shin (KPSS) stationarity tests on a given 
+        Pandas series. The results are returned in dictionary with keys 'ADF',
+        'PP', 'KPSS', and 'NA' where the value corresponds to 1 if rejection
+        and zero otherwise. If any of the tests fail, the 'NA' key will be set
+        to 1.
+        Args:
+            series (pd.Series): Pandas Series to test for stationarity.
+        Returns:
+            dict: Dictionary with keys 'ADF', 'PP', 'KPSS', and 'NA' with 
+                  values indicating test results.
+        """
+
         alpha = 0.05
         series_r = pandas2ri.py2rpy(series)
         try:
@@ -154,8 +166,6 @@ class Backbone():
         records = []
 
         for ell, group in data.groupby('adapter_bar'):
-            print(f"Processing adapter_bar: {ell}")
-            print(f'Group shape: {group.shape}')
             for column in columns:
                 series = group[column]
                 if isinstance(series, pd.DataFrame):
@@ -174,7 +184,7 @@ class Backbone():
 
         return rejections_df
 
-    def _select_stationary_variables(self,
+    def select_stationary_variables(self,
                                      data: pd.DataFrame,
                                      adf_rejection_rate_threshold : float = 0.8,
                                      kpss_verification_threshold : float = 0.2,
@@ -188,7 +198,8 @@ class Backbone():
         """
         
         rejections_df = self._run_multiple_stationarity_tests(data)
-        grouped = rejections_df.groupby('variable')[['ADF', 'KPSS', 'NA']].mean()
+        grouped = rejections_df.groupby('variable')[['ADF', 'KPSS', 'NA']]\
+            .mean()
 
         # Define base condition for stationarity
         adf_stationary = grouped['ADF'] > adf_rejection_rate_threshold
@@ -197,19 +208,22 @@ class Backbone():
         if kpss_drop:
             # Strict stationarity: both ADF and KPSS must agree
             kpss_stationary = grouped['KPSS'] < kpss_verification_threshold
-            stationary_variables = grouped.index[adf_stationary & kpss_stationary].tolist()
+            stationary_variables = grouped.index[adf_stationary & \
+                                                 kpss_stationary].tolist()
             warning_variables = []
         else:
             # Lenient stationarity: only ADF required
             stationary_variables = grouped.index[adf_stationary].tolist()
             # Variables that pass ADF but fail KPSS need verification
             kpss_warning = grouped['KPSS'] > kpss_verification_threshold
-            warning_variables = grouped.index[adf_stationary & kpss_warning].tolist()
+            warning_variables = grouped.index[adf_stationary & \
+                                              kpss_warning].tolist()
 
         # Variables with high NA rates (among those passing ADF)
-        high_na_vars = grouped.index[adf_stationary & high_na].tolist()
+        high_na_vars = grouped.index[adf_stationary & \
+                                     high_na].tolist()
 
-        self.full_variable_set = stationary_variables
+        self.full_covariate_set = stationary_variables
 
         # Issue warnings
         if warning_variables:
@@ -219,6 +233,57 @@ class Backbone():
             warnings.warn(f"Variables passing stationarity criteria but with high NA rates:: {high_na_vars}", UserWarning)
 
         return stationary_variables
+    
+    def add_covariate_set(self, 
+                          extra_covariate_set: list) -> None:
+        """Add extra covariate set to the full variable set.
+        Args:
+            extra_covariate_set (list): List of additional covariates to add.
+        """
+        if self.full_covariate_set is None:
+            self.full_covariate_set = extra_covariate_set
+        else:
+            self.full_covariate_set += extra_covariate_set
+            # Remove duplicates
+            self.full_covariate_set = list(set(self.full_covariate_set))
+
+    def drop_highly_correlated_variables(self, 
+                                    data: pd.DataFrame, 
+                                    threshold : float = 0.95) -> pd.DataFrame:
+        """Perform covariance matrix analysis on the DataFrame.
+        Args:
+            data (pd.DataFrame): DataFrame containing the time series data.
+        Returns:
+            pd.DataFrame: DataFrame with covariance matrix analysis results.
+        """
+
+        cov_matrix = data[self.full_covariate_set].corr(method='pearson')
+        # Determine highly correlated pairs
+        highly_correlated_pairs = cov_matrix.abs() > threshold
+        adjacency_dict = {}
+        for var in highly_correlated_pairs.columns:
+            if sum(highly_correlated_pairs[var]) > 1:
+                adjacency_dict[var] = set(highly_correlated_pairs.\
+                                          index[highly_correlated_pairs[var]]\
+                                            .tolist()) - {var}
+
+        shuffled_variables = np.random.permutation(list(adjacency_dict.\
+                                                        keys())).tolist()
+        dropped_vars = set()
+
+        for var in shuffled_variables:
+            if var not in adjacency_dict:
+                continue
+            for neighbor in list(adjacency_dict[var]):
+                adjacency_dict[neighbor].remove(var)
+                if not adjacency_dict[neighbor]:
+                    del adjacency_dict[neighbor]
+            del adjacency_dict[var]
+            dropped_vars.add(var)
+
+        self.full_covariate_set = list(set(self.full_covariate_set) -
+                                        dropped_vars)
+        return cov_matrix
 
         
         
