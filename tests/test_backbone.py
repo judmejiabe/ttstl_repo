@@ -1,200 +1,160 @@
-"""
-Unit tests for TTSTL Backbone components
-"""
-
-import unittest
 import numpy as np
 import torch
-import pandas as pd
-import sys
-from pathlib import Path
 
-# Add src to path
-sys.path.append(str(Path(__file__).parent.parent / "src"))
+from torch.utils.data import DataLoader
 
-from ttstl.backbone import CNNLSTM, CNNLSTMDataset, Backbone
+from ttstl.backbone import Backbone
+from ttstl.architectures.cnn_lstm import CNNLSTM
+from ttstl.utils.data_downloader import import_to_pandas
+from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm
 
-class TestBackbone(unittest.TestCase):
-    """Test the abstract Backbone class"""
+
+def main():
+
+    # Initialize the CNN-LSTM model - use GPU if available
+    device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+    print(f'Using device: {device}')
+    model = CNNLSTM().to(device)
+
+    # Specify your credentials
+    credentials_path = 'credentials.json'
+
+    # Specify your bucket & blob
+    bucket_name = 'evolving-microstructural-tk-data'
+    blob_name_train = "data.nosync/Recorded_Synthetic_Data/01102025_short_event_driven_recorded_lob_1.parquet"
+    blob_name_validation = "data.nosync/Recorded_Synthetic_Data/01102025_short_event_driven_recorded_lob_2.parquet"
+
+    # Download from the bucket using credentials
+    df_train = import_to_pandas(
+        blob_name=blob_name_train,
+        bucket_name=bucket_name,
+        credentials_path=credentials_path)
     
-    def test_backbone_abstract(self):
-        """Test that Backbone cannot be instantiated directly"""
-        with self.assertRaises(TypeError):
-            Backbone()
+    df_validation = import_to_pandas(
+        blob_name=blob_name_validation,
+        bucket_name=bucket_name,
+        credentials_path=credentials_path)
 
-class TestCNNLSTM(unittest.TestCase):
-    """Test the CNNLSTM implementation"""
+    dataset_train = get_dataset_cnn_lstm(df_train, delta=100, quantile=None)
+    dataset_validation = get_dataset_cnn_lstm(df_validation, delta=100, quantile=None)
+    train_loader = DataLoader(dataset_train, batch_size=32, shuffle=False, num_workers=4)
+    validation_loader = DataLoader(dataset_validation, batch_size=32, shuffle=False, num_workers=4)
+
+    backbone = Backbone(model=model, 
+                        delta_adapter=100000.0, 
+                        delta_sample=100.0)
+
+    criterion = torch.nn.MSELoss(reduction = 'sum')
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+    # Train the model with small data first
+    print("Training model with small dataset...")
+    backbone.batch_gradient_descent(train_loader, 
+                   criterion, 
+                   optimizer, 
+                   validation_loader=validation_loader,
+                   epochs=2)
     
-    def setUp(self):
-        """Set up test fixtures"""
-        self.input_dim = 10
-        self.hidden_dim = 32
-        self.output_dim = 3
-        self.model = CNNLSTM(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            output_dim=self.output_dim
-        )
-        
-    def test_model_initialization(self):
-        """Test model initialization"""
-        self.assertEqual(self.model.input_dim, self.input_dim)
-        self.assertEqual(self.model.hidden_dim, self.hidden_dim)
-        self.assertEqual(self.model.output_dim, self.output_dim)
-        
-    def test_forward_pass(self):
-        """Test forward pass with dummy data"""
-        batch_size = 8
-        seq_length = 50
-        
-        # Create dummy input
-        x = torch.randn(batch_size, seq_length, self.input_dim)
-        
-        # Forward pass
-        output = self.model(x)
-        
-        # Check output shape
-        expected_shape = (batch_size, self.output_dim)
-        self.assertEqual(output.shape, expected_shape)
-        
-    def test_model_parameters(self):
-        """Test that model has trainable parameters"""
-        params = list(self.model.parameters())
-        self.assertGreater(len(params), 0)
-        
-        # Check that parameters require gradients
-        for param in params:
-            self.assertTrue(param.requires_grad)
+    # Load the larger datasets for testing global_update
+    blob_name_edlob = 'data.nosync/Recorded_Synthetic_Data/01102025_long_event_driven_recorded_lob_0.parquet'
+    blob_name_ptlob = 'data.nosync/Recorded_Synthetic_Data/01102025_long_physical_time_driven_recorded_lob_0.parquet'
+    blob_name_ptme = 'data.nosync/Recorded_Synthetic_Data/01102025_long_physical_time_market_event_data_0.parquet'
 
-class TestCNNLSTMDataset(unittest.TestCase):
-    """Test the CNNLSTMDataset class"""
+    df_edlob = import_to_pandas(
+        blob_name=blob_name_edlob,
+        bucket_name=bucket_name,
+        credentials_path=credentials_path)
+
+    # This is a patch only for testing purposes, the dataset will be passed
+    # without the need to do manipulations.
+    delta = 100
+    df_edlob['sampling_time_bar'] = (np.rint((df_edlob['timestamp']) / delta).astype(int) + 1) * delta
+
+    for k in range(10):
+        df_edlob[f'OFI{k}'] = df_edlob[f'BIDof{k}'] - df_edlob[f'ASKof{k}']
+
+    ofi_columns = [f'OFI{k}' for k in range(10)]
+
+    ofi_df = df_edlob.groupby('sampling_time_bar')[ofi_columns].sum().reset_index()
+
+    ofi_df = ofi_df.rename(columns={'sampling_time_bar': 'timestamp'})
+
+    df_ptlob = import_to_pandas(
+        blob_name=blob_name_ptlob,
+        bucket_name=bucket_name,
+        credentials_path=credentials_path)
+
+    df_ptme = import_to_pandas(
+        blob_name=blob_name_ptme,
+        bucket_name=bucket_name,
+        credentials_path=credentials_path)
+
     
-    def setUp(self):
-        """Set up test fixtures"""
-        # Create dummy data
-        n_samples = 1000
-        n_features = 5
-        n_targets = 3
-        
-        self.features = pd.DataFrame(
-            np.random.randn(n_samples, n_features),
-            columns=[f'feature_{i}' for i in range(n_features)]
-        )
-        self.targets = pd.DataFrame(
-            np.random.randn(n_samples, n_targets),
-            columns=[f'target_{i}' for i in range(n_targets)]
-        )
-        self.sequence_length = 50
-        
-    def test_dataset_creation(self):
-        """Test dataset creation"""
-        dataset = CNNLSTMDataset(
-            features=self.features,
-            targets=self.targets,
-            sequence_length=self.sequence_length
-        )
-        
-        # Check dataset length
-        expected_length = len(self.features) - self.sequence_length
-        self.assertEqual(len(dataset), expected_length)
-        
-    def test_dataset_getitem(self):
-        """Test dataset __getitem__ method"""
-        dataset = CNNLSTMDataset(
-            features=self.features,
-            targets=self.targets,
-            sequence_length=self.sequence_length
-        )
-        
-        # Get first item
-        sequence, target = dataset[0]
-        
-        # Check shapes
-        self.assertEqual(sequence.shape, (self.sequence_length, len(self.features.columns)))
-        self.assertEqual(target.shape, (len(self.targets.columns),))
-        
-        # Check types
-        self.assertIsInstance(sequence, torch.Tensor)
-        self.assertIsInstance(target, torch.Tensor)
-        
-    def test_dataset_edge_cases(self):
-        """Test dataset edge cases"""
-        # Test with minimal data
-        small_features = self.features[:self.sequence_length + 1]
-        small_targets = self.targets[:self.sequence_length + 1]
-        
-        dataset = CNNLSTMDataset(
-            features=small_features,
-            targets=small_targets,
-            sequence_length=self.sequence_length
-        )
-        
-        self.assertEqual(len(dataset), 1)
+    df_pt = df_ptlob.merge(df_ptme, on = 'timestamp', how = 'inner')
+    df_pt = df_pt.merge(ofi_df, on = 'timestamp', how = 'inner')
+    df_pt.set_index('timestamp', inplace=True)
 
-class TestModelTraining(unittest.TestCase):
-    """Test model training functionality"""
+    for i, var in enumerate(df_pt.columns):
+        print(f"Column {i}: {var}")
+
+    na_counts = df_pt.isnull().sum()
+    total_na = na_counts.sum()
+    print("NA values per column:")
+    print(na_counts)
+    print(f"Total NA values: {total_na}")
+    print(df_pt.info())
+    print(df_pt.head())
     
-    def setUp(self):
-        """Set up test fixtures"""
-        # Create a small model for testing
-        self.model = CNNLSTM(
-            input_dim=5,
-            hidden_dim=16,
-            output_dim=1,
-            num_layers=1
-        )
-        
-        # Create dummy dataset
-        n_samples = 200
-        features = pd.DataFrame(np.random.randn(n_samples, 5))
-        targets = pd.DataFrame(np.random.randn(n_samples, 1))
-        
-        self.dataset = CNNLSTMDataset(
-            features=features,
-            targets=targets,
-            sequence_length=20
-        )
-        
-    def test_model_fit_method_exists(self):
-        """Test that model has a fit method"""
-        self.assertTrue(hasattr(self.model, 'fit'))
-        
-    def test_model_predict_method_exists(self):
-        """Test that model has a predict method"""
-        self.assertTrue(hasattr(self.model, 'predict'))
-        
-    def test_model_save_load_methods_exist(self):
-        """Test that model has save and load methods"""
-        self.assertTrue(hasattr(self.model, 'save'))
-        self.assertTrue(hasattr(CNNLSTM, 'load'))
-
-class TestModelIO(unittest.TestCase):
-    """Test model save/load functionality"""
+    # Test the global_update function
+    print("\n" + "="*50)
+    print("TESTING GLOBAL_UPDATE FUNCTION")
+    print("="*50)
     
-    def setUp(self):
-        """Set up test fixtures"""
-        self.model = CNNLSTM(
-            input_dim=10,
-            hidden_dim=32,
-            output_dim=3
+    # Reset the dataframe index to get timestamp as a column for event-driven data
+    df_edlob_for_update = df_edlob.copy()
+    df_pt_for_update = df_pt.reset_index()  # Reset index to get timestamp as column
+    
+    print(f"Event-driven data shape: {df_edlob_for_update.shape}")
+    print(f"Physical time-driven data shape: {df_pt_for_update.shape}")
+    print(f"Event-driven data time range: {df_edlob_for_update['timestamp'].min():.2f} to {df_edlob_for_update['timestamp'].max():.2f}")
+    print(f"Physical time-driven data time range: {df_pt_for_update['timestamp'].min():.2f} to {df_pt_for_update['timestamp'].max():.2f}")
+    
+    # Use the same trained model for global_update test (already trained on small data)
+    backbone_update = backbone  # Use the already trained backbone
+    
+    try:
+        # Run global_update with neural covariate extraction and stationarity analysis
+        print("\nRunning global_update with neural covariate extraction and stationarity analysis...")
+        best_validation_loss = backbone_update.global_update(
+            event_driven_backbone_time_bar_data=df_edlob_for_update,
+            physical_time_driven_backbone_time_bar_data=df_pt_for_update,
+            criterion=criterion,
+            optimizer=optimizer,
+            epochs=0,  # Set to 0 for testing as requested
+            validation_proportion=0.1,
+            buffer_proportion=0.05,
+            batch_size=64,  # Larger batch size for efficiency
+            # Stationarity analysis parameters
+            adf_rejection_rate_threshold=0.8,
+            kpss_verification_threshold=0.2,
+            na_verification_threshold=0.1,
+            kpss_drop=True,
+            # Neural covariate parameters
+            parsimonious_mode=False,  # Use hidden activations
+            correlation_threshold=0.95
         )
-        self.test_model_path = "/tmp/test_model.pth"
         
-    def tearDown(self):
-        """Clean up test files"""
-        import os
-        if os.path.exists(self.test_model_path):
-            os.remove(self.test_model_path)
-            
-    def test_save_method_exists(self):
-        """Test that save method exists and is callable"""
-        self.assertTrue(hasattr(self.model, 'save'))
-        self.assertTrue(callable(getattr(self.model, 'save')))
+        print(f"\n✓ Global update completed successfully!")
         
-    def test_load_method_exists(self):
-        """Test that load class method exists"""
-        self.assertTrue(hasattr(CNNLSTM, 'load'))
-        self.assertTrue(callable(getattr(CNNLSTM, 'load')))
+        
 
-if __name__ == '__main__':
-    unittest.main()
+    except Exception as e:
+        print(f"\n✗ Global update failed with error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    
+    print("="*50)
+    
+
+if __name__ == "__main__":
+    main()

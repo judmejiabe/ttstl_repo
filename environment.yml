@@ -13,6 +13,8 @@ dependencies:
   - r-base>=4.0.0
   - r-urca
   - r-funitroots
+  - r-glmnet
+  - r-rugarch
   - rpy2>=3.4.0
   - pip
   - pip:
@@ -23,4 +25,5 @@ dependencies:
     - torchaudio==2.5.0+cu118
     - torchvision==0.20.0+cu118
     - scikit-learn>=1.0.0
+    - statsmodels>=0.13.0
     - pytest>=6.0

@@ -8,6 +8,8 @@ __version__ = "0.1.0"
 
 # Import main classes and functions
 from .backbone import Backbone
+from .interface import Interface
+# from .adapter import Adapter  # Not implemented yet
 from .architectures import CNNLSTM
 from .datasets import CNNLSTMDataset
 from .utils import (
@@ -18,16 +20,18 @@ from .utils import (
     get_dataset_cnn_lstm
 )
 # Import core TTSTL components when implemented
-# from .adapter import *  # Add when you implement this
-# from .interface import *  # Add when you implement this
 # from .orchestrator import *  # Add when you implement this
 
 # Define what gets imported with "from ttstl import *"
 __all__ = [
+    # TTSTL core components
+    'Backbone',
+    'Interface', 
+    # 'Adapter',  # Not implemented yet
+    
     # Backbone components
     'CNNLSTM',
-    'CNNLSTMDataset', 
-    'Backbone',
+    'CNNLSTMDataset',
     
     # Utility functions
     'download_from_bucket',
@@ -36,9 +40,7 @@ __all__ = [
     'preprocess_mbo_data_cnn_lstm',
     'get_dataset_cnn_lstm',
     
-    # TTSTL core components (add as you implement)
+    # Future components (add as you implement)
     # 'TTSTLModel',
-    # 'Adapter',
-    # 'Interface',
     # 'Orchestrator',
 ]

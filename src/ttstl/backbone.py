@@ -18,7 +18,10 @@ fUnitRoots = importr('fUnitRoots')
 pandas2ri.activate()
 
 class Backbone():
-    def __init__(self, model : nn.Module, delta_adapter : float = 0.0) -> None:
+    def __init__(self, 
+                 model : nn.Module, 
+                 delta_adapter : float = 0.0,
+                 delta_sample : float = 0.0) -> None:
         """Initialize the Backbone with a model and delta adapter.
         Args:
             model (nn.Module): The neural network model to be used.
@@ -27,6 +30,7 @@ class Backbone():
         self.model = model
         self.device = next(self.model.parameters()).device
         self.delta_adapter = delta_adapter
+        self.delta_sample = delta_sample
         self.full_covariate_list = None
         self.dropped_pairs = dict()
 
@@ -199,10 +203,16 @@ class Backbone():
                                      adf_rejection_rate_threshold : float = 0.8,
                                      kpss_verification_threshold : float = 0.2,
                                      na_verification_threshold : float = 0.1,
-                                     kpss_drop : bool = True) -> pd.DataFrame:
+                                     kpss_drop : bool = True,
+                                     target_col_name : str = 'micro_return') -> pd.DataFrame:
         """Select stationary variables from the DataFrame.
         Args:
             data (pd.DataFrame): DataFrame containing the time series data.
+            adf_rejection_rate_threshold (float): ADF rejection rate threshold for stationarity.
+            kpss_verification_threshold (float): KPSS verification threshold.
+            na_verification_threshold (float): NA verification threshold.
+            kpss_drop (bool): Whether to use strict KPSS dropping.
+            target_col_name (str): Name of the target variable column.
         Returns:
             pd.DataFrame: DataFrame with only stationary variables.
         """
@@ -236,7 +246,7 @@ class Backbone():
         
 
         self.full_covariate_list = [var for var in stationary_variables \
-                                    if var not in {'timestamp', 'micro_return'}]
+                                    if var not in {'timestamp', target_col_name}]
 
         # Issue warnings
         if warning_variables:
@@ -304,8 +314,7 @@ class Backbone():
     def _extract_neural_covariates(self,
                                    event_driven_data: pd.DataFrame,
                                    physical_time_data: pd.DataFrame,
-                                   delta: float = 100.0,
-                                   quantile: Optional[float] = None,
+                                   quantile: Optional[float] = 0.005,
                                    parsimonious_mode: bool = False) -> dict:
         """Extract neural network covariates from event-driven data for physical time-driven data.
         
@@ -316,7 +325,6 @@ class Backbone():
         Args:
             event_driven_data (pd.DataFrame): Event-driven data with timestamps.
             physical_time_data (pd.DataFrame): Physical time-driven data with timestamps.
-            delta (float): Sampling time bar length
             quantile (Optional[float]): Winsorization quantile.
             parsimonious_mode (bool): If True, use forward pass output; if False, use hidden activations.
             
@@ -328,7 +336,7 @@ class Backbone():
             
             # Create dataset from event-driven data (using train=False to keep all data)
             event_dataset = get_dataset_cnn_lstm(
-                event_driven_data, delta=delta, quantile=quantile,
+                event_driven_data, delta=self.delta_sample, quantile=quantile,
                 train=False)
             
             # Create a DataLoader for batch processing with larger batch size for efficiency
@@ -433,14 +441,14 @@ class Backbone():
                       validation_proportion: float = 0.1,
                       buffer_proportion: float = 0.05,
                       batch_size: int = 32,
-                      delta: float = 100.0,
                       quantile: Optional[float] = 0.005,
                       adf_rejection_rate_threshold: float = 0.8,
                       kpss_verification_threshold: float = 0.2,
                       na_verification_threshold: float = 0.1,
                       kpss_drop: bool = True,
                       parsimonious_mode: bool = False,
-                      correlation_threshold: float = 0.95) -> float:
+                      correlation_threshold: float = 0.95,
+                      target_col_name: str = 'micro_return') -> float:
         """Perform global update of the model with time-based train/validation split.
         
         Creates a 90/10% (configurable) partition of the backbone interval event driven data.
@@ -456,7 +464,6 @@ class Backbone():
             validation_proportion (float, optional): Proportion of data for validation. Defaults to 0.1.
             buffer_proportion (float, optional): Buffer proportion to avoid data leakage. Defaults to 0.05.
             batch_size (int, optional): Batch size for data loaders. Defaults to 32.
-            delta (float, optional): Time horizon for micro return computation. Defaults to 1.0.
             quantile (Optional[float], optional): Winsorization quantile. Defaults to 0.005.
             adf_rejection_rate_threshold (float, optional): ADF rejection rate threshold for stationarity. Defaults to 0.8.
             kpss_verification_threshold (float, optional): KPSS verification threshold. Defaults to 0.2.
@@ -464,6 +471,7 @@ class Backbone():
             kpss_drop (bool, optional): Whether to use strict KPSS dropping. Defaults to True.
             parsimonious_mode (bool, optional): If True, use forward pass output; if False, use hidden activations. Defaults to False.
             correlation_threshold (float, optional): Threshold for dropping highly correlated variables. Defaults to 0.95.
+            target_col_name (str, optional): Name of the target variable column. Defaults to 'micro_return'.
         Returns:
             float: Best validation loss achieved during training.
         """
@@ -500,7 +508,6 @@ class Backbone():
         max_validation_start = end_time - validation_length
 
         # Randomly select validation interval start time
-        np.random.seed()  # Ensure randomness
         validation_start = np.random.uniform(start_time, max_validation_start)
         validation_end = validation_start + validation_length
         
@@ -529,11 +536,11 @@ class Backbone():
 
         # Create datasets using the CNN-LSTM preprocessor
         train_dataset = get_dataset_cnn_lstm(
-            train_data, delta=delta, quantile=quantile, 
+            train_data, delta=self.delta_sample, quantile=quantile, 
             train=True)
         
         validation_dataset = get_dataset_cnn_lstm(
-            validation_data, delta=delta, quantile=quantile, 
+            validation_data, delta=self.delta_sample, quantile=quantile, 
             train=True)
         
         # Create data loaders
@@ -584,7 +591,8 @@ class Backbone():
                 adf_rejection_rate_threshold=adf_rejection_rate_threshold,
                 kpss_verification_threshold=kpss_verification_threshold,
                 na_verification_threshold=na_verification_threshold,
-                kpss_drop=kpss_drop
+                kpss_drop=kpss_drop,
+                target_col_name=target_col_name
             )
         
         else:
@@ -601,7 +609,6 @@ class Backbone():
             neural_covariates = self._extract_neural_covariates(
                 event_driven_data=data,
                 physical_time_data=physical_time_driven_backbone_time_bar_data,
-                delta=delta,
                 quantile=quantile,
                 parsimonious_mode=parsimonious_mode
             )
@@ -657,6 +664,11 @@ class Backbone():
             raise ValueError("No covariates available for correlation analysis or only one covariate present.")
 
         print("--- Highly Correlated Variable Removal Complete ---\n")
+
+        # Final cleanup
+        if self.full_covariate_list:
+            self.full_covariate_list = [var for var in self.full_covariate_list 
+                                    if var not in {'timestamp', target_col_name}]
 
         print("--- Global Update Complete ---\n")
         print(f"Best validation loss achieved: {best_validation_loss:.4f}")
