@@ -1,18 +1,22 @@
-import os
 import math
+import os
 import warnings
-from typing import Optional, Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from scipy import stats
 import rpy2.robjects as ro
+import rpy2.robjects.numpy2ri as numpy2ri
 import rpy2.robjects.packages as rpackages
-from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.conversion import localconverter
-import rpy2.robjects.numpy2ri as numpy2ri
-
+from rpy2.robjects.packages import importr
+from scipy import stats
+from scipy.stats import chi2
 from sklearn.preprocessing import StandardScaler
+import statsmodels.api as sm
+from statsmodels.regression.linear_model import OLS
+from statsmodels.stats.diagnostic import het_white
 
 from ttstl.backbone import Backbone
 
@@ -559,7 +563,7 @@ class Interface:
         print("\n=== Starting Complete Hyperparameter Tuning ===")
         
         # Step 1: Prepare data with neural covariates, adapter bars, lagged targets, and scaling
-        print("Step 1: Preparing data...")
+        print("Preparing data...")
         augmented_data = self._prepare_data(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
@@ -570,7 +574,7 @@ class Interface:
         )
         
         # Step 2: Split data into training and validation sets by adapter bars
-        print("Step 2: Splitting data into training and validation sets...")
+        print("Splitting data into training and validation sets...")
         train_data, validation_data, validation_bars = self._split_data(
             augmented_data=augmented_data,
             validation_proportion=validation_proportion,
@@ -578,7 +582,7 @@ class Interface:
         )
         
         # Step 3: Tune Elastic Net hyperparameters using MSE on validation set
-        print("Step 3: Tuning Elastic Net hyperparameters...")
+        print("Tuning Elastic Net hyperparameters...")
         if self.alpha_enet_grid is None or self.lambda_enet_grid is None:
             raise ValueError("alpha_enet_grid and lambda_enet_grid must be defined for hyperparameter tuning")
         
@@ -589,7 +593,7 @@ class Interface:
         )
         
         # Step 4: Tune Adaptive Lasso hyperparameters using BIC, keeping Elastic Net parameters fixed
-        print("Step 4: Tuning Adaptive Lasso hyperparameters with fixed Elastic Net parameters...")
+        print("Tuning Adaptive Lasso hyperparameters with fixed Elastic Net parameters...")
         ada_lasso_results = self._update_ada_lasso_hyperparameters(
             physical_time_driven_backbone_time_bar_data=augmented_data,
             alpha_enet=best_alpha_enet,
@@ -630,319 +634,539 @@ class Interface:
         
         return hyperparameter_results
 
-    def _ols_screening(self, X: np.ndarray, y: np.ndarray, 
-                      selected_variables: np.ndarray, 
-                      feature_names: List[str]) -> List[str]:
+    def _fit_ols_HC(self, X: np.ndarray, y: np.ndarray) -> sm.regression.linear_model.RegressionResultsWrapper:
         """
-        Perform OLS screening with heteroskedasticity-robust t-tests.
+        Fit OLS model with heteroskedasticity-robust standard errors.
         
         Args:
-            X: Full feature matrix
+            X: Feature matrix (should include constant if needed)
             y: Target vector
-            selected_variables: Boolean mask of variables selected by adaptive lasso
-            feature_names: Names of all features
             
         Returns:
-            List of significantly selected feature names
+            Fitted OLS model with robust standard errors
         """
         try:
-            from statsmodels.regression.linear_model import OLS
-            from statsmodels.stats.diagnostic import het_white
-            import statsmodels.api as sm
-            
-            X_selected = X[:, selected_variables]
-            X_with_const = sm.add_constant(X_selected)
-            
-            # Fit OLS model
-            model = OLS(y, X_with_const).fit(cov_type='HAC', cov_kwds={'maxlags': 1})
-            
-            # Get t-statistics (skip intercept)
-            t_stats = model.tvalues[1:]
-            p_values = model.pvalues[1:]
-            
-            # Find significant variables
-            significant_mask = p_values < self.significance_threshold
-            selected_features = np.array(feature_names)[selected_variables]
-            final_selected = selected_features[significant_mask].tolist()
-            
-            return final_selected
-            
-        except Exception as e:
-            warnings.warn(f"Error in OLS screening: {e}")
-            # Fallback: return all selected variables
-            return np.array(feature_names)[selected_variables].tolist()
+            # Fit OLS model with heteroskedasticity-robust standard errors
+            model = OLS(y, X).fit(cov_type='HC0')
+            return model
 
-    def global_update(self, augmented_physical_data: pd.DataFrame) -> Dict:
-        """
-        Conduct hyperparameter tuning and variable selection for global update.
+        except Exception as e:
+            warnings.warn(f"Error in OLS fitting: {e}")
+            return None
         
-        This implements the global update procedure:
-        1. Hyperparameter tuning for Elastic Net and Adaptive Lasso
-        2. Variable selection using Flexible adaLASSO
-        3. OLS screening with heteroskedasticity-robust tests
-        4. Selection of variables significant across multiple adapter time bars
+
+    def global_update(self, 
+                      event_driven_backbone_time_bar_data: pd.DataFrame,
+                      physical_time_driven_backbone_time_bar_data: pd.DataFrame,
+                      quantile: float = 0.005,
+                      parsimonious_mode: bool = False,
+                      target_col_name: str = 'micro_return',
+                      n_lags: int = 5,
+                      validation_proportion: float = 0.2,
+                      selection_threshold: float = 0.5,
+                      tolerance_threshold: float = 1e-6,
+                      ols_significance_level: float = 0.05) -> Dict:
+        """
+        Perform global variable selection for the TTSTL Interface module.
+        
+        This method implements the complete global variable selection workflow:
+        1. Run hyperparameter tuning to find optimal Elastic Net and Adaptive Lasso parameters
+        2. Apply Flexible Adaptive Lasso to each adapter time bar using optimal hyperparameters
+        3. Extract coefficients above tolerance threshold from each adapter bar
+        4. Apply OLS with heteroskedasticity-robust tests to significant coefficients
+        5. Select variables that appear as significant across multiple adapter bars
         
         Args:
-            augmented_physical_data: DataFrame with physical time data including neural covariates
+            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
+            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
+            quantile: Winsorization quantile for neural covariate extraction
+            parsimonious_mode: Whether to use parsimonious mode for neural covariate extraction
+            target_col_name: Name of target variable column
+            n_lags: Number of lagged values of target variable to include
+            validation_proportion: Proportion of adapter bars to use for validation in hyperparameter tuning
+            selection_threshold: Minimum proportion of adapter bars where variable must be significant
+            tolerance_threshold: Minimum absolute coefficient value to consider in Adaptive Lasso
+            ols_significance_level: Significance level for OLS heteroskedasticity-robust tests
             
         Returns:
-            Dictionary with selected variables and model information
+            Dictionary with selected variables and global update results
         """
-        print("\n--- Starting Interface Global Update ---")
+        print("\n" + "="*60)
+        print("STARTING INTERFACE GLOBAL UPDATE")
+        print("="*60)
         
-        # Create adapter time bars
-        try:
-            augmented_physical_data['adapter_bar'] = (
-                np.floor((augmented_physical_data['timestamp'] + 1e-3) / self.backbone.delta_adapter)
-                .astype(int)
-            )
-        except KeyError:
-            augmented_physical_data['adapter_bar'] = (
-                np.floor((augmented_physical_data.index.to_series() + 1e-3) / self.backbone.delta_adapter)
-                .astype(int)
-            )
-        
-        # Prepare data
-        X, y, feature_names = self._prepare_data(augmented_physical_data)
-        
-        print(f"Data prepared: {X.shape[0]} samples, {X.shape[1]} features")
-        
-        # Step 1: Hyperparameter tuning on full dataset
-        print("Step 1: Hyperparameter tuning...")
-        self.best_hyperparameters = self._hyperparameter_tuning(X, y)
-        
-        # Step 2-4: Apply best hyperparameters and get selected variables
-        print("Step 2-4: Variable selection with best hyperparameters...")
-        enet_result = self._fit_enet(X, y, alpha=self.best_hyperparameters['alpha'])
-        ada_result = self._fit_ada_lasso(
-            X, y, enet_result['coefficients'],
-            lambda_ada=self.best_hyperparameters['lambda_ada'],
-            gamma=self.best_hyperparameters['gamma']
+        # Step 1: Run hyperparameter tuning
+        print("Step 1: Running hyperparameter tuning...")
+        hyperparameter_results = self._update_hyperparameters(
+            event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
+            physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
+            quantile=quantile,
+            parsimonious_mode=parsimonious_mode,
+            target_col_name=target_col_name,
+            n_lags=n_lags,
+            validation_proportion=validation_proportion
         )
         
-        # Step 5-6: OLS screening on each adapter time bar
-        print("Step 5-6: OLS screening across adapter time bars...")
-        significant_vars_per_bar = {}
+        # Extract optimal hyperparameters from class attributes (set by _update_hyperparameters)
+        best_alpha_enet = self.best_alpha_enet
+        best_lambda_enet = self.best_lambda_enet
+        best_tau_adalasso = self.best_tau_adalasso
+        best_lambda_adalasso = self.best_lambda_adalasso
         
-        for bar_id, bar_data in augmented_physical_data.groupby('adapter_bar'):
-            if len(bar_data) < 10:  # Skip bars with too few observations
+        print(f"Optimal hyperparameters found:")
+        print(f"  Elastic Net: α={best_alpha_enet:.3f}, λ={best_lambda_enet:.4f}")
+        print(f"  Adaptive Lasso: τ={best_tau_adalasso:.3f}, λ={best_lambda_adalasso:.6f}")
+        
+        # Get the prepared data from hyperparameter tuning (it should be stored in the interface)
+        # We need to re-prepare the data since _update_hyperparameters used a subset for validation
+        print("Step 2: Re-preparing full dataset for global variable selection...")
+        augmented_data = self._prepare_data(
+            event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
+            physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
+            quantile=quantile,
+            parsimonious_mode=parsimonious_mode,
+            target_col_name=target_col_name,
+            n_lags=n_lags
+        )
+        
+        # Get unique adapter bars
+        unique_adapter_bars = augmented_data['adapter_bar'].unique()
+        n_adapter_bars = len(unique_adapter_bars)
+        print(f"Processing {n_adapter_bars} adapter time bars for variable selection...")
+        
+        # Initialize variable selection tracking
+        variable_significance_count = {}
+        for var in self.extended_covariate_list:
+            variable_significance_count[var] = 0
+        
+        processed_bars = 0
+        failed_bars = 0
+        
+        # Step 3: Process each adapter time bar
+        print("Step 3: Processing each adapter time bar with Flexible Adaptive Lasso + OLS...")
+        
+        for i, adapter_bar in enumerate(unique_adapter_bars):
+            print(f"Processing adapter bar {adapter_bar} ({i+1}/{n_adapter_bars})...")
+            
+            # Extract data for this adapter bar
+            bar_data = augmented_data[
+                augmented_data['adapter_bar'] == adapter_bar
+            ].copy()
+            
+            # Skip bars with insufficient data
+            if len(bar_data) < 10:
+                print(f"  Skipping adapter bar {adapter_bar}: insufficient data ({len(bar_data)} samples)")
+                failed_bars += 1
                 continue
-                
-            try:
-                X_bar, y_bar, _ = self._prepare_data(bar_data)
-                
-                # Apply OLS screening with variables selected by adaLASSO
-                significant_vars = self._ols_screening(
-                    X_bar, y_bar, ada_result['selected_variables'], feature_names
-                )
-                significant_vars_per_bar[bar_id] = significant_vars
-                
-            except Exception as e:
-                warnings.warn(f"Error processing adapter bar {bar_id}: {e}")
-                continue
-        
-        # Step 7: Select variables significant in minimum number of bars
-        print("Step 7: Final variable selection...")
-        all_vars = set()
-        for vars_list in significant_vars_per_bar.values():
-            all_vars.update(vars_list)
-        
-        var_counts = {}
-        for var in all_vars:
-            count = sum(1 for vars_list in significant_vars_per_bar.values() if var in vars_list)
-            var_counts[var] = count
-        
-        # Select variables significant in at least min_significant_bars
-        min_bars = min(self.min_significant_bars, len(significant_vars_per_bar))
-        self.selected_variables = [
-            var for var, count in var_counts.items() 
-            if count >= min_bars
-        ]
-        
-        print(f"Selected {len(self.selected_variables)} variables out of {len(feature_names)}")
-        print(f"Selected variables: {self.selected_variables}")
-        
-        # Store global model coefficients for structural break detection
-        if self.selected_variables:
-            selected_idx = [i for i, name in enumerate(feature_names) if name in self.selected_variables]
-            X_final = X[:, selected_idx]
             
             try:
-                from sklearn.linear_model import LinearRegression
-                lr = LinearRegression()
-                lr.fit(X_final, y)
-                self.global_model_coefficients = lr.coef_
+                # Get features and target for this adapter bar
+                X_bar = bar_data[self.extended_covariate_list].values
+                y_bar = bar_data[target_col_name].values
+                
+                # Step 3a: Apply Flexible Adaptive Lasso with optimal hyperparameters
+                ada_result = self._fit_flexible_adalasso(
+                    X=X_bar,
+                    y=y_bar,
+                    alpha_enet=best_alpha_enet,
+                    lambda_enet=best_lambda_enet,
+                    tau_adalasso=best_tau_adalasso,
+                    lambda_adalasso=best_lambda_adalasso
+                )
+                
+                # Step 3b: Extract coefficients above tolerance threshold
+                ada_coefficients = ada_result['ada_coefficients']
+                
+                # Find variables with coefficients above tolerance threshold
+                # Note: ada_coefficients may include intercept, so we need to handle indexing
+                if len(ada_coefficients) == len(self.extended_covariate_list) + 1:
+                    # Coefficients include intercept
+                    significant_coef_mask = np.abs(ada_coefficients[1:]) > tolerance_threshold
+                    intercept = ada_coefficients[0]
+                    coef_without_intercept = ada_coefficients[1:]
+                elif len(ada_coefficients) == len(self.extended_covariate_list):
+                    # Coefficients don't include intercept
+                    significant_coef_mask = np.abs(ada_coefficients) > tolerance_threshold
+                    intercept = 0.0
+                    coef_without_intercept = ada_coefficients
+                else:
+                    raise ValueError(f"Coefficient dimension mismatch: expected {len(self.extended_covariate_list)} or {len(self.extended_covariate_list)+1}, got {len(ada_coefficients)}")
+                
+                # Get indices of variables with significant coefficients
+                significant_var_indices = np.where(significant_coef_mask)[0]
+                
+                if len(significant_var_indices) == 0:
+                    print(f"  No variables above tolerance threshold for adapter bar {adapter_bar}")
+                    processed_bars += 1
+                    continue
+                
+                print(f"  {len(significant_var_indices)} variables above tolerance threshold")
+                
+                # Step 3c: Apply OLS with heteroskedasticity-robust tests
+                # Select only the variables with significant coefficients
+                X_selected = X_bar[:, significant_var_indices]
+                
+                # Add constant for OLS
+                X_selected_with_const = sm.add_constant(X_selected)
+                
+                # Fit OLS with heteroskedasticity-robust standard errors
+                ols_model = self._fit_ols_HC(
+                    X=X_selected_with_const, 
+                    y=y_bar
+                )
+                
+                if ols_model is not None:
+                    # Get p-values (skip intercept)
+                    p_values = ols_model.pvalues[1:]
+                    
+                    # Find significant variables
+                    ols_significant_mask = p_values < ols_significance_level
+                    
+                    # Map back to original variable indices
+                    ols_significant_indices = significant_var_indices[ols_significant_mask]
+                    
+                    # Update significance counts for OLS-significant variables
+                    for idx in ols_significant_indices:
+                        var_name = self.extended_covariate_list[idx]
+                        variable_significance_count[var_name] += 1
+                    
+                    print(f"  {len(ols_significant_indices)} variables significant in OLS test")
+                else:
+                    print(f"  OLS test failed for adapter bar {adapter_bar}")
+                
+                processed_bars += 1
+                
             except Exception as e:
-                warnings.warn(f"Error fitting global model: {e}")
-                self.global_model_coefficients = None
+                print(f"  Error processing adapter bar {adapter_bar}: {e}")
+                failed_bars += 1
+                continue
         
-        print("--- Interface Global Update Complete ---\n")
+        # Step 4: Select variables based on selection threshold
+        print(f"\nStep 4: Selecting variables based on selection threshold...")
+        print(f"Successfully processed: {processed_bars} bars")
+        print(f"Failed to process: {failed_bars} bars")
         
-        return {
-            'selected_variables': self.selected_variables,
-            'hyperparameters': self.best_hyperparameters,
-            'variable_counts': var_counts,
-            'n_adapter_bars': len(significant_vars_per_bar)
+        if processed_bars == 0:
+            raise RuntimeError("No adapter bars were successfully processed")
+        
+        # Calculate minimum number of bars for selection
+        min_bars_for_selection = max(1, int(selection_threshold * processed_bars))
+        print(f"Selection threshold: {selection_threshold:.2%} = minimum {min_bars_for_selection} bars")
+        
+        # Select variables that appear in at least the minimum number of bars
+        selected_variables = []
+        variable_selection_info = {}
+        
+        for var_name, count in variable_significance_count.items():
+            proportion = count / processed_bars if processed_bars > 0 else 0
+            variable_selection_info[var_name] = {
+                'count': count,
+                'proportion': proportion,
+                'selected': count >= min_bars_for_selection
+            }
+            
+            if count >= min_bars_for_selection:
+                selected_variables.append(var_name)
+        
+        # Store selected variables and parameters in the interface
+        self.selected_variables = selected_variables
+        self.tolerance_threshold = tolerance_threshold
+        
+        # Sort variables by selection frequency for reporting
+        sorted_vars = sorted(variable_selection_info.items(), 
+                           key=lambda x: x[1]['count'], reverse=True)
+        
+        print(f"\n" + "="*50)
+        print(f"GLOBAL VARIABLE SELECTION RESULTS")
+        print(f"="*50)
+        print(f"Selected {len(selected_variables)} variables out of {len(self.extended_covariate_list)}")
+        print(f"Selection criteria: significant in ≥{min_bars_for_selection} bars ({selection_threshold:.1%})")
+        
+        print(f"\nSelected Variables:")
+        for i, var in enumerate(selected_variables, 1):
+            info = variable_selection_info[var]
+            print(f"  {i:2d}. {var:<30} ({info['count']:2d}/{processed_bars} bars, {info['proportion']:.1%})")
+        
+        print(f"\nTop 10 Variables by Selection Frequency:")
+        for i, (var, info) in enumerate(sorted_vars[:10], 1):
+            status = "✓" if info['selected'] else "✗"
+            print(f"  {i:2d}. {status} {var:<30} ({info['count']:2d}/{processed_bars} bars, {info['proportion']:.1%})")
+        
+        # Compile results
+        global_update_results = {
+            'selected_variables': selected_variables,
+            'n_selected': len(selected_variables),
+            'n_total_variables': len(self.extended_covariate_list),
+            'selection_threshold': selection_threshold,
+            'tolerance_threshold': tolerance_threshold,
+            'ols_significance_level': ols_significance_level,
+            'hyperparameter_results': hyperparameter_results,
+            'processing_stats': {
+                'total_adapter_bars': n_adapter_bars,
+                'processed_bars': processed_bars,
+                'failed_bars': failed_bars,
+                'min_bars_for_selection': min_bars_for_selection
+            },
+            'variable_selection_info': variable_selection_info,
+            'extended_covariate_list': self.extended_covariate_list
         }
-
-    def local_adaptation(self, adapter_data: pd.DataFrame) -> Dict:
-        """
-        Perform local adaptation and structural break detection.
         
-        This implements:
-        1. Fitting adaLASSO on current adapter time bar
-        2. Nested testing for new variables not in global selection
-        3. Structural break detection based on rejection count
+        print(f"\nGlobal Update Complete!")
+        print(f"{len(selected_variables)} variables selected for adapter-level modeling")
+        print("="*60)
+        
+        return global_update_results
+
+    def local_adaptation(self, 
+                         adapter_bar_data: pd.DataFrame,
+                         target_col_name: str = 'micro_return',
+                         significance_level: float = 0.05) -> Dict:
+        """
+        Perform local adaptation for a specific adapter time bar using Wald test.
+        
+        This method implements the local adaptation procedure from section 7.3.2:
+        1. Start with globally selected variables from global_update
+        2. Run Flexible Adaptive Lasso on the adapter bar to get new variable selection
+        3. Identify newly selected variables (set difference)
+        4. Use Wald test to check if the newly selected variables are jointly significant
+        5. Return results with Wald test statistics
         
         Args:
-            adapter_data: DataFrame for current adapter time bar
+            adapter_bar_data: Data for specific adapter time bar (already filtered)
+            target_col_name: Name of target variable column
+            significance_level: Significance level for Wald test
             
         Returns:
-            Dictionary with adaptation results and structural break flag
+            Dictionary with local adaptation results including Wald test statistics
         """
-        if self.selected_variables is None:
-            raise ValueError("No global model available. Run global_update() first.")
+        if not hasattr(self, 'selected_variables') or self.selected_variables is None:
+            raise ValueError("Global update must be run first to establish global variable selection")
         
-        print("--- Starting Interface Local Adaptation ---")
+        if not hasattr(self, 'extended_covariate_list') or self.extended_covariate_list is None:
+            raise ValueError("Extended covariate list not available. Run global_update first.")
+        
+        print("\n" + "="*60)
+        print("STARTING LOCAL ADAPTATION")
+        print("="*60)
+        print(f"Adapter bar data shape: {adapter_bar_data.shape}")
+        print(f"Global variables: {len(self.selected_variables)}")
+        
+        # Check required attributes from global update
+        required_attrs = ['best_alpha_enet', 'best_lambda_enet', 'best_tau_adalasso', 'best_lambda_adalasso']
+        for attr in required_attrs:
+            if not hasattr(self, attr):
+                raise ValueError(f"Missing required attribute {attr}. Run global_update first.")
         
         try:
-            # Prepare data for current adapter bar
-            X, y, feature_names = self._prepare_data(adapter_data)
+            # Step 1: Extract features and target for this adapter bar
+            X_full = adapter_bar_data[self.extended_covariate_list].values
+            y = adapter_bar_data[target_col_name].values
             
-            if len(X) < 5:  # Need minimum observations
-                return {
-                    'structural_break': False,
-                    'reason': 'insufficient_data',
-                    'n_observations': len(X)
-                }
+            print(f"Full feature matrix shape: {X_full.shape}")
+            print(f"Target vector shape: {y.shape}")
             
-            # Fit adaLASSO with global hyperparameters
-            enet_result = self._fit_enet(X, y, alpha=self.best_hyperparameters['alpha'])
-            ada_result = self._fit_ada_lasso(
-                X, y, enet_result['coefficients'],
-                lambda_ada=self.best_hyperparameters['lambda_ada'],
-                gamma=self.best_hyperparameters['gamma']
+            # Step 2: Apply Flexible Adaptive Lasso with globally optimal hyperparameters
+            print("Step 1: Running Flexible Adaptive Lasso for local variable selection...")
+            ada_result = self._fit_flexible_adalasso(
+                X=X_full,
+                y=y,
+                alpha_enet=self.best_alpha_enet,
+                lambda_enet=self.best_lambda_enet,
+                tau_adalasso=self.best_tau_adalasso,
+                lambda_adalasso=self.best_lambda_adalasso
             )
             
-            # Get variables selected by local adaLASSO
-            local_selected = np.array(feature_names)[ada_result['selected_variables']]
+            # Step 3: Extract locally selected variables
+            ada_coefficients = ada_result['ada_coefficients']
             
-            # Find new variables not in global selection
-            new_variables = [var for var in local_selected if var not in self.selected_variables]
-            
-            if not new_variables:
-                # No new variables, no structural break
-                print(f"No new variables selected. Current selections: {len(local_selected)}")
-                return {
-                    'structural_break': False,
-                    'reason': 'no_new_variables',
-                    'local_selected': local_selected.tolist(),
-                    'new_variables': []
-                }
-            
-            # Nested test for new variables
-            print(f"Testing {len(new_variables)} new variables: {new_variables}")
-            
-            # Test if adding new variables significantly improves model
-            # Restricted model: only global variables
-            global_var_idx = [i for i, name in enumerate(feature_names) if name in self.selected_variables]
-            new_var_idx = [i for i, name in enumerate(feature_names) if name in new_variables]
-            
-            if not global_var_idx:
-                # No global variables available for comparison
-                print("No global variables available for nested test")
-                self.adapter_rejections += 1
+            # Handle coefficient indexing (with or without intercept)
+            if len(ada_coefficients) == len(self.extended_covariate_list) + 1:
+                # Coefficients include intercept
+                coef_without_intercept = ada_coefficients[1:]
+            elif len(ada_coefficients) == len(self.extended_covariate_list):
+                # Coefficients don't include intercept
+                coef_without_intercept = ada_coefficients
             else:
-                try:
-                    from scipy.stats import f
-                    import statsmodels.api as sm
-                    
-                    # Restricted model (global variables only)
-                    X_restricted = sm.add_constant(X[:, global_var_idx])
-                    model_restricted = sm.OLS(y, X_restricted).fit()
-                    
-                    # Unrestricted model (global + new variables)
-                    X_unrestricted = sm.add_constant(X[:, global_var_idx + new_var_idx])
-                    model_unrestricted = sm.OLS(y, X_unrestricted).fit()
-                    
-                    # F-test for nested models
-                    rss_restricted = model_restricted.ssr
-                    rss_unrestricted = model_unrestricted.ssr
-                    
-                    df_restricted = len(y) - len(global_var_idx) - 1
-                    df_unrestricted = len(y) - len(global_var_idx) - len(new_var_idx) - 1
-                    
-                    if df_unrestricted > 0 and rss_unrestricted > 0:
-                        f_stat = ((rss_restricted - rss_unrestricted) / len(new_var_idx)) / (rss_unrestricted / df_unrestricted)
-                        p_value = 1 - f.cdf(f_stat, len(new_var_idx), df_unrestricted)
-                        
-                        # Reject null if new variables are significant
-                        if p_value < self.significance_threshold:
-                            self.adapter_rejections += 1
-                            print(f"Nested test rejected (p={p_value:.4f}). Rejection count: {self.adapter_rejections}")
-                        else:
-                            print(f"Nested test not rejected (p={p_value:.4f})")
-                            print(f"Nested test not rejected (p={p_value:.4f})")
-                    else:
-                        # Degenerate case
-                        print("Degenerate nested test case")
-                        
-                except Exception as e:
-                    warnings.warn(f"Error in nested test: {e}")
-                    # Conservative approach: count as rejection
-                    self.adapter_rejections += 1
+                raise ValueError(f"Coefficient dimension mismatch: expected {len(self.extended_covariate_list)} or {len(self.extended_covariate_list)+1}, got {len(ada_coefficients)}")
             
-            # Check for structural break
-            structural_break = self.adapter_rejections >= self.structural_break_threshold
+            # Find locally selected variables (non-zero coefficients)
+            tolerance_threshold = getattr(self, 'tolerance_threshold', 1e-6)
+            local_selection_mask = np.abs(coef_without_intercept) > tolerance_threshold
+            local_selected_indices = np.where(local_selection_mask)[0]
+            local_selected_variables = [self.extended_covariate_list[i] for i in local_selected_indices]
             
-            if structural_break:
-                print(f"STRUCTURAL BREAK DETECTED! Rejections: {self.adapter_rejections} >= {self.structural_break_threshold}")
+            print(f"Local Adaptive Lasso selected: {len(local_selected_variables)} variables")
             
-            print("--- Interface Local Adaptation Complete ---\n")
+            # Step 4: Identify newly selected variables (set difference)
+            global_var_set = set(self.selected_variables)
+            local_var_set = set(local_selected_variables)
+            newly_selected_variables = list(local_var_set - global_var_set)
+            
+            print(f"Global variables: {len(self.selected_variables)}")
+            print(f"Newly selected variables: {len(newly_selected_variables)}")
+            
+            if len(newly_selected_variables) == 0:
+                print("No new variables selected locally. Using global selection.")
+                final_variables = self.selected_variables.copy()
+                wald_test_result = None
+            else:
+                print(f"Testing {len(newly_selected_variables)} newly selected variables:")
+                for var in newly_selected_variables:
+                    print(f"  - {var}")
+                
+                # Step 5: Perform Wald test
+                print("Step 2: Performing Wald test for newly selected variables...")
+                wald_test_result = self._wald_test_new_variables(
+                    X_full=X_full,
+                    y=y,
+                    global_variables=self.selected_variables,
+                    newly_selected_variables=newly_selected_variables,
+                    significance_level=significance_level
+                )
+                
+                # Step 6: Determine final variable set based on Wald test
+                if wald_test_result['is_significant']:
+                    final_variables = self.selected_variables + newly_selected_variables
+                    print(f"✓ Wald test significant (p={wald_test_result['p_value']:.6f})")
+                    print(f"  Including {len(newly_selected_variables)} new variables in final model")
+                else:
+                    final_variables = self.selected_variables.copy()
+                    print(f"✗ Wald test not significant (p={wald_test_result['p_value']:.6f})")
+                    print(f"  Using only global variables in final model")
+            
+            # Compile results
+            local_adaptation_results = {
+                'adapter_bar_data_shape': adapter_bar_data.shape,
+                'global_variables': self.selected_variables,
+                'local_selected_variables': local_selected_variables,
+                'newly_selected_variables': newly_selected_variables,
+                'final_variables': final_variables,
+                'n_global': len(self.selected_variables),
+                'n_local': len(local_selected_variables),
+                'n_newly_selected': len(newly_selected_variables),
+                'n_final': len(final_variables),
+                'wald_test_result': wald_test_result,
+                'adaptive_lasso_result': ada_result,
+                'hyperparameters': {
+                    'alpha_enet': self.best_alpha_enet,
+                    'lambda_enet': self.best_lambda_enet,
+                    'tau_adalasso': self.best_tau_adalasso,
+                    'lambda_adalasso': self.best_lambda_adalasso
+                }
+            }
+            
+            print(f"\n" + "="*50)
+            print(f"LOCAL ADAPTATION RESULTS")
+            print(f"="*50)
+            print(f"Global variables: {len(self.selected_variables)}")
+            print(f"Local adaptive lasso selected: {len(local_selected_variables)}")
+            print(f"Newly selected: {len(newly_selected_variables)}")
+            print(f"Final model variables: {len(final_variables)}")
+            if wald_test_result:
+                print(f"Wald test p-value: {wald_test_result['p_value']:.6f}")
+                print(f"Wald test significant: {wald_test_result['is_significant']}")
+            print("="*50)
+            
+            return local_adaptation_results
+            
+        except Exception as e:
+            raise RuntimeError(f"Error in local adaptation: {e}")
+
+    def _wald_test_new_variables(self, 
+                                 X_full: np.ndarray, 
+                                 y: np.ndarray,
+                                 global_variables: List[str],
+                                 newly_selected_variables: List[str],
+                                 significance_level: float = 0.05) -> Dict:
+        """
+        Perform Wald test to check if newly selected variables are jointly significant.
+        
+        Args:
+            X_full: Full feature matrix
+            y: Target vector
+            global_variables: List of globally selected variable names
+            newly_selected_variables: List of newly selected variable names
+            significance_level: Significance level for the test
+            
+        Returns:
+            Dictionary with Wald test results
+        """
+        try:
+            # Get indices for global and newly selected variables
+            global_indices = [self.extended_covariate_list.index(var) for var in global_variables]
+            new_indices = [self.extended_covariate_list.index(var) for var in newly_selected_variables]
+            all_indices = global_indices + new_indices
+            
+            # Create design matrices
+            X_restricted = X_full[:, global_indices]  # Model with only global variables
+            X_unrestricted = X_full[:, all_indices]   # Model with global + new variables
+            
+            # Add constants
+            X_restricted_const = sm.add_constant(X_restricted)
+            X_unrestricted_const = sm.add_constant(X_unrestricted)
+            
+            # Fit both models
+            model_restricted = self._fit_ols_HC(X=X_restricted_const, y=y)
+            model_unrestricted = self._fit_ols_HC(X=X_unrestricted_const, y=y)
+            
+            if model_restricted is None or model_unrestricted is None:
+                raise RuntimeError("Failed to fit models for Wald test")
+            
+            # Perform Wald test
+            # Test H0: coefficients of newly selected variables = 0
+            # The test statistic is based on the coefficient vector and covariance matrix
+            
+            # Get coefficients and covariance matrix for newly selected variables
+            # Note: coefficients include intercept, so we need to account for that
+            n_global_with_const = len(global_indices) + 1  # +1 for intercept
+            
+            # Extract coefficients for newly selected variables
+            new_var_coefs = model_unrestricted.params[n_global_with_const:]
+            
+            # Extract covariance matrix for newly selected variables  
+            # Convert to numpy array if it's a pandas DataFrame
+            cov_params = model_unrestricted.cov_params()
+            if hasattr(cov_params, 'iloc'):
+                new_var_cov = cov_params.iloc[n_global_with_const:, n_global_with_const:].values
+            else:
+                new_var_cov = cov_params[n_global_with_const:, n_global_with_const:]
+            
+            # Convert coefficients to numpy array if needed
+            if hasattr(new_var_coefs, 'values'):
+                new_var_coefs = new_var_coefs.values
+            
+            # Compute Wald statistic: coef' * inv(cov) * coef
+            try:
+                wald_statistic = float(new_var_coefs.T @ np.linalg.inv(new_var_cov) @ new_var_coefs)
+            except np.linalg.LinAlgError:
+                # Use pseudo-inverse if matrix is singular
+                wald_statistic = float(new_var_coefs.T @ np.linalg.pinv(new_var_cov) @ new_var_coefs)
+            
+            # Degrees of freedom = number of newly selected variables
+            df = len(newly_selected_variables)
+            
+            # P-value from chi-squared distribution
+            from scipy.stats import chi2
+            p_value = 1 - chi2.cdf(wald_statistic, df)
+            
+            is_significant = p_value < significance_level
             
             return {
-                'structural_break': structural_break,
-                'reason': 'rejection_threshold_exceeded' if structural_break else 'normal_adaptation',
-                'local_selected': local_selected.tolist(),
-                'new_variables': new_variables,
-                'rejection_count': self.adapter_rejections,
-                'threshold': self.structural_break_threshold
+                'wald_statistic': wald_statistic,
+                'degrees_of_freedom': df,
+                'p_value': p_value,
+                'significance_level': significance_level,
+                'is_significant': is_significant,
+                'newly_selected_variables': newly_selected_variables,
+                'model_restricted': model_restricted,
+                'model_unrestricted': model_unrestricted,
+                'restricted_aic': model_restricted.aic,
+                'unrestricted_aic': model_unrestricted.aic,
+                'restricted_bic': model_restricted.bic,
+                'unrestricted_bic': model_unrestricted.bic
             }
             
         except Exception as e:
-            warnings.warn(f"Error in local adaptation: {e}")
-            return {
-                'structural_break': False,
-                'reason': 'error',
-                'error': str(e)
-            }
-
-    def reset_adaptation_state(self):
-        """Reset the adaptation state (rejection count) after structural break handling."""
-        print("Resetting interface adaptation state...")
-        self.adapter_rejections = 0
-
-    def get_selected_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Get data with only the selected variables.
-        
-        Args:
-            data: Input DataFrame
-            
-        Returns:
-            DataFrame with only selected variables plus timestamp and target
-        """
-        if self.selected_variables is None:
-            raise ValueError("No variables selected. Run global_update() first.")
-        
-        # Keep essential columns
-        essential_cols = ['timestamp', 'micro_return']
-        keep_cols = essential_cols + self.selected_variables
-        
-        # Filter to existing columns
-        available_cols = [col for col in keep_cols if col in data.columns]
-        
-        return data[available_cols].copy()
-
+            raise RuntimeError(f"Error in Wald test: {e}")
     
 

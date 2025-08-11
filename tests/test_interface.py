@@ -11,9 +11,9 @@ from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm
 
 
 def main():
-    """Test the _update_hyperparameters function in the Interface module."""
+    """Test the global_update function in the Interface module."""
     
-    print("Starting Interface _update_hyperparameters test...")
+    print("Starting Interface global_update test...")
     
     # Initialize the CNN-LSTM model - use GPU if available
     device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
@@ -97,6 +97,24 @@ def main():
     # Merge physical time data
     df_pt = df_ptlob.merge(df_ptme, on='timestamp', how='inner')
     df_pt = df_pt.merge(ofi_df, on='timestamp', how='inner')
+    
+    # REDUCE DATASET SIZE: Use only first 10% of timestamps for faster testing
+    print("Reducing dataset size to first 10% of timestamps for faster testing...")
+    
+    # Get timestamp range for event-driven data
+    edlob_min_ts, edlob_max_ts = df_edlob['timestamp'].min(), df_edlob['timestamp'].max()
+    edlob_cutoff = edlob_min_ts + 0.1 * (edlob_max_ts - edlob_min_ts)
+    
+    # Get timestamp range for physical time data  
+    pt_min_ts, pt_max_ts = df_pt['timestamp'].min(), df_pt['timestamp'].max()
+    pt_cutoff = pt_min_ts + 0.1 * (pt_max_ts - pt_min_ts)
+    
+    # Filter to first 10% of data
+    df_edlob = df_edlob[df_edlob['timestamp'] <= edlob_cutoff].copy()
+    df_pt = df_pt[df_pt['timestamp'] <= pt_cutoff].copy()
+    
+    print(f"Event-driven data reduced from full dataset to {len(df_edlob):,} samples")
+    print(f"Physical time data reduced from full dataset to {len(df_pt):,} samples")
 
     # Create micro_return column for testing
     df_pt['micro_return'] = df_pt['micro'].pct_change() * 1e3
@@ -139,10 +157,10 @@ def main():
     print("Initializing Interface module...")
     
     # Set up hyperparameter grids for comprehensive testing
-    alpha_enet_grid = [0.1, 0.5, 0.9]  # Smaller grid for faster testing
-    lambda_enet_grid = [0.01, 0.1, 1.0]
-    tau_adalasso_grid = [0.5, 1.0, 2.0]
-    lambda_adalasso_grid = [0.01, 0.1, 1.0]
+    alpha_enet_grid = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]  # Smaller grid for faster testing
+    lambda_enet_grid = [0.01, 0.1, 1.0, 5.0, 10.0]
+    tau_adalasso_grid = [0.25, 0.5, 1.0, 2.0]
+    lambda_adalasso_grid = [0.01, 0.1, 1.0, 5.0, 10.0]
     
     interface = Interface(backbone_module=backbone,
                          alpha_enet_grid=alpha_enet_grid,
@@ -150,107 +168,272 @@ def main():
                          tau_adalasso_grid=tau_adalasso_grid,
                          lambda_adalasso_grid=lambda_adalasso_grid)
     
-    # Test _update_hyperparameters function
+    # Test global_update function
     print("\n" + "="*60)
-    print("TESTING INTERFACE _update_hyperparameters FUNCTION")
+    print("TESTING INTERFACE global_update FUNCTION")
     print("="*60)
     
     try:
-        # Call the complete hyperparameter tuning method
-        print("Running complete hyperparameter tuning...")
-        hyperparameter_results = interface._update_hyperparameters(
+        # Call the complete global update method
+        print("Running complete global variable selection...")
+        global_update_results = interface.global_update(
             event_driven_backbone_time_bar_data=df_edlob,
             physical_time_driven_backbone_time_bar_data=df_pt_reset,
             quantile=0.005,
             parsimonious_mode=False,
             target_col_name='micro_return',
             n_lags=3,  # Use fewer lags for faster testing
-            validation_proportion=0.2
+            validation_proportion=0.2,
+            selection_threshold=0.3,  # Select variables significant in ≥30% of adapter bars
+            tolerance_threshold=1e-6,  # Minimum coefficient magnitude in Adaptive Lasso
+            ols_significance_level=0.05  # 5% significance level for OLS tests
         )
         
-        print(f"✓ _update_hyperparameters completed successfully!")
+        print(f"✓ global_update completed successfully!")
         
         # Validate results structure
-        assert 'elastic_net' in hyperparameter_results, "Missing elastic_net results"
-        assert 'adaptive_lasso' in hyperparameter_results, "Missing adaptive_lasso results"
-        assert 'data_info' in hyperparameter_results, "Missing data_info results"
+        assert 'selected_variables' in global_update_results, "Missing selected_variables"
+        assert 'n_selected' in global_update_results, "Missing n_selected"
+        assert 'n_total_variables' in global_update_results, "Missing n_total_variables"
+        assert 'hyperparameter_results' in global_update_results, "Missing hyperparameter_results"
+        assert 'processing_stats' in global_update_results, "Missing processing_stats"
+        assert 'variable_selection_info' in global_update_results, "Missing variable_selection_info"
         
-        # Validate Elastic Net results
-        enet_results = hyperparameter_results['elastic_net']
-        assert 'best_alpha' in enet_results, "Missing best_alpha in elastic_net results"
-        assert 'best_lambda' in enet_results, "Missing best_lambda in elastic_net results"
-        assert enet_results['best_alpha'] in alpha_enet_grid, f"Best alpha {enet_results['best_alpha']} not in grid"
-        assert enet_results['best_lambda'] in lambda_enet_grid, f"Best lambda {enet_results['best_lambda']} not in grid"
+        # Validate selected variables
+        selected_vars = global_update_results['selected_variables']
+        assert isinstance(selected_vars, list), "selected_variables should be a list"
+        assert len(selected_vars) <= global_update_results['n_total_variables'], "Too many variables selected"
         
-        # Validate Adaptive Lasso results
-        ada_results = hyperparameter_results['adaptive_lasso']
-        assert 'best_tau' in ada_results, "Missing best_tau in adaptive_lasso results"
-        assert 'best_lambda' in ada_results, "Missing best_lambda in adaptive_lasso results"
-        assert 'best_bic' in ada_results, "Missing best_bic in adaptive_lasso results"
-        assert ada_results['best_tau'] in tau_adalasso_grid, f"Best tau {ada_results['best_tau']} not in grid"
-        assert ada_results['best_lambda'] in lambda_adalasso_grid, f"Best lambda {ada_results['best_lambda']} not in grid"
-        
-        # Validate data info
-        data_info = hyperparameter_results['data_info']
-        assert 'total_samples' in data_info, "Missing total_samples in data_info"
-        assert 'training_samples' in data_info, "Missing training_samples in data_info"
-        assert 'validation_samples' in data_info, "Missing validation_samples in data_info"
-        assert 'n_features' in data_info, "Missing n_features in data_info"
-        assert 'n_lags' in data_info, "Missing n_lags in data_info"
+        # Validate processing stats
+        stats = global_update_results['processing_stats']
+        assert stats['processed_bars'] > 0, "No adapter bars were processed"
+        assert stats['total_adapter_bars'] > 0, "No adapter bars found"
         
         # Print comprehensive results
         print("\n" + "="*50)
-        print("HYPERPARAMETER TUNING RESULTS")
+        print("GLOBAL UPDATE RESULTS")
         print("="*50)
         
-        print(f"\n🎯 BEST HYPERPARAMETERS:")
-        print(f"   Elastic Net:")
-        print(f"     Alpha (mixing): {enet_results['best_alpha']:.3f}")
-        print(f"     Lambda (regularization): {enet_results['best_lambda']:.3f}")
-        print(f"   Adaptive Lasso:")
-        print(f"     Tau (weight power): {ada_results['best_tau']:.3f}")
-        print(f"     Lambda (regularization): {ada_results['best_lambda']:.3f}")
-        print(f"     Best BIC: {ada_results['best_bic']:.6f}")
+        print(f"\n🎯 VARIABLE SELECTION SUMMARY:")
+        print(f"   Selected variables: {global_update_results['n_selected']}")
+        print(f"   Total variables: {global_update_results['n_total_variables']}")
+        print(f"   Selection rate: {global_update_results['n_selected']/global_update_results['n_total_variables']:.1%}")
+        print(f"   Selection threshold: {global_update_results['selection_threshold']:.1%}")
+        print(f"   Tolerance threshold: {global_update_results['tolerance_threshold']:.2e}")
         
-        print(f"\n📊 DATA INFORMATION:")
-        print(f"   Total samples: {data_info['total_samples']}")
-        print(f"   Training samples: {data_info['training_samples']}")
-        print(f"   Validation samples: {data_info['validation_samples']}")
-        print(f"   Number of features: {data_info['n_features']}")
-        print(f"   Number of lags: {data_info['n_lags']}")
-        print(f"   Validation bars: {len(data_info['validation_bars'])}")
+        print(f"\n📊 PROCESSING STATISTICS:")
+        print(f"   Total adapter bars: {stats['total_adapter_bars']}")
+        print(f"   Successfully processed: {stats['processed_bars']}")
+        print(f"   Failed to process: {stats['failed_bars']}")
+        print(f"   Success rate: {stats['processed_bars']/stats['total_adapter_bars']:.1%}")
+        print(f"   Min bars for selection: {stats['min_bars_for_selection']}")
         
-        print(f"\n⚙️ HYPERPARAMETER GRIDS TESTED:")
-        print(f"   Elastic Net: {len(alpha_enet_grid)} × {len(lambda_enet_grid)} = {len(alpha_enet_grid) * len(lambda_enet_grid)} combinations")
-        print(f"   Adaptive Lasso: {len(tau_adalasso_grid)} × {len(lambda_adalasso_grid)} = {len(tau_adalasso_grid) * len(lambda_adalasso_grid)} combinations")
+        print(f"\n⚙️ HYPERPARAMETER SUMMARY:")
+        hp = global_update_results['hyperparameter_results']
+        enet = hp['elastic_net']
+        ada = hp['adaptive_lasso']
+        print(f"   Elastic Net: α={enet['best_alpha']:.3f}, λ={enet['best_lambda']:.3f}")
+        print(f"   Adaptive Lasso: τ={ada['best_tau']:.3f}, λ={ada['best_lambda']:.3f}")
+        
+        print(f"\n🔍 SELECTED VARIABLES:")
+        for i, var in enumerate(selected_vars[:10], 1):  # Show first 10
+            var_info = global_update_results['variable_selection_info'][var]
+            print(f"   {i:2d}. {var:<30} ({var_info['count']:2d}/{stats['processed_bars']} bars, {var_info['proportion']:.1%})")
+        
+        if len(selected_vars) > 10:
+            print(f"   ... and {len(selected_vars) - 10} more variables")
         
         # Verify interface attributes were set correctly
         print(f"\n🔧 INTERFACE ATTRIBUTES VERIFICATION:")
-        assert interface.best_alpha_enet == enet_results['best_alpha'], "Interface best_alpha_enet not set correctly"
-        assert interface.best_lambda_enet == enet_results['best_lambda'], "Interface best_lambda_enet not set correctly"
-        assert interface.best_tau_adalasso == ada_results['best_tau'], "Interface best_tau_adalasso not set correctly"
-        assert interface.best_lambda_adalasso == ada_results['best_lambda'], "Interface best_lambda_adalasso not set correctly"
-        print(f"   ✓ best_alpha_enet: {interface.best_alpha_enet}")
-        print(f"   ✓ best_lambda_enet: {interface.best_lambda_enet}")
-        print(f"   ✓ best_tau_adalasso: {interface.best_tau_adalasso}")
-        print(f"   ✓ best_lambda_adalasso: {interface.best_lambda_adalasso}")
+        assert hasattr(interface, 'selected_variables'), "Interface missing selected_variables"
+        assert interface.selected_variables == selected_vars, "Interface selected_variables not set correctly"
+        assert hasattr(interface, 'best_alpha_enet'), "Interface missing best_alpha_enet"
+        assert hasattr(interface, 'best_lambda_enet'), "Interface missing best_lambda_enet"
+        assert hasattr(interface, 'best_tau_adalasso'), "Interface missing best_tau_adalasso"
+        assert hasattr(interface, 'best_lambda_adalasso'), "Interface missing best_lambda_adalasso"
+        print(f"   ✓ Selected variables: {len(interface.selected_variables)} variables stored")
+        print(f"   ✓ Hyperparameters: all optimal values stored")
         
         # Verify extended covariate list was created
         assert hasattr(interface, 'extended_covariate_list'), "Interface missing extended_covariate_list"
         assert len(interface.extended_covariate_list) > 0, "Extended covariate list is empty"
-        print(f"   ✓ Extended covariate list created with {len(interface.extended_covariate_list)} features")
+        print(f"   ✓ Extended covariate list: {len(interface.extended_covariate_list)} features")
         
         # Verify data scaler was created
         assert hasattr(interface, 'data_scaler'), "Interface missing data_scaler"
         assert hasattr(interface, 'scaled_variables'), "Interface missing scaled_variables"
-        print(f"   ✓ Data scaler created for {len(interface.scaled_variables)} variables")
+        print(f"   ✓ Data scaler: created for {len(interface.scaled_variables)} variables")
         
-        print(f"\n✅ ALL _update_hyperparameters TESTS PASSED!")
-        print(f"✅ Complete hyperparameter tuning workflow validated successfully!")
+        print(f"\n✅ ALL global_update TESTS PASSED!")
+        print(f"✅ Complete global variable selection workflow validated successfully!")
+        
+        # Test local_adaptation method
+        print("\n" + "="*60)
+        print("TESTING INTERFACE local_adaptation FUNCTION")
+        print("="*60)
+        
+        test_local_adaptation_success = test_local_adaptation(interface, df_pt_reset)
+        
+        if test_local_adaptation_success:
+            print(f"\n✅ ALL TESTS PASSED!")
+            print(f"✅ Both global_update and local_adaptation workflows validated successfully!")
+            return True
+        else:
+            return False
+        
+    except Exception as e:
+        print(f"✗ global_update test failed with error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_local_adaptation(interface: Interface, df_pt_reset: pd.DataFrame) -> bool:
+    """Test the local_adaptation function in the Interface module."""
+    
+    try:
+        print("Starting local_adaptation test...")
+        
+        # Prepare data for local adaptation test
+        print("Preparing data for local adaptation...")
+        
+        # Get augmented data (we need to prepare it as done in global_update)
+        augmented_data = interface._prepare_data(
+            event_driven_backbone_time_bar_data=df_pt_reset,  # Use same data for both
+            physical_time_driven_backbone_time_bar_data=df_pt_reset,
+            quantile=0.005,
+            parsimonious_mode=False,
+            target_col_name='micro_return',
+            n_lags=3
+        )
+        
+        # Get data for specific adapter bars
+        adapter_bars = augmented_data['adapter_bar'].unique()
+        print(f"Available adapter bars: {len(adapter_bars)}")
+        
+        # Test on multiple adapter bars
+        test_adapter_bars = adapter_bars[:3]  # Test first 3 adapter bars
+        local_adaptation_results = []
+        
+        for i, test_adapter_bar in enumerate(test_adapter_bars):
+            print(f"\n--- Testing Local Adaptation {i+1}/{len(test_adapter_bars)} ---")
+            print(f"Adapter Bar: {test_adapter_bar}")
+            
+            # Get data for this specific adapter bar
+            adapter_bar_data = augmented_data[
+                augmented_data['adapter_bar'] == test_adapter_bar
+            ].copy()
+            
+            print(f"Adapter bar data shape: {adapter_bar_data.shape}")
+            
+            # Skip if insufficient data
+            if len(adapter_bar_data) < 20:
+                print(f"Skipping adapter bar {test_adapter_bar}: insufficient data ({len(adapter_bar_data)} samples)")
+                continue
+            
+            # Run local adaptation
+            try:
+                local_result = interface.local_adaptation(
+                    adapter_bar_data=adapter_bar_data,
+                    target_col_name='micro_return',
+                    significance_level=0.05
+                )
+                
+                local_adaptation_results.append({
+                    'adapter_bar': test_adapter_bar,
+                    'result': local_result,
+                    'success': True
+                })
+                
+                print(f"✓ Local adaptation completed for adapter bar {test_adapter_bar}")
+                
+                # Validate results structure
+                assert 'global_variables' in local_result, "Missing global_variables"
+                assert 'local_selected_variables' in local_result, "Missing local_selected_variables"
+                assert 'newly_selected_variables' in local_result, "Missing newly_selected_variables"
+                assert 'final_variables' in local_result, "Missing final_variables"
+                
+                # Print detailed results for this adapter bar
+                print(f"  Global variables: {local_result['n_global']}")
+                print(f"  Local adaptive lasso selected: {local_result['n_local']}")
+                print(f"  Newly selected: {local_result['n_newly_selected']}")
+                print(f"  Final model variables: {local_result['n_final']}")
+                
+                if local_result['wald_test_result']:
+                    wald = local_result['wald_test_result']
+                    print(f"  Wald test p-value: {wald['p_value']:.6f}")
+                    print(f"  Wald test significant: {wald['is_significant']}")
+                else:
+                    print(f"  No Wald test performed (no new variables)")
+                
+            except Exception as e:
+                print(f"✗ Local adaptation failed for adapter bar {test_adapter_bar}: {e}")
+                local_adaptation_results.append({
+                    'adapter_bar': test_adapter_bar,
+                    'result': None,
+                    'success': False,
+                    'error': str(e)
+                })
+        
+        # Summarize results
+        successful_tests = sum(1 for r in local_adaptation_results if r['success'])
+        total_tests = len(local_adaptation_results)
+        
+        print(f"\n" + "="*50)
+        print(f"LOCAL ADAPTATION TEST SUMMARY")
+        print(f"="*50)
+        print(f"Total adapter bars tested: {total_tests}")
+        print(f"Successful tests: {successful_tests}")
+        print(f"Failed tests: {total_tests - successful_tests}")
+        print(f"Success rate: {successful_tests/total_tests:.1%}" if total_tests > 0 else "No tests performed")
+        
+        if successful_tests > 0:
+            # Analyze patterns across successful tests
+            global_var_counts = []
+            local_var_counts = []
+            new_var_counts = []
+            final_var_counts = []
+            wald_significant_count = 0
+            wald_tests_performed = 0
+            
+            for result_data in local_adaptation_results:
+                if result_data['success']:
+                    result = result_data['result']
+                    global_var_counts.append(result['n_global'])
+                    local_var_counts.append(result['n_local'])
+                    new_var_counts.append(result['n_newly_selected'])
+                    final_var_counts.append(result['n_final'])
+                    
+                    if result['wald_test_result']:
+                        wald_tests_performed += 1
+                        if result['wald_test_result']['is_significant']:
+                            wald_significant_count += 1
+            
+            print(f"\n📊 PATTERNS ACROSS SUCCESSFUL TESTS:")
+            print(f"   Global variables (consistent): {global_var_counts[0] if global_var_counts else 0}")
+            print(f"   Local adaptive lasso selected: {np.mean(local_var_counts):.1f} ± {np.std(local_var_counts):.1f}")
+            print(f"   Newly selected variables: {np.mean(new_var_counts):.1f} ± {np.std(new_var_counts):.1f}")
+            print(f"   Final model variables: {np.mean(final_var_counts):.1f} ± {np.std(final_var_counts):.1f}")
+            
+            if wald_tests_performed > 0:
+                print(f"   Wald tests performed: {wald_tests_performed}/{successful_tests}")
+                print(f"   Wald tests significant: {wald_significant_count}/{wald_tests_performed} ({wald_significant_count/wald_tests_performed:.1%})")
+            else:
+                print(f"   No Wald tests performed (no new variables selected)")
+        
+        # Check if at least some tests were successful
+        if successful_tests == 0:
+            print("✗ No local adaptation tests were successful")
+            return False
+        elif successful_tests < total_tests:
+            print(f"⚠️ Some tests failed, but {successful_tests} were successful")
+        
+        print(f"\n✅ LOCAL ADAPTATION TESTS COMPLETED!")
+        print(f"✅ Local adaptation workflow validated successfully!")
         return True
         
     except Exception as e:
-        print(f"✗ _update_hyperparameters test failed with error: {str(e)}")
+        print(f"✗ local_adaptation test failed with error: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
