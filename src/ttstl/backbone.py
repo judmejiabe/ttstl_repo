@@ -1,6 +1,8 @@
 import warnings
 from typing import Optional
 import traceback
+import os
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -9,6 +11,8 @@ from torch.utils.data import DataLoader
 from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm
 
@@ -33,6 +37,11 @@ class Backbone():
         self.delta_sample = delta_sample
         self.full_covariate_list = None
         self.dropped_pairs = dict()
+        
+        # Correlation matrix attributes
+        self.neural_covariates_correlation = None
+        self.manually_extracted_covariates_correlation = None
+        self.cross_correlation_matrix = None
 
     def _one_epoch(self, 
                    train_loader : DataLoader,
@@ -431,6 +440,194 @@ class Backbone():
             traceback.print_exc()
             return {}
     
+    def _compute_correlation_matrices(self,
+                                      neural_covariates_df: pd.DataFrame,
+                                      physical_time_data: pd.DataFrame,
+                                      save_plots: bool = False,
+                                      save_dir: Optional[str] = None) -> None:
+        """Compute and store correlation matrices for neural and manually extracted covariates.
+        
+        Args:
+            neural_covariates_df (pd.DataFrame): DataFrame with neural covariates and timestamp.
+            physical_time_data (pd.DataFrame): DataFrame with manually extracted covariates.
+            save_plots (bool): Whether to save correlation heatmaps to disk.
+            save_dir (Optional[str]): Directory to save plots.
+        """
+        try:
+            print("\n--- Computing Correlation Matrices ---")
+            
+            # Set up save directory
+            if save_plots:
+                if save_dir is None:
+                    save_dir = "runs/test_runs"
+                save_path = Path(save_dir)
+                save_path.mkdir(parents=True, exist_ok=True)
+                print(f"Saving plots to: {save_path}")
+            
+            # Identify neural covariate columns (exclude timestamp)
+            neural_cols = [col for col in neural_covariates_df.columns if col != 'timestamp']
+            
+            # Identify manually extracted covariate columns (exclude timestamp and target if present)
+            manual_cols = [col for col in physical_time_data.columns 
+                          if col not in ['timestamp', 'micro_return'] and 
+                          col not in neural_cols]
+            
+            print(f"Neural covariates: {len(neural_cols)} variables")
+            print(f"Manually extracted covariates: {len(manual_cols)} variables")
+            
+            if len(neural_cols) == 0:
+                print("Warning: No neural covariates found")
+                return
+                
+            if len(manual_cols) == 0:
+                print("Warning: No manually extracted covariates found")
+                return
+            
+            # Merge the data on timestamp for correlation analysis
+            if 'timestamp' in physical_time_data.columns:
+                # Ensure both timestamp columns are the same type (float)
+                physical_time_data = physical_time_data.copy()
+                physical_time_data['timestamp'] = physical_time_data['timestamp'].astype(float)
+                neural_covariates_df = neural_covariates_df.copy()
+                neural_covariates_df['timestamp'] = neural_covariates_df['timestamp'].astype(float)
+                
+                merged_data = pd.merge_asof(
+                    physical_time_data.sort_values('timestamp'),
+                    neural_covariates_df.sort_values('timestamp'),
+                    on='timestamp',
+                    direction='nearest',
+                    tolerance=1e-6
+                )
+            else:
+                # If timestamp is in index
+                physical_reset = physical_time_data.reset_index()
+                if 'timestamp' not in physical_reset.columns:
+                    physical_reset['timestamp'] = physical_reset.index
+                
+                # Ensure both timestamp columns are the same type (float)
+                physical_reset['timestamp'] = physical_reset['timestamp'].astype(float)
+                neural_covariates_df = neural_covariates_df.copy()
+                neural_covariates_df['timestamp'] = neural_covariates_df['timestamp'].astype(float)
+                
+                merged_data = pd.merge_asof(
+                    physical_reset.sort_values('timestamp'),
+                    neural_covariates_df.sort_values('timestamp'),
+                    on='timestamp',
+                    direction='nearest',
+                    tolerance=1e-6
+                )
+            
+            # Drop rows with NaN values
+            merged_data = merged_data.dropna()
+            
+            if len(merged_data) == 0:
+                print("Warning: No valid data after merging")
+                return
+            
+            print(f"Merged data shape: {merged_data.shape}")
+            
+            # Compute correlation matrices
+            # 1. Neural covariates correlation
+            neural_data = merged_data[neural_cols]
+            if len(neural_cols) > 1:
+                self.neural_covariates_correlation = neural_data.corr(method='pearson')
+                print(f"Neural covariates correlation matrix shape: {self.neural_covariates_correlation.shape}")
+            
+            # 2. Manually extracted covariates correlation
+            manual_data = merged_data[manual_cols]
+            if len(manual_cols) > 1:
+                self.manually_extracted_covariates_correlation = manual_data.corr(method='pearson')
+                print(f"Manual covariates correlation matrix shape: {self.manually_extracted_covariates_correlation.shape}")
+            
+            # 3. Cross-correlation between neural and manual covariates
+            all_data = merged_data[neural_cols + manual_cols]
+            if len(neural_cols) > 0 and len(manual_cols) > 0:
+                full_correlation = all_data.corr(method='pearson')
+                # Extract cross-correlation submatrix
+                self.cross_correlation_matrix = full_correlation.loc[neural_cols, manual_cols]
+                print(f"Cross-correlation matrix shape: {self.cross_correlation_matrix.shape}")
+            
+            # Save plots if requested
+            if save_plots:
+                self._save_correlation_heatmaps(save_path, neural_cols, manual_cols)
+            
+            print("--- Correlation Matrices Computation Complete ---\n")
+            
+        except Exception as e:
+            print(f"Error computing correlation matrices: {str(e)}")
+            traceback.print_exc()
+    
+    def _save_correlation_heatmaps(self, save_path: Path, neural_with_extra: list, stationary_with_extra: list, neural_cols: list, stationary_cols: list) -> None:
+        """Save correlation heatmaps to disk.
+        
+        Args:
+            save_path (Path): Directory to save plots.
+            neural_with_extra (list): List of neural covariate + extra covariate column names.
+            stationary_with_extra (list): List of stationary + extra covariate column names.
+            neural_cols (list): List of neural covariate column names only.
+            stationary_cols (list): List of stationary variable column names only.
+        """
+        try:
+            # 1. Neural covariates + extra covariates correlation heatmap
+            if self.neural_covariates_correlation is not None and len(neural_with_extra) > 1:
+                fig, ax = plt.subplots(figsize=(12, 10))
+                sns.heatmap(self.neural_covariates_correlation, annot=False, cmap='coolwarm',
+                           ax=ax, vmin=-1, vmax=1)
+                
+                # Set tick positions and labels
+                ax.set_xticks(np.arange(len(neural_with_extra)) + 0.5)
+                ax.set_xticklabels(neural_with_extra, rotation=90, ha='center', fontsize=6)
+                ax.set_yticks(np.arange(len(neural_with_extra)) + 0.5)
+                ax.set_yticklabels(neural_with_extra, rotation=0, fontsize=6)
+                
+                ax.set_title('Neural Covariates + Extra Variables Correlation Matrix')
+                plt.tight_layout()
+                plt.savefig(save_path / 'neural_covariates_correlation_matrix.png', dpi=300, bbox_inches='tight')
+                plt.close()
+                print("Saved neural covariates + extra variables correlation heatmap")
+            
+            # 2. Stationary variables + extra covariates correlation heatmap
+            if self.manually_extracted_covariates_correlation is not None and len(stationary_with_extra) > 1:
+                fig, ax = plt.subplots(figsize=(12, 10))
+                sns.heatmap(self.manually_extracted_covariates_correlation, annot=False, cmap='coolwarm',
+                           ax=ax, vmin=-1, vmax=1)
+                
+                # Set tick positions and labels
+                ax.set_xticks(np.arange(len(stationary_with_extra)) + 0.5)
+                ax.set_xticklabels(stationary_with_extra, rotation=90, ha='center', fontsize=6)
+                ax.set_yticks(np.arange(len(stationary_with_extra)) + 0.5)
+                ax.set_yticklabels(stationary_with_extra, rotation=0, fontsize=6)
+                
+                ax.set_title('Stationary + Extra Variables Correlation Matrix')
+                plt.tight_layout()
+                plt.savefig(save_path / 'stationary_variables_correlation_matrix.png', dpi=300, bbox_inches='tight')
+                plt.close()
+                print("Saved stationary + extra variables correlation heatmap")
+            
+            # 3. Cross-correlation heatmap (neural vs stationary only, no extra variables)
+            if self.cross_correlation_matrix is not None and len(neural_cols) > 0 and len(stationary_cols) > 0:
+                fig, ax = plt.subplots(figsize=(14, 10))
+                sns.heatmap(self.cross_correlation_matrix, annot=False, cmap='coolwarm',
+                           ax=ax, vmin=-1, vmax=1)
+                
+                # Set tick positions and labels
+                ax.set_xticks(np.arange(len(stationary_cols)) + 0.5)
+                ax.set_xticklabels(stationary_cols, rotation=90, ha='center', fontsize=6)
+                ax.set_yticks(np.arange(len(neural_cols)) + 0.5)
+                ax.set_yticklabels(neural_cols, rotation=0, fontsize=6)
+                
+                ax.set_title('Cross-Correlation Matrix (Neural vs Stationary Variables)')
+                ax.set_xlabel('Stationary Variables')
+                ax.set_ylabel('Neural Covariates')
+                plt.tight_layout()
+                plt.savefig(save_path / 'cross_correlation_matrix.png', dpi=300, bbox_inches='tight')
+                plt.close()
+                print("Saved cross-correlation heatmap")
+            
+        except Exception as e:
+            print(f"Error saving correlation heatmaps: {str(e)}")
+            traceback.print_exc()
+    
     
     def global_update(self,
                       event_driven_backbone_time_bar_data : pd.DataFrame,
@@ -645,6 +842,84 @@ class Backbone():
             raise ValueError("No physical time-driven data provided for neural covariate extraction")
 
         print("--- Neural Network Covariate Construction Complete ---\n")
+
+        # Add extra covariates for correlation analysis
+        print("\n--- Adding Extra Covariates for Correlation Analysis ---")
+        extra_covariates = []
+        
+        # Calculate micro return if micro column exists
+        if 'micro' in augmented_physical_data.columns:
+            augmented_physical_data['micro_return'] = augmented_physical_data['micro'].pct_change() * 1e3
+            augmented_physical_data['micro_return_squared'] = augmented_physical_data['micro_return'] ** 2
+            extra_covariates.extend(['micro_return', 'micro_return_squared'])
+            print(f"Added micro return covariates: micro_return, micro_return_squared")
+        
+        # Add any other extra covariates here as needed
+        
+        print(f"Total extra covariates added: {len(extra_covariates)}")
+        print("--- Extra Covariates Addition Complete ---\n")
+
+        # Compute and save correlation matrices for stationary variables and neural covariates
+        print("\n--- Computing Correlation Matrices ---")
+        if self.full_covariate_list and len(self.full_covariate_list) > 1:
+            # Get stationary variables (excluding neural covariates)
+            neural_covariate_columns = [col for col in neural_covariates.columns if col != 'timestamp']
+            stationary_variables = [var for var in self.full_covariate_list if var not in neural_covariate_columns]
+            
+            # Include extra covariates that are available in the data
+            available_extra_covariates = [var for var in extra_covariates if var in augmented_physical_data.columns]
+            
+            print(f"Stationary variables: {len(stationary_variables)} variables")
+            print(f"Neural covariates: {len(neural_covariate_columns)} variables")
+            print(f"Extra covariates: {len(available_extra_covariates)} variables")
+            if available_extra_covariates:
+                print(f"  Extra covariates: {available_extra_covariates}")
+            
+            # Only proceed if we have variables to analyze
+            if len(stationary_variables) > 0 or len(neural_covariate_columns) > 0:
+                
+                # Prepare correlation data including extra covariates
+                correlation_variables = available_extra_covariates + stationary_variables + neural_covariate_columns
+                correlation_data = augmented_physical_data[correlation_variables].copy()
+                
+                # Drop rows with NaN values (important for micro returns)
+                correlation_data = correlation_data.dropna()
+                print(f"Correlation data shape after dropping NaN: {correlation_data.shape}")
+                
+                # Compute correlation matrices
+                # 1. Stationary variables + extra covariates correlation
+                stationary_with_extra = available_extra_covariates + stationary_variables
+                if len(stationary_with_extra) > 1:
+                    stationary_data = correlation_data[stationary_with_extra]
+                    self.manually_extracted_covariates_correlation = stationary_data.corr(method='pearson')
+                    print(f"Stationary + extra variables correlation matrix shape: {self.manually_extracted_covariates_correlation.shape}")
+                
+                # 2. Neural covariates + extra covariates correlation  
+                neural_with_extra = available_extra_covariates + neural_covariate_columns
+                if len(neural_with_extra) > 1:
+                    neural_data = correlation_data[neural_with_extra]
+                    self.neural_covariates_correlation = neural_data.corr(method='pearson')
+                    print(f"Neural + extra variables correlation matrix shape: {self.neural_covariates_correlation.shape}")
+                
+                # 3. Cross-correlation between neural and stationary variables (NO extra covariates)
+                if len(neural_covariate_columns) > 0 and len(stationary_variables) > 0:
+                    cross_correlation_data = correlation_data[neural_covariate_columns + stationary_variables]
+                    full_correlation = cross_correlation_data.corr(method='pearson')
+                    # Extract cross-correlation submatrix (neural vs stationary only)
+                    self.cross_correlation_matrix = full_correlation.loc[neural_covariate_columns, stationary_variables]
+                    print(f"Cross-correlation matrix shape: {self.cross_correlation_matrix.shape}")
+                
+                # Save correlation heatmaps
+                save_path = Path("runs/test_runs")
+                save_path.mkdir(parents=True, exist_ok=True)
+                self._save_correlation_heatmaps(save_path, neural_with_extra, stationary_with_extra, neural_covariate_columns, stationary_variables)
+                
+            else:
+                print("Warning: No variables available for correlation analysis")
+        else:
+            print("Warning: Insufficient variables for correlation analysis")
+        
+        print("--- Correlation Matrices Computation Complete ---\n")
 
         # Drop highly correlated variables from the augmented dataset
         print("\n--- Dropping Highly Correlated Variables ---")

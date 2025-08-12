@@ -125,6 +125,8 @@ def main():
     try:
         # Run global_update with neural covariate extraction and stationarity analysis
         print("\nRunning global_update with neural covariate extraction and stationarity analysis...")
+        print("📊 Correlation matrix plots will be saved to runs/test_runs/")
+        
         best_validation_loss = backbone_update.global_update(
             event_driven_backbone_time_bar_data=df_edlob_for_update,
             physical_time_driven_backbone_time_bar_data=df_pt_for_update,
@@ -146,6 +148,33 @@ def main():
         
         print(f"\n✓ Global update completed successfully!")
         
+        # Print information about the computed correlation matrices
+        print("\n" + "="*50)
+        print("CORRELATION MATRIX ANALYSIS RESULTS")
+        print("="*50)
+        
+        if backbone_update.neural_covariates_correlation is not None:
+            print(f"✓ Neural + extra variables correlation matrix computed: {backbone_update.neural_covariates_correlation.shape}")
+            print(f"  Shape: {backbone_update.neural_covariates_correlation.shape}")
+            print(f"  Range: [{backbone_update.neural_covariates_correlation.min().min():.3f}, {backbone_update.neural_covariates_correlation.max().max():.3f}]")
+        else:
+            print("✗ Neural + extra variables correlation matrix not computed")
+            
+        if backbone_update.manually_extracted_covariates_correlation is not None:
+            print(f"✓ Stationary + extra variables correlation matrix computed: {backbone_update.manually_extracted_covariates_correlation.shape}")
+            print(f"  Shape: {backbone_update.manually_extracted_covariates_correlation.shape}")
+            print(f"  Range: [{backbone_update.manually_extracted_covariates_correlation.min().min():.3f}, {backbone_update.manually_extracted_covariates_correlation.max().max():.3f}]")
+        else:
+            print("✗ Stationary + extra variables correlation matrix not computed")
+            
+        if backbone_update.cross_correlation_matrix is not None:
+            print(f"✓ Cross-correlation matrix computed: {backbone_update.cross_correlation_matrix.shape}")
+            print(f"  Shape: {backbone_update.cross_correlation_matrix.shape}")
+            print(f"  Range: [{backbone_update.cross_correlation_matrix.min().min():.3f}, {backbone_update.cross_correlation_matrix.max().max():.3f}]")
+        else:
+            print("✗ Cross-correlation matrix not computed")
+        
+        print("="*50)
         
 
     except Exception as e:

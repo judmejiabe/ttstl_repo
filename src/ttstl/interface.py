@@ -1139,14 +1139,12 @@ class Interface:
             try:
                 wald_statistic = float(new_var_coefs.T @ np.linalg.inv(new_var_cov) @ new_var_coefs)
             except np.linalg.LinAlgError:
-                # Use pseudo-inverse if matrix is singular
-                wald_statistic = float(new_var_coefs.T @ np.linalg.pinv(new_var_cov) @ new_var_coefs)
+                raise RuntimeError("Covariance matrix is singular, cannot compute Wald statistic")
             
             # Degrees of freedom = number of newly selected variables
             df = len(newly_selected_variables)
             
             # P-value from chi-squared distribution
-            from scipy.stats import chi2
             p_value = 1 - chi2.cdf(wald_statistic, df)
             
             is_significant = p_value < significance_level

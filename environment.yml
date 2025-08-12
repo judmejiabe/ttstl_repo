@@ -10,6 +10,8 @@ dependencies:
   - pyarrow>=5.0.0
   - jupyter
   - jupyterlab
+  - matplotlib
+  - seaborn
   - r-base>=4.0.0
   - r-urca
   - r-funitroots

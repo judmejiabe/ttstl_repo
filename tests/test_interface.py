@@ -98,17 +98,18 @@ def main():
     df_pt = df_ptlob.merge(df_ptme, on='timestamp', how='inner')
     df_pt = df_pt.merge(ofi_df, on='timestamp', how='inner')
     
-    # REDUCE DATASET SIZE: Use only first 10% of timestamps for faster testing
-    print("Reducing dataset size to first 10% of timestamps for faster testing...")
+    # REDUCE DATASET SIZE for faster testing
+    reduction_factor = 0.1
+    print(f"Reducing dataset size to first {int(reduction_factor*100)}% of timestamps for faster testing...")
     
     # Get timestamp range for event-driven data
     edlob_min_ts, edlob_max_ts = df_edlob['timestamp'].min(), df_edlob['timestamp'].max()
-    edlob_cutoff = edlob_min_ts + 0.1 * (edlob_max_ts - edlob_min_ts)
+    edlob_cutoff = edlob_min_ts + reduction_factor * (edlob_max_ts - edlob_min_ts)
     
     # Get timestamp range for physical time data  
     pt_min_ts, pt_max_ts = df_pt['timestamp'].min(), df_pt['timestamp'].max()
-    pt_cutoff = pt_min_ts + 0.1 * (pt_max_ts - pt_min_ts)
-    
+    pt_cutoff = pt_min_ts + reduction_factor * (pt_max_ts - pt_min_ts)
+
     # Filter to first 10% of data
     df_edlob = df_edlob[df_edlob['timestamp'] <= edlob_cutoff].copy()
     df_pt = df_pt[df_pt['timestamp'] <= pt_cutoff].copy()
