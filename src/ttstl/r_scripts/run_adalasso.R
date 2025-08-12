@@ -15,7 +15,7 @@ run_adalasso <- function(y, X, alpha_enet, lambda_enet,
   # 4.2 Form penalty weights
   coef_enet <- as.numeric(coef(enet_fit))
   beta_init <- coef_enet[-1]
-  eps       <- 1e-8
+  eps       <- 1e-6
   w         <- 1 / (abs(beta_init) + eps)^tau_adalasso
   
   # 4.3 Adaptive LASSO fit

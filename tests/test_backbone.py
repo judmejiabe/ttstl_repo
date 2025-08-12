@@ -92,6 +92,26 @@ def main():
     
     df_pt = df_ptlob.merge(df_ptme, on = 'timestamp', how = 'inner')
     df_pt = df_pt.merge(ofi_df, on = 'timestamp', how = 'inner')
+    
+    # REDUCE DATASET SIZE for faster testing
+    reduction_factor = 0.1
+    print(f"Reducing dataset size to first {int(reduction_factor*100)}% of timestamps for faster testing...")
+    
+    # Get timestamp range for event-driven data
+    edlob_min_ts, edlob_max_ts = df_edlob['timestamp'].min(), df_edlob['timestamp'].max()
+    edlob_cutoff = edlob_min_ts + reduction_factor * (edlob_max_ts - edlob_min_ts)
+    
+    # Get timestamp range for physical time data  
+    pt_min_ts, pt_max_ts = df_pt['timestamp'].min(), df_pt['timestamp'].max()
+    pt_cutoff = pt_min_ts + reduction_factor * (pt_max_ts - pt_min_ts)
+
+    # Filter to first 10% of data
+    df_edlob = df_edlob[df_edlob['timestamp'] <= edlob_cutoff].copy()
+    df_pt = df_pt[df_pt['timestamp'] <= pt_cutoff].copy()
+    
+    print(f"Event-driven data reduced from full dataset to {len(df_edlob):,} samples")
+    print(f"Physical time data reduced from full dataset to {len(df_pt):,} samples")
+    
     df_pt.set_index('timestamp', inplace=True)
 
     for i, var in enumerate(df_pt.columns):

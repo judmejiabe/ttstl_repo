@@ -10,11 +10,19 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
+from rpy2.rinterface_lib import callbacks
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm
+
+# Suppress R console output to reduce noise from stationarity tests
+def nullify_output(x):
+    pass
+
+callbacks.consolewrite_print = nullify_output
+callbacks.consolewrite_warnerror = nullify_output
 
 urca = importr('urca')
 fUnitRoots = importr('fUnitRoots')

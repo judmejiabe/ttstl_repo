@@ -17,6 +17,8 @@ dependencies:
   - r-funitroots
   - r-glmnet
   - r-rugarch
+  - r-weightedporttest
+  - r-ggplot2
   - rpy2>=3.4.0
   - pip
   - pip:
