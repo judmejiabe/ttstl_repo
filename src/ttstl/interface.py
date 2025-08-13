@@ -83,7 +83,6 @@ class Interface:
                       event_driven_backbone_time_bar_data: pd.DataFrame,
                       physical_time_driven_backbone_time_bar_data: pd.DataFrame, 
                       quantile: float = 0.005,
-                      parsimonious_mode: bool = False,
                       target_col_name: str = 'micro_return',
                       n_lags: int = 5) -> pd.DataFrame:
         """
@@ -94,7 +93,6 @@ class Interface:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
             quantile: Winsorization quantile for neural covariate extraction
-            parsimonious_mode: Whether to use parsimonious mode for neural covariate extraction
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             
@@ -110,7 +108,7 @@ class Interface:
             event_driven_data=event_driven_backbone_time_bar_data,
             physical_time_data=physical_time_driven_backbone_time_bar_data,
             quantile=quantile,
-            parsimonious_mode=parsimonious_mode
+            parsimonious_mode=self.backbone.parsimonious_mode
         )
 
         # Ensure timestamp columns are float type for proper merging
@@ -535,7 +533,6 @@ class Interface:
                                  event_driven_backbone_time_bar_data: pd.DataFrame,
                                  physical_time_driven_backbone_time_bar_data: pd.DataFrame,
                                  quantile: float = 0.005,
-                                 parsimonious_mode: bool = False,
                                  target_col_name: str = 'micro_return',
                                  n_lags: int = 5,
                                  validation_proportion: float = 0.2) -> Dict:
@@ -552,7 +549,6 @@ class Interface:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
             quantile: Winsorization quantile for neural covariate extraction
-            parsimonious_mode: Whether to use parsimonious mode for neural covariate extraction
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             validation_proportion: Proportion of adapter bars to use for validation
@@ -568,7 +564,6 @@ class Interface:
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
             quantile=quantile,
-            parsimonious_mode=parsimonious_mode,
             target_col_name=target_col_name,
             n_lags=n_lags
         )
@@ -659,7 +654,6 @@ class Interface:
                       event_driven_backbone_time_bar_data: pd.DataFrame,
                       physical_time_driven_backbone_time_bar_data: pd.DataFrame,
                       quantile: float = 0.005,
-                      parsimonious_mode: bool = False,
                       target_col_name: str = 'micro_return',
                       n_lags: int = 5,
                       validation_proportion: float = 0.2,
@@ -680,7 +674,6 @@ class Interface:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
             quantile: Winsorization quantile for neural covariate extraction
-            parsimonious_mode: Whether to use parsimonious mode for neural covariate extraction
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             validation_proportion: Proportion of adapter bars to use for validation in hyperparameter tuning
@@ -701,7 +694,6 @@ class Interface:
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
             quantile=quantile,
-            parsimonious_mode=parsimonious_mode,
             target_col_name=target_col_name,
             n_lags=n_lags,
             validation_proportion=validation_proportion
@@ -724,7 +716,6 @@ class Interface:
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
             quantile=quantile,
-            parsimonious_mode=parsimonious_mode,
             target_col_name=target_col_name,
             n_lags=n_lags
         )

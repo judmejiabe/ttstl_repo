@@ -33,16 +33,20 @@ class Backbone():
     def __init__(self, 
                  model : nn.Module, 
                  delta_adapter : float = 0.0,
-                 delta_sample : float = 0.0) -> None:
+                 delta_sample : float = 0.0,
+                 parsimonious_mode : bool = False) -> None:
         """Initialize the Backbone with a model and delta adapter.
         Args:
             model (nn.Module): The neural network model to be used.
             delta_adapter (float, optional): Adapter time bar length in the same units of time as the data.
+            delta_sample (float, optional): Sample time bar length in the same units of time as the data.
+            parsimonious_mode (bool, optional): Whether to use parsimonious mode for neural covariate extraction.
         """
         self.model = model
         self.device = next(self.model.parameters()).device
         self.delta_adapter = delta_adapter
         self.delta_sample = delta_sample
+        self.parsimonious_mode = parsimonious_mode
         self.full_covariate_list = None
         self.dropped_pairs = dict()
         
@@ -50,6 +54,11 @@ class Backbone():
         self.neural_covariates_correlation = None
         self.manually_extracted_covariates_correlation = None
         self.cross_correlation_matrix = None
+        
+        # Variable lists for heatmap plotting (stored for external plotting)
+        self.neural_covariate_columns = None
+        self.stationary_variables = None
+        self.available_extra_covariates = None
 
     def _one_epoch(self, 
                    train_loader : DataLoader,
@@ -565,6 +574,42 @@ class Backbone():
             print(f"Error computing correlation matrices: {str(e)}")
             traceback.print_exc()
     
+    def save_correlation_heatmaps(self, save_dir: str = "runs/test_runs") -> None:
+        """Save correlation heatmaps to disk using stored correlation matrices and variable lists.
+        
+        This method can be called externally to save the correlation heatmaps after global_update
+        has been run and correlation matrices have been computed.
+        
+        Args:
+            save_dir (str): Directory to save plots. Defaults to "runs/test_runs".
+        """
+        if self.neural_covariates_correlation is None:
+            print("Warning: No correlation matrices computed yet. Run global_update first.")
+            return
+        
+        if (self.neural_covariate_columns is None or 
+            self.stationary_variables is None or 
+            self.available_extra_covariates is None):
+            print("Warning: Variable lists not stored. Cannot generate heatmaps.")
+            return
+        
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        
+        if self.parsimonious_mode:
+            # For parsimonious mode, create combined variable list
+            parsimonious_variables = (self.available_extra_covariates + 
+                                    self.neural_covariate_columns + 
+                                    self.stationary_variables)
+            self._save_correlation_heatmaps(save_path, parsimonious_variables, [], 
+                                          self.neural_covariate_columns, self.stationary_variables)
+        else:
+            # For non-parsimonious mode, use separate matrices
+            neural_with_extra = self.available_extra_covariates + self.neural_covariate_columns
+            stationary_with_extra = self.available_extra_covariates + self.stationary_variables
+            self._save_correlation_heatmaps(save_path, neural_with_extra, stationary_with_extra,
+                                          self.neural_covariate_columns, self.stationary_variables)
+    
     def _save_correlation_heatmaps(self, save_path: Path, neural_with_extra: list, stationary_with_extra: list, neural_cols: list, stationary_cols: list) -> None:
         """Save correlation heatmaps to disk.
         
@@ -576,6 +621,26 @@ class Backbone():
             stationary_cols (list): List of stationary variable column names only.
         """
         try:
+            # Handle parsimonious mode: single correlation matrix with structured variable order
+            if self.parsimonious_mode and self.neural_covariates_correlation is not None and len(neural_with_extra) > 1:
+                fig, ax = plt.subplots(figsize=(14, 12))
+                sns.heatmap(self.neural_covariates_correlation, annot=False, cmap='coolwarm',
+                           ax=ax, vmin=-1, vmax=1)
+                
+                # Set tick positions and labels for the combined matrix
+                ax.set_xticks(np.arange(len(neural_with_extra)) + 0.5)
+                ax.set_xticklabels(neural_with_extra, rotation=90, ha='center', fontsize=6)
+                ax.set_yticks(np.arange(len(neural_with_extra)) + 0.5)
+                ax.set_yticklabels(neural_with_extra, rotation=0, fontsize=6)
+                
+                ax.set_title('Parsimonious Mode: Combined Correlation Matrix\n(Extra Covariates → Neural Covariates → Stationary Variables)')
+                plt.tight_layout()
+                plt.savefig(save_path / 'parsimonious_correlation_matrix.png', dpi=300, bbox_inches='tight')
+                plt.close()
+                print("Saved parsimonious mode correlation heatmap")
+                return  # Exit early for parsimonious mode
+            
+            # Handle non-parsimonious mode: separate correlation matrices
             # 1. Neural covariates + extra covariates correlation heatmap
             if self.neural_covariates_correlation is not None and len(neural_with_extra) > 1:
                 fig, ax = plt.subplots(figsize=(12, 10))
@@ -651,7 +716,6 @@ class Backbone():
                       kpss_verification_threshold: float = 0.2,
                       na_verification_threshold: float = 0.1,
                       kpss_drop: bool = True,
-                      parsimonious_mode: bool = False,
                       correlation_threshold: float = 0.95,
                       target_col_name: str = 'micro_return') -> float:
         """Perform global update of the model with time-based train/validation split.
@@ -674,7 +738,6 @@ class Backbone():
             kpss_verification_threshold (float, optional): KPSS verification threshold. Defaults to 0.2.
             na_verification_threshold (float, optional): NA verification threshold. Defaults to 0.1.
             kpss_drop (bool, optional): Whether to use strict KPSS dropping. Defaults to True.
-            parsimonious_mode (bool, optional): If True, use forward pass output; if False, use hidden activations. Defaults to False.
             correlation_threshold (float, optional): Threshold for dropping highly correlated variables. Defaults to 0.95.
             target_col_name (str, optional): Name of the target variable column. Defaults to 'micro_return'.
         Returns:
@@ -815,7 +878,7 @@ class Backbone():
                 event_driven_data=data,
                 physical_time_data=physical_time_driven_backbone_time_bar_data,
                 quantile=quantile,
-                parsimonious_mode=parsimonious_mode
+                parsimonious_mode=self.parsimonious_mode
             )
 
             print(f"Neural covariates extracted with shape: {neural_covariates.shape}") # Debugging output
@@ -894,33 +957,57 @@ class Backbone():
                 correlation_data = correlation_data.dropna()
                 print(f"Correlation data shape after dropping NaN: {correlation_data.shape}")
                 
-                # Compute correlation matrices
-                # 1. Stationary variables + extra covariates correlation
-                stationary_with_extra = available_extra_covariates + stationary_variables
-                if len(stationary_with_extra) > 1:
-                    stationary_data = correlation_data[stationary_with_extra]
-                    self.manually_extracted_covariates_correlation = stationary_data.corr(method='pearson')
-                    print(f"Stationary + extra variables correlation matrix shape: {self.manually_extracted_covariates_correlation.shape}")
+                # Compute correlation matrices based on parsimonious mode
+                if self.parsimonious_mode:
+                    # Parsimonious mode: Create single correlation matrix with neural covariates below extra covariates
+                    print("Using parsimonious mode: creating single correlation matrix")
+                    
+                    # Arrange variables: extra covariates first, then neural covariates, then stationary variables
+                    parsimonious_variables = available_extra_covariates + neural_covariate_columns + stationary_variables
+                    
+                    if len(parsimonious_variables) > 1:
+                        parsimonious_data = correlation_data[parsimonious_variables]
+                        self.neural_covariates_correlation = parsimonious_data.corr(method='pearson')
+                        print(f"Parsimonious correlation matrix shape: {self.neural_covariates_correlation.shape}")
+                        print(f"Variable order: {len(available_extra_covariates)} extra + {len(neural_covariate_columns)} neural + {len(stationary_variables)} stationary")
+                    
+                    # Set other matrices to None since we only use one matrix in parsimonious mode
+                    self.manually_extracted_covariates_correlation = None
+                    self.cross_correlation_matrix = None
+                    
+                else:
+                    # Non-parsimonious mode: Create separate correlation matrices as before
+                    print("Using full mode: creating separate correlation matrices")
+                    
+                    # 1. Stationary variables + extra covariates correlation
+                    stationary_with_extra = available_extra_covariates + stationary_variables
+                    if len(stationary_with_extra) > 1:
+                        stationary_data = correlation_data[stationary_with_extra]
+                        self.manually_extracted_covariates_correlation = stationary_data.corr(method='pearson')
+                        print(f"Stationary + extra variables correlation matrix shape: {self.manually_extracted_covariates_correlation.shape}")
+                    
+                    # 2. Neural covariates + extra covariates correlation  
+                    neural_with_extra = available_extra_covariates + neural_covariate_columns
+                    if len(neural_with_extra) > 1:
+                        neural_data = correlation_data[neural_with_extra]
+                        self.neural_covariates_correlation = neural_data.corr(method='pearson')
+                        print(f"Neural + extra variables correlation matrix shape: {self.neural_covariates_correlation.shape}")
+                    
+                    # 3. Cross-correlation between neural and stationary variables (NO extra covariates)
+                    if len(neural_covariate_columns) > 0 and len(stationary_variables) > 0:
+                        cross_correlation_data = correlation_data[neural_covariate_columns + stationary_variables]
+                        full_correlation = cross_correlation_data.corr(method='pearson')
+                        # Extract cross-correlation submatrix (neural vs stationary only)
+                        self.cross_correlation_matrix = full_correlation.loc[neural_covariate_columns, stationary_variables]
+                        print(f"Cross-correlation matrix shape: {self.cross_correlation_matrix.shape}")
                 
-                # 2. Neural covariates + extra covariates correlation  
-                neural_with_extra = available_extra_covariates + neural_covariate_columns
-                if len(neural_with_extra) > 1:
-                    neural_data = correlation_data[neural_with_extra]
-                    self.neural_covariates_correlation = neural_data.corr(method='pearson')
-                    print(f"Neural + extra variables correlation matrix shape: {self.neural_covariates_correlation.shape}")
+                # Store variable lists for external heatmap generation
+                self.neural_covariate_columns = neural_covariate_columns
+                self.stationary_variables = stationary_variables  
+                self.available_extra_covariates = available_extra_covariates
                 
-                # 3. Cross-correlation between neural and stationary variables (NO extra covariates)
-                if len(neural_covariate_columns) > 0 and len(stationary_variables) > 0:
-                    cross_correlation_data = correlation_data[neural_covariate_columns + stationary_variables]
-                    full_correlation = cross_correlation_data.corr(method='pearson')
-                    # Extract cross-correlation submatrix (neural vs stationary only)
-                    self.cross_correlation_matrix = full_correlation.loc[neural_covariate_columns, stationary_variables]
-                    print(f"Cross-correlation matrix shape: {self.cross_correlation_matrix.shape}")
-                
-                # Save correlation heatmaps
-                save_path = Path("runs/test_runs")
-                save_path.mkdir(parents=True, exist_ok=True)
-                self._save_correlation_heatmaps(save_path, neural_with_extra, stationary_with_extra, neural_covariate_columns, stationary_variables)
+                print("Correlation matrices computed and stored as attributes.")
+                print("Call save_correlation_heatmaps() method to generate and save heatmap plots.")
                 
             else:
                 print("Warning: No variables available for correlation analysis")

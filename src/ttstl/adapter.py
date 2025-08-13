@@ -167,7 +167,6 @@ class Adapter:
                        adapter_bar_number: int,
                        target_col_name: str = 'micro_return',
                        quantile: float = 0.005,
-                       parsimonious_mode: bool = False,
                        update_parameters: Optional[dict] = None) -> dict:
         """
         Update adapter parameters by fitting GARCH model on new data from an adapter time bar.
@@ -184,8 +183,6 @@ class Adapter:
             Name of the target variable column (default: 'micro_return')
         quantile : float, optional
             Winsorization quantile for neural covariate extraction
-        parsimonious_mode : bool, optional
-            Whether to use parsimonious mode for neural covariate extraction
         update_parameters : dict, optional
             Additional parameters for the update method
             
@@ -212,7 +209,6 @@ class Adapter:
                 event_driven_backbone_time_bar_data=event_driven_adapter_time_bar_data,
                 physical_time_driven_backbone_time_bar_data=physical_time_driven_adapter_time_bar_data,
                 quantile=quantile,
-                parsimonious_mode=parsimonious_mode,
                 target_col_name=target_col_name,
                 n_lags=0  # No lags for adapter update
             )

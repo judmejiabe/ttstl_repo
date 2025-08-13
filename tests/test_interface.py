@@ -48,7 +48,8 @@ def main():
     # Initialize backbone with adapter delta
     backbone = Backbone(model=model, 
                         delta_adapter=100000.0,
-                        delta_sample=100.0)
+                        delta_sample=100.0,
+                        parsimonious_mode=False)
 
     criterion = torch.nn.MSELoss(reduction = 'sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -146,7 +147,6 @@ def main():
             kpss_verification_threshold=0.2,
             na_verification_threshold=0.1,
             kpss_drop=True,
-            parsimonious_mode=False,
             correlation_threshold=0.95
         )
         print("✓ Backbone global_update completed successfully")
@@ -181,7 +181,6 @@ def main():
             event_driven_backbone_time_bar_data=df_edlob,
             physical_time_driven_backbone_time_bar_data=df_pt_reset,
             quantile=0.005,
-            parsimonious_mode=False,
             target_col_name='micro_return',
             n_lags=3,  # Use fewer lags for faster testing
             validation_proportion=0.2,
@@ -303,7 +302,6 @@ def test_local_adaptation(interface: Interface, df_pt_reset: pd.DataFrame) -> bo
             event_driven_backbone_time_bar_data=df_pt_reset,  # Use same data for both
             physical_time_driven_backbone_time_bar_data=df_pt_reset,
             quantile=0.005,
-            parsimonious_mode=False,
             target_col_name='micro_return',
             n_lags=3
         )

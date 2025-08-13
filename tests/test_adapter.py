@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
 Simple test for TTSTL Adapter update_adapter and forecast methods.
-Tests update_adapter function iterating over the first 5 adapter bars,
+Tests update_adapter f        backbone.global_update(
+            event_driven_backbone_time_bar_data=ofi_df,
+            physical_time_driven_backbone_time_bar_data=df_pt,
+            criterion=criterion,
+            optimizer=optimizer,
+            epochs=0,  # Skip training
+            validation_proportion=0.1,
+            buffer_proportion=0.05,
+            correlation_threshold=0.95
+        )rating over the first 5 adapter bars,
 and tests forecast method using data from one adapter bar to forecast the next.
 """
 
@@ -60,7 +69,7 @@ def main():
     dataset_train = get_dataset_cnn_lstm(df_train, delta=100, quantile=None)
     train_loader = DataLoader(dataset_train, batch_size=32, shuffle=False, num_workers=4)
     
-    backbone = Backbone(model=model, delta_adapter=100000.0, delta_sample=100.0)
+    backbone = Backbone(model=model, delta_adapter=100000.0, delta_sample=100.0, parsimonious_mode=False)
     criterion = torch.nn.MSELoss(reduction='sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     
@@ -122,7 +131,6 @@ def main():
             epochs=0,  # Skip training
             validation_proportion=0.1,
             buffer_proportion=0.05,
-            parsimonious_mode=False,
             correlation_threshold=0.95
         )
         print(f"✓ Backbone found {len(backbone.full_covariate_list)} stationary variables")
