@@ -9,6 +9,8 @@ import os
 # Activate pandas to R conversion
 pandas2ri.activate()
 
+rugarch = importr('rugarch')
+
 class Adapter:
     def __init__(self, 
                  interface,
@@ -27,6 +29,7 @@ class Adapter:
         self.model = model
         self.archm = archm
         self.parameters = parameters
+        self.spec = None  # To store GARCH specification
 
     def _update_myopic(self, new_parameters: dict):
         self.parameters = new_parameters
@@ -110,21 +113,24 @@ class Adapter:
             'display': False  # Don't generate plots in batch processing
         }
         
-        #if self.parameters:
-        #    r_params['start_pars'] = ro.ListVector(self.parameters)
+        if self.parameters:
+           r_params['start_pars'] = ro.ListVector(self.parameters)
+
 
         # Call the R function
         r_result = run_garch_model(y = y,
-                                    X = ro.NULL if X is None else X,
-                                    Z = ro.NULL if Z is None else Z,
-                                    p = self.arma_order[0],
-                                    q = self.arma_order[1],
-                                    m = self.garch_order[0],
-                                    s = self.garch_order[1],
-                                    archm = self.archm,
-                                    dist = self.dist,
-                                    out_sample = out_sample,
-                                    display = False)
+                        X = ro.NULL if X is None else X,
+                        Z = ro.NULL if Z is None else Z,
+                        p = self.arma_order[0],
+                        q = self.arma_order[1],
+                        m = self.garch_order[0],
+                        s = self.garch_order[1],
+                        archm = self.archm,
+                        dist = self.dist,
+                        model = self.model,
+                        start_pars = ro.ListVector({}) if not self.parameters else r_params['start_pars'],
+                        out_sample = out_sample,
+                        display = False)
 
         # Convert R results back to Python dictionary
         result_dict = {}
@@ -139,6 +145,7 @@ class Adapter:
         result_dict['ljung_box_squared_tests'] = np.array(r_result.rx2('lb_sq'))
         result_dict['standardized_residuals'] = np.array(r_result.rx2('stdresid'))
         result_dict['saddle_point_indicator'] = int(r_result.rx2('saddle')[0])
+        result_dict['spec'] = r_result.rx2('spec')  # Store GARCH specification
         
         # Store model specification info
         result_dict['model_info'] = {
@@ -288,11 +295,40 @@ class Adapter:
             else:
                 raise ValueError(f"Update method '{self.update_method}' not implemented")
             
+            self.spec = garch_results['spec']  # Store GARCH specification
+            
             # Prepare return dictionary
             return self.parameters
 
         except Exception as e:
             raise RuntimeError(f"Failed to update adapter for bar {adapter_bar_number}: {str(e)}")
 
-    def forecast(self):
-        pass
+    def forecast(self, 
+                 in_sample_target_variable_data : pd.Series, 
+                 in_sample_external_regressors : pd.DataFrame,
+                 out_sample_target_variable_data : pd.Series,
+                 out_sample_external_regressors : pd.DataFrame):
+        r_script_path = os.path.join(os.path.dirname(__file__), 'r_scripts', 'run_garch.R')
+        ro.r(f'source("{r_script_path}")')
+        set_fixed_parameters = ro.globalenv['set_fixed_parameters']
+
+        spec_with_fixed_pars = set_fixed_parameters(self.spec, ro.ListVector(self.parameters))
+
+        combined_target_variable_data = pd.concat([in_sample_target_variable_data, out_sample_target_variable_data])
+        combined_external_regressors = pd.concat([in_sample_external_regressors, out_sample_external_regressors])
+
+        external_forecasts_r = ro.ListVector({'mregfor' : ro.r['matrix'](
+                                                        combined_external_regressors.values,
+                                                        nrow=combined_external_regressors.shape[0],
+                                                        ncol=combined_external_regressors.shape[1])})
+
+        garch_forecast = rugarch.ugarchforecast(fitORspec = spec_with_fixed_pars, 
+                                                data = combined_target_variable_data.values,
+                                                n_ahead = 1,
+                                                n_roll = out_sample_target_variable_data.shape[0]-1,
+                                                out_sample = out_sample_target_variable_data.shape[0],
+                                                external = external_forecasts_r)
+        
+        print(rugarch.fitted(garch_forecast))
+
+        return rugarch.fitted(garch_forecast)

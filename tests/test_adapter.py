@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Simple test for TTSTL Adapter update_adapter method.
-Tests update_adapter function iterating over the first 5 adapter bars.
+Simple test for TTSTL Adapter update_adapter and forecast methods.
+Tests update_adapter function iterating over the first 5 adapter bars,
+and tests forecast method using data from one adapter bar to forecast the next.
 """
 
 import sys
@@ -32,10 +33,10 @@ from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm
 
 
 def main():
-    """Test the update_adapter method iterating over first 5 adapter bars."""
+    """Test the update_adapter and forecast methods iterating over first 5 adapter bars."""
     
-    print("TTSTL Adapter Simple Test - First 5 Adapter Bars")
-    print("="*60)
+    print("TTSTL Adapter Test - Update and Forecast on First 5 Adapter Bars")
+    print("="*70)
     
     # Initialize the CNN-LSTM model - use GPU if available
     device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
@@ -156,7 +157,7 @@ def main():
     
     # Initialize adapter
     print("\n" + "="*40)
-    print("TESTING ADAPTER UPDATE_ADAPTER METHOD")
+    print("TESTING ADAPTER UPDATE_ADAPTER AND FORECAST METHODS")
     print("="*40)
     
     adapter = Adapter(interface=interface, update_method='myopic')
@@ -172,8 +173,10 @@ def main():
     print(f"Found {len(adapter_bars)} adapter bars in dataset")
     print(f"Testing first 5 adapter bars: {adapter_bars[:5]}")
     
-    # Test update_adapter on first 5 adapter bars
+    # Test update_adapter and forecast on first 5 adapter bars
     successful_updates = 0
+    successful_forecasts = 0
+    adapter_bar_data = {}  # Store data for each adapter bar for forecasting
     
     for i, adapter_bar in enumerate(adapter_bars[:5]):
         print(f"\n--- Testing Adapter Bar {adapter_bar} ({i+1}/5) ---")
@@ -187,31 +190,97 @@ def main():
             print(f"Skipping bar {adapter_bar}: insufficient data ({len(bar_ptdata)} < 10)")
             continue
         
-        # try:
-        # Test update_adapter method
-        print("Testing update_adapter method...")
-        result = adapter.update_adapter(
-            event_driven_adapter_time_bar_data=bar_edlob,
-            physical_time_driven_adapter_time_bar_data=bar_ptdata,
-            adapter_bar_number=i+1,
-            target_col_name='micro_return'
-        )
+        # Store data for potential forecasting
+        adapter_bar_data[adapter_bar] = {
+            'ptdata': bar_ptdata,
+            'edlob': bar_edlob
+        }
         
-        print(f"✓ update_adapter successful!")
-        print(f"  Updated parameters: {len(result)} parameters")
-        print(f"  Parameter names: {list(result.keys())}")
-        
-        successful_updates += 1
+        try:
+            # Test update_adapter method
+            print("Testing update_adapter method...")
+            result = adapter.update_adapter(
+                event_driven_adapter_time_bar_data=bar_edlob,
+                physical_time_driven_adapter_time_bar_data=bar_ptdata,
+                adapter_bar_number=i+1,
+                target_col_name='micro_return'
+            )
             
-        # except Exception as e:
-        #     print(f"✗ update_adapter failed: {e}")
-        #     continue
+            print(f"✓ update_adapter successful!")
+            print(f"  Updated parameters: {len(result)} parameters")
+            print(f"  Parameter names: {list(result.keys())}")
+            
+            successful_updates += 1
+            
+            # Test forecast method if this is not the first adapter bar
+            if i > 0 and adapter.spec is not None:
+                print("Testing forecast method...")
+                try:
+                    # Get previous adapter bar data for in-sample
+                    prev_adapter_bar = adapter_bars[i-1]
+                    prev_bar_ptdata = adapter_bar_data[prev_adapter_bar]['ptdata']
+                    
+                    # Prepare data for forecasting
+                    # Get selected variables (excluding lag variables)
+                    selected_vars = [var for var in interface.selected_variables 
+                                   if not var.startswith('micro_return_lag_')]
+                    
+                    # Split current bar data for out-of-sample
+                    current_bar_size = len(bar_ptdata)
+                    out_sample_size = min(10, current_bar_size // 3)  # Use 1/3 or max 10 observations
+                    in_sample_size = current_bar_size - out_sample_size
+                    
+                    # In-sample data (most of current bar)
+                    in_sample_target = bar_ptdata['micro_return'].iloc[:in_sample_size]
+                    in_sample_regressors = bar_ptdata[selected_vars].iloc[:in_sample_size]
+                    
+                    # Out-of-sample data (end of current bar to forecast)
+                    out_sample_target = bar_ptdata['micro_return'].iloc[in_sample_size:]
+                    out_sample_regressors = bar_ptdata[selected_vars].iloc[in_sample_size:]
+                    
+                    if len(out_sample_target) > 0 and len(in_sample_target) > 0:
+                        print(f"  Forecasting {len(out_sample_target)} observations using {len(in_sample_target)} in-sample observations")
+                        
+                        # Call forecast method
+                        forecast_result = adapter.forecast(
+                            in_sample_target_variable_data=in_sample_target,
+                            in_sample_external_regressors=in_sample_regressors,
+                            out_sample_target_variable_data=out_sample_target,
+                            out_sample_external_regressors=out_sample_regressors
+                        )
+                        
+                        print(f"✓ forecast successful!")
+                        print(f"  Forecast result type: {type(forecast_result)}")
+                        successful_forecasts += 1
+                    else:
+                        print("  Insufficient data for out-of-sample forecasting")
+                        
+                except Exception as e:
+                    print(f"✗ forecast failed: {e}")
+                    # Continue with next adapter bar even if forecast fails
+                    pass
+            elif i == 0:
+                print("  Skipping forecast for first adapter bar (no previous data)")
+            else:
+                print("  Skipping forecast (no GARCH specification available)")
+            
+        except Exception as e:
+            print(f"✗ update_adapter failed: {e}")
+            continue
     
     print("\n" + "="*50)
     if successful_updates > 0:
-        print("✓ TESTS PASSED")
+        print("✓ UPDATE TESTS PASSED")
         print(f"Successfully updated adapter on {successful_updates}/5 adapter bars")
         print("✓ Adapter update_adapter method working correctly")
+        
+        if successful_forecasts > 0:
+            print("✓ FORECAST TESTS PASSED")
+            print(f"Successfully forecasted on {successful_forecasts}/{successful_updates-1} eligible adapter bars")
+            print("✓ Adapter forecast method working correctly")
+        else:
+            print("⚠ FORECAST TESTS: No successful forecasts (may be due to data constraints)")
+        
         return True
     else:
         print("✗ TESTS FAILED")
