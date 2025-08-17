@@ -169,7 +169,7 @@ class Adapter:
                        quantile: float = 0.005,
                        update_parameters: Optional[dict] = None) -> dict:
         """
-        Update adapter parameters by fitting GARCH model on new data from an adapter time bar.
+        Update adapter parameters by fitting ARMAX-GARCH model on new data from an adapter time bar.
         
         Parameters:
         -----------

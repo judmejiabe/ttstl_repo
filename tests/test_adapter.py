@@ -86,7 +86,7 @@ def main():
     df_ptme = import_to_pandas(blob_name=blob_name_ptme, bucket_name=bucket_name, credentials_path=credentials_path)
 
     # Reduce dataset for quick testing
-    reduction_factor = 0.1
+    reduction_factor = 1
     print(f"Reducing dataset size to first {int(reduction_factor*100)}% of timestamps for faster testing...")
     edlob_min_ts, edlob_max_ts = df_edlob['timestamp'].min(), df_edlob['timestamp'].max()
     edlob_cutoff = edlob_min_ts + reduction_factor * (edlob_max_ts - edlob_min_ts)
