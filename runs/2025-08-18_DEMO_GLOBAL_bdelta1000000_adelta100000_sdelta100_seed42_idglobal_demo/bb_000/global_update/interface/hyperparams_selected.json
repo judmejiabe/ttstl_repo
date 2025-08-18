@@ -1,0 +1,10 @@
+{
+  "elastic_net": {
+    "best_alpha": 0.5,
+    "best_lambda": 0.007847599703514606
+  },
+  "adaptive_lasso": {
+    "best_tau": 0.5,
+    "best_lambda": 5.455594781168514
+  }
+}

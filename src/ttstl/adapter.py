@@ -43,6 +43,65 @@ class Adapter:
                 if key in self.parameters:
                     self.parameters[key] = (ell - 1) / ell * self.parameters[key] + \
                         1 / ell * new_parameters[key]
+    
+    def _print_parameters_summary(self, adapter_bar_number: int, new_parameters: dict, garch_results: dict):
+        """
+        Print a Python summary of the GARCH model parameters.
+        
+        Parameters:
+        -----------
+        adapter_bar_number : int
+            The adapter bar number for labeling
+        new_parameters : dict
+            Dictionary containing the newly fitted parameters
+        garch_results : dict
+            Dictionary containing GARCH fitting results including standard errors and p-values
+        """
+        print(f"\n{'='*60}")
+        print(f"ADAPTER BAR {adapter_bar_number} - GARCH MODEL PARAMETERS")
+        print(f"{'='*60}")
+        print(f"Update method: {self.update_method}")
+        
+        # Get coefficient names, standard errors, and p-values from garch_results
+        coef_names = garch_results['coefficient_names']
+        coef_values = garch_results['coefficients']
+        se_values = garch_results['se_coefficients']
+        p_values = garch_results['p_values']
+        
+        # Create mapping from mxreg to actual variable names
+        selected_vars = self.interface.selected_variables
+        mxreg_mapping = {}
+        mxreg_count = 1
+        for name in coef_names:
+            if name.startswith('mxreg'):
+                if mxreg_count <= len(selected_vars):
+                    mxreg_mapping[name] = selected_vars[mxreg_count - 1]
+                    mxreg_count += 1
+                else:
+                    mxreg_mapping[name] = name  # fallback if mapping fails
+            else:
+                mxreg_mapping[name] = name
+        
+        # Print adapter bar-specific estimates (current fit)
+        print(f"\n📊 BAR-SPECIFIC ESTIMATES (Bar {adapter_bar_number}):")
+        print(f"{'Parameter':<20} {'Coefficient':>12} {'Std Error':>12} {'P-Value':>10}")
+        print("-" * 60)
+        
+        for i, (name, coef, se, pval) in enumerate(zip(coef_names, coef_values, se_values, p_values)):
+            display_name = mxreg_mapping[name]
+            print(f"{display_name:<20} {coef:>12.6f} {se:>12.6f} {pval:>10.4f}")
+        
+        # Print carried estimates (averaged parameters)
+        print(f"\n📈 CARRIED ESTIMATES (Running Average, {adapter_bar_number} bars):")
+        print(f"{'Parameter':<20} {'Coefficient':>12}")
+        print("-" * 35)
+        
+        for name in coef_names:
+            display_name = mxreg_mapping[name]
+            carried_value = self.parameters.get(name, 0.0)
+            print(f"{display_name:<20} {carried_value:>12.6f}")
+        
+        print(f"{'='*60}")
         
 
     def _update_power_law(self):
@@ -292,6 +351,9 @@ class Adapter:
                 raise ValueError(f"Update method '{self.update_method}' not implemented")
             
             self.spec = garch_results['spec']  # Store GARCH specification
+            
+            # Print updated parameters summary
+            self._print_parameters_summary(adapter_bar_number, new_parameters, garch_results)
             
             # Prepare return dictionary
             return self.parameters

@@ -1,0 +1,23 @@
+{
+  "run_slug": "2025-08-18_TEST_bdelta1000000_adelta100000_sdelta100_seed42_idparameter_check",
+  "ticker": "TEST",
+  "bdelta": 1000000,
+  "adelta": 100000,
+  "sdelta": 100,
+  "seed": 42,
+  "session_start": 0,
+  "session_finish": 1000000,
+  "created_at": "2025-08-18T14:27:20.747228",
+  "code_provenance": {
+    "git_commit": "placeholder",
+    "git_branch": "main",
+    "git_dirty": false
+  },
+  "environment": {
+    "python": "3.9.23",
+    "torch": "2.5.0+cu118",
+    "pandas": "2.3.1",
+    "numpy": "2.0.2"
+  },
+  "artifacts": []
+}

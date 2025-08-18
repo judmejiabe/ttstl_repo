@@ -9,6 +9,11 @@ import tempfile
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import sys
+import os
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 
@@ -56,7 +61,7 @@ def main():
     print("🚀 TTSTL Orchestrator Integration Test")
     print("=" * 50)
     
-    # Create configuration
+    # Create configuration with new backbone parameters
     config = OrchestratorConfig(
         ticker="DEMO",
         bdelta=100000.0,    # Backbone time bar: 100,000 time units
@@ -65,9 +70,30 @@ def main():
         seed=42,
         session_start=0.0,
         session_finish=1000000.0,
+        
+        # Neural network training parameters
         epochs=2,           # Reduced for demo
         batch_size=16,      # Reduced for demo
+        validation_proportion_backbone=0.15,
+        validation_proportion_interface=0.2,
+        buffer_proportion=0.08,
+        quantile=0.01,
+        
+        # Backbone configuration
+        architecture='cnn_lstm',
         parsimonious_mode=True,
+        target_col_name='micro_return',
+        
+        # Stationarity test parameters
+        adf_rejection_rate_threshold=0.85,
+        kpss_verification_threshold=0.15,
+        na_verification_threshold=0.08,
+        
+        # Adapter configuration
+        update_method='myopic',
+        arma_order=(1, 1),
+        garch_order=(1, 1),
+        
         run_id="demo001"
     )
     
@@ -77,6 +103,10 @@ def main():
     print(f"   Adapter Δ: {config.adelta:,.0f}")
     print(f"   Sampling Δ: {config.sdelta:,.0f}")
     print(f"   Session: {config.session_start:,.0f} → {config.session_finish:,.0f}")
+    print(f"   Architecture: {config.architecture}")
+    print(f"   Target column: {config.target_col_name}")
+    print(f"   Epochs: {config.epochs}")
+    print(f"   Parsimonious mode: {config.parsimonious_mode}")
     print()
     
     # Create sample data

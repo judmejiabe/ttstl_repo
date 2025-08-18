@@ -6,21 +6,28 @@ framework, managing the execution of backbone training, interface variable selec
 and adapter parameter updates across trading sessions.
 """
 
+# Standard library imports
+import json
 import logging
 import os
+import random
 import secrets
-import json
+import sys
+import warnings
 import yaml
 from datetime import datetime
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-import warnings
+from typing import List, Optional, Dict, Any, Tuple
 
-import pandas as pd
+# Third-party imports
 import numpy as np
+import pandas as pd
 import torch
+import torch.nn as nn
+import torch.optim as optim
 
+# Local imports
 from ttstl.backbone import Backbone
 from ttstl.interface import Interface  
 from ttstl.adapter import Adapter
@@ -39,25 +46,40 @@ class OrchestratorConfig:
     seed: int                        # RNG seed
     session_start: float             # start of the session in the same units as the recorded timestamp
     session_finish: float            # end of the session in the same units as the recorded timestamp
+    target_col_name: str = 'micro_return' # Target variable column name in all datasets
 
-    # Backbone / Interface / Adapter knobs
-    quantile: float = 0.005
+    # Backbone knobs
+    architecture: str = 'cnn_lstm'
     parsimonious_mode: bool = False
+    epochs: int = 12 
     batch_size: int = 32
-    epochs: int = 12
-    selection_threshold: float = 0.15
-    tolerance_threshold: float = 1e-6
-    ols_significance_level: float = 0.05
-
-    # Train/validation split parameters
-    validation_proportion: float = 0.1
+    validation_proportion_backbone: float = 0.1
     buffer_proportion: float = 0.05
+    quantile: float = 0.005
+    adf_rejection_rate_threshold : float = 0.8
+    kpss_verification_threshold : float = 0.2
+    na_verification_threshold : float = 0.1
 
+    # Interface knobs
     # Hyperparameter grids (explicitly included)
     alpha_enet_grid: Optional[List[float]] = None
     lambda_enet_grid: Optional[List[float]] = None
     tau_adalasso_grid: Optional[List[float]] = None
     lambda_adalasso_grid: Optional[List[float]] = None
+
+    validation_proportion_interface : float = 0.2
+    selection_threshold: float = 0.40
+    tolerance_threshold: float = 1e-6
+    ols_significance_level: float = 0.05
+    n_lags: int = 5
+
+    # Adapter knobs
+    update_method : str = 'simple_average'
+    arma_order : Tuple[int, int] = (1, 1)
+    garch_order : Tuple[int, int] = (1, 1)
+    dist : str = 'norm' 
+    model : str = 'sGARCH'
+    archm : bool = False
 
     # Optional run-id override
     run_id: Optional[str] = None
@@ -65,13 +87,13 @@ class OrchestratorConfig:
     def __post_init__(self):
         """Set default grids if None provided."""
         if self.alpha_enet_grid is None:
-            self.alpha_enet_grid = [0.1, 0.5, 0.9]
+            self.alpha_enet_grid = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]
         if self.lambda_enet_grid is None:
-            self.lambda_enet_grid = np.logspace(-4, 0, 20).tolist()
+            self.lambda_enet_grid = np.logspace(-4, 2, 20).tolist()
         if self.tau_adalasso_grid is None:
-            self.tau_adalasso_grid = [0.5, 1.0, 1.5, 2.0]
+            self.tau_adalasso_grid = [0.25, 0.5, 1.0, 1.5, 2.0]
         if self.lambda_adalasso_grid is None:
-            self.lambda_adalasso_grid = np.logspace(-4, 0, 20).tolist()
+            self.lambda_adalasso_grid = np.logspace(-4, 2, 20).tolist()
 
 
 class Orchestrator:
@@ -125,7 +147,9 @@ class Orchestrator:
         
         self.logger.info(f"Orchestrator initialized with run: {self.run_slug}")
 
-    def global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame) -> Dict[str, Any]:
+    def global_update(self, 
+                      event_df: pd.DataFrame, 
+                      phys_df: pd.DataFrame) -> Dict[str, Any]:
         """
         Perform global update: full backbone training, interface selection, adapter fitting.
         
@@ -239,8 +263,6 @@ class Orchestrator:
 
     def _seed_rngs(self) -> None:
         """Seed all random number generators for reproducibility."""
-        import random
-        
         # Seed Python RNG
         random.seed(self.cfg.seed)
         
@@ -277,10 +299,14 @@ class Orchestrator:
         """Create the run directory and write initial artifacts."""
         self.run_dir.mkdir(parents=True, exist_ok=True)
         
-        # Write config.yaml
+        # Write config.yaml with tuple conversion
         config_path = self.run_dir / "config.yaml"
+        config_dict = asdict(self.cfg)
+        # Convert tuples to lists for YAML serialization
+        config_dict['arma_order'] = list(config_dict['arma_order'])
+        config_dict['garch_order'] = list(config_dict['garch_order'])
         with open(config_path, 'w') as f:
-            yaml.dump(asdict(self.cfg), f, default_flow_style=False)
+            yaml.dump(config_dict, f, default_flow_style=False)
         
         # Write initial manifest.json
         manifest = {
@@ -302,34 +328,93 @@ class Orchestrator:
         self._atomic_write_json(manifest_path, manifest)
 
     def _initialize_components(self) -> None:
-        """Initialize Backbone, Interface, and Adapter components."""
-        # Initialize CNN-LSTM model
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = CNNLSTM().to(device)
+        """Initialize multiple Backbone-Interface-Adapter stacks for the trading session."""
+        # Calculate session length and number of backbone bars
+        session_length = self.cfg.session_finish - self.cfg.session_start
+        num_backbone_bars = int((session_length) // self.cfg.bdelta)
+        residual_length = session_length - (num_backbone_bars * self.cfg.bdelta)
         
-        # Initialize Backbone
-        self.backbone = Backbone(
-            model=model,
-            delta_adapter=self.cfg.adelta,
-            delta_sample=self.cfg.sdelta,
-            parsimonious_mode=self.cfg.parsimonious_mode
-        )
+        # Check if we need to add one more bar or warn about dropped interval
+        if residual_length > 0:
+            residual_percentage = residual_length / self.cfg.bdelta
+            if residual_percentage < 0.01:  # Less than 1%
+                self.logger.warning(
+                    f"Small interval of length {residual_length:.2f} ({residual_percentage*100:.3f}% of bdelta) "
+                    f"will be dropped from the session"
+                )
+            else:
+                num_backbone_bars += 1
+                self.logger.warning(
+                    f"Last backbone bar will have smaller length: {residual_length:.2f} "
+                    f"({residual_percentage*100:.1f}% of bdelta)"
+                )
         
-        # Initialize Interface with backbone module and hyperparameter grids
-        self.interface = Interface(
-            backbone_module=self.backbone,
-            alpha_enet_grid=self.cfg.alpha_enet_grid,
-            lambda_enet_grid=self.cfg.lambda_enet_grid,
-            tau_adalasso_grid=self.cfg.tau_adalasso_grid,
-            lambda_adalasso_grid=self.cfg.lambda_adalasso_grid
-        )
+        self.logger.info(f"Creating {num_backbone_bars} backbone-interface-adapter stacks for session")
         
-        # Initialize Adapter with interface
-        self.adapter = Adapter(
-            interface=self.interface
-        )
+        # Select a random GPU if CUDA is available
+        if torch.cuda.is_available():
+            num_gpus = torch.cuda.device_count()
+            selected_gpu = random.randint(0, num_gpus - 1)
+            device = torch.device(f'cuda:{selected_gpu}')
+            self.logger.info(f"Selected GPU {selected_gpu} out of {num_gpus} available GPUs")
+        else:
+            device = torch.device('cpu')
+            self.logger.info("Using CPU (no CUDA available)")
         
-        self.logger.debug("Components initialized successfully")
+        # Initialize stacks dictionary
+        self.stacks = {}
+        
+        # Create backbone-interface-adapter stacks
+        for i in range(num_backbone_bars):
+            # Initialize neural network model based on architecture
+            if self.cfg.architecture == 'cnn_lstm':
+                model = CNNLSTM().to(device)
+            else:
+                raise ValueError(f"Unsupported architecture: {self.cfg.architecture}")
+            
+            # Initialize Backbone
+            backbone = Backbone(
+                model=model,
+                delta_adapter=self.cfg.adelta,
+                delta_sample=self.cfg.sdelta,
+                parsimonious_mode=self.cfg.parsimonious_mode
+            )
+            
+            # Initialize Interface with backbone module and hyperparameter grids
+            interface = Interface(
+                backbone_module=backbone,
+                alpha_enet_grid=self.cfg.alpha_enet_grid,
+                lambda_enet_grid=self.cfg.lambda_enet_grid,
+                tau_adalasso_grid=self.cfg.tau_adalasso_grid,
+                lambda_adalasso_grid=self.cfg.lambda_adalasso_grid
+            )
+            
+            # Initialize Adapter with interface and adapter configuration
+            adapter = Adapter(
+                interface=interface,
+                update_method=self.cfg.update_method,
+                arma_order=self.cfg.arma_order,
+                garch_order=self.cfg.garch_order,
+                dist=self.cfg.dist,
+                model=self.cfg.model,
+                archm=self.cfg.archm,
+                parameters={}  # Start with empty parameters
+            )
+            
+            # Store only the adapter (backbone and interface are accessible through it)
+            stack_key = f"backbone_{i}"
+            self.stacks[stack_key] = adapter
+            
+            self.logger.debug(f"Initialized stack {stack_key}")
+        
+        self.logger.info(f"Successfully initialized {len(self.stacks)} backbone-interface-adapter stacks")
+        
+        # For backward compatibility, expose the first stack's components as instance attributes
+        if self.stacks:
+            first_adapter = self.stacks["backbone_0"]
+            self.adapter = first_adapter
+            self.interface = first_adapter.interface
+            self.backbone = first_adapter.interface.backbone
 
     def _create_backbone_directories(self, mode: str) -> Path:
         """Create directory structure for a backbone bar."""
@@ -354,109 +439,754 @@ class Orchestrator:
         if 'timestamp' not in df.columns:
             raise ValueError("DataFrame must contain 'timestamp' column")
         
-        # Add backbone_bar column
+        # Adjust timestamps relative to session start
+        adjusted_timestamps = df['timestamp'] - self.cfg.session_start
+        
+        # Add backbone_bar column - partitions session into backbone-sized chunks
         if 'backbone_bar' not in df.columns:
-            df['backbone_bar'] = (df['timestamp'] // self.cfg.bdelta).astype(int)
+            df['backbone_bar'] = ((adjusted_timestamps + 1e-6) // self.cfg.bdelta).astype(int)
         
-        # Add adapter_bar column  
+        # Add adapter_bar column - partitions session into adapter-sized chunks
         if 'adapter_bar' not in df.columns:
-            df['adapter_bar'] = (df['timestamp'] // self.cfg.adelta).astype(int)
-        
+            df['adapter_bar'] = ((adjusted_timestamps + 1e-6) // self.cfg.adelta).astype(int)
+
+        # Add sampling_time_bar column - used for OFI calculations
+        if 'sampling_time_bar' not in df.columns:
+            df['sampling_time_bar'] = np.rint((np.floor((df['timestamp'] - self.cfg.session_start + 1e-6) / self.cfg.sdelta) * self.cfg.sdelta) + self.cfg.session_start)
+
         return df
 
     def _run_backbone_global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
         """Run backbone global update step."""
         self.logger.info("Running backbone global update...")
         
-        # Placeholder for backbone global update
-        # TODO: Implement actual backbone training
+        # Filter data for the current backbone bar
+        current_bb_event_df = event_df[event_df['backbone_bar'] == self._bb_idx].copy()
+        current_bb_phys_df = phys_df[phys_df['backbone_bar'] == self._bb_idx].copy()
         
-        # Create placeholder artifacts
-        artifacts_dir = bb_dir / "backbone"
+        self.logger.info(f"Backbone bar {self._bb_idx}: {len(current_bb_event_df)} event samples, {len(current_bb_phys_df)} physical time samples")
         
-        # Create placeholder files
-        (artifacts_dir / "architecture" / "train_log.parquet").touch()
-        (artifacts_dir / "architecture" / "best.pt").touch()
-        (artifacts_dir / "stationarity" / "stationarity_raw.parquet").touch()
-        (artifacts_dir / "stationarity" / "stationarity_summary.parquet").touch()
-        (artifacts_dir / "correlation" / "corr_matrix.npz").touch()
-        (artifacts_dir / "correlation" / "corr_heatmap.png").touch()
-        (artifacts_dir / "extended_covariates.json").touch()
-        (artifacts_dir / "nn_weights.npz").touch()
+        # Check if we have sufficient data
+        if len(current_bb_phys_df) < 10:
+            self.logger.warning(f"Insufficient physical time data for backbone bar {self._bb_idx}: {len(current_bb_phys_df)} samples")
+            return {"status": "insufficient_data", "event_samples": len(current_bb_event_df), "phys_samples": len(current_bb_phys_df)}
         
-        return {"status": "completed", "artifacts_created": 8}
+        # Get the current backbone for this backbone bar
+        current_backbone = self.stacks[f"backbone_{self._bb_idx}"].interface.backbone
+        
+        # Create criterion and optimizer
+        criterion = nn.MSELoss(reduction='sum')
+        optimizer = optim.Adam(current_backbone.model.parameters(), lr=0.001)
+        
+        try:
+            # Run actual backbone global update with configuration parameters
+            backbone_result = current_backbone.global_update(
+                event_driven_backbone_time_bar_data=current_bb_event_df,
+                physical_time_driven_backbone_time_bar_data=current_bb_phys_df,
+                criterion=criterion,
+                optimizer=optimizer,
+                epochs=self.cfg.epochs,
+                validation_proportion=self.cfg.validation_proportion_backbone,
+                buffer_proportion=self.cfg.buffer_proportion,
+                batch_size=self.cfg.batch_size,
+                quantile=self.cfg.quantile,
+                adf_rejection_rate_threshold=self.cfg.adf_rejection_rate_threshold,
+                kpss_verification_threshold=self.cfg.kpss_verification_threshold,
+                na_verification_threshold=self.cfg.na_verification_threshold,
+                kpss_drop=True,
+                correlation_threshold=0.95,  # Could be added to config if needed
+                target_col_name=self.cfg.target_col_name
+            )
+            
+            # Save correlation heatmaps using the backbone's method
+            heatmap_dir = bb_dir / "backbone" / "correlation"
+            current_backbone.save_correlation_heatmaps(save_dir=str(heatmap_dir))
+            
+            return {
+                "status": "completed", 
+                "backbone_result": backbone_result,
+                "event_samples": len(current_bb_event_df),
+                "phys_samples": len(current_bb_phys_df),
+                "artifacts_created": 8
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Backbone global update failed: {str(e)}")
+            # Create placeholder artifacts for testing
+            artifacts_dir = bb_dir / "backbone"
+            
+            # Create placeholder files
+            (artifacts_dir / "architecture" / "train_log.parquet").touch()
+            (artifacts_dir / "architecture" / "best.pt").touch()
+            (artifacts_dir / "stationarity" / "stationarity_raw.parquet").touch()
+            (artifacts_dir / "stationarity" / "stationarity_summary.parquet").touch()
+            (artifacts_dir / "correlation" / "corr_matrix.npz").touch()
+            (artifacts_dir / "correlation" / "corr_heatmap.png").touch()
+            (artifacts_dir / "extended_covariates.json").touch()
+            (artifacts_dir / "nn_weights.npz").touch()
+            
+            return {
+                "status": "failed", 
+                "error": str(e), 
+                "event_samples": len(current_bb_event_df),
+                "phys_samples": len(current_bb_phys_df),
+                "artifacts_created": 8
+            }
 
     def _run_interface_global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path, backbone_results: Dict) -> Dict[str, Any]:
         """Run interface global update step."""
         self.logger.info("Running interface global update...")
         
-        # Placeholder for interface global update
-        # TODO: Implement actual interface global selection
-        
-        artifacts_dir = bb_dir / "interface"
-        
-        # Create placeholder files
-        (artifacts_dir / "corridor_ada_lasso.png").touch()
-        (artifacts_dir / "hyperparams_selected.json").touch()
-        (artifacts_dir / "enet_hyperparams_grid_eval.parquet").touch()
-        (artifacts_dir / "adalasso_hyperparams_grid_eval.parquet").touch()
-        
-        return {"status": "completed", "artifacts_created": 4}
+        try:
+            # Get the current backbone for this backbone bar
+            current_backbone = self.stacks[f"backbone_{self._bb_idx}"].interface.backbone
+            
+            # Get the interface for this backbone bar 
+            current_interface = self.stacks[f"backbone_{self._bb_idx}"].interface
+            
+            # Filter data for current backbone bar
+            current_bb = self._bb_idx
+            current_event_df = event_df[event_df['backbone_bar'] == current_bb].copy()
+            current_phys_df = phys_df[phys_df['backbone_bar'] == current_bb].copy()
+            
+            self.logger.info(f"Interface processing backbone bar {current_bb}: {len(current_event_df)} event samples, {len(current_phys_df)} physical samples")
+            
+            # Run interface global_update
+            interface_result = current_interface.global_update(
+                event_driven_backbone_time_bar_data=current_event_df,
+                physical_time_driven_backbone_time_bar_data=current_phys_df,
+                quantile=self.cfg.quantile,
+                target_col_name=self.cfg.target_col_name,
+                n_lags=self.cfg.n_lags,
+                validation_proportion=self.cfg.validation_proportion_interface,
+                selection_threshold=self.cfg.selection_threshold,
+                tolerance_threshold=self.cfg.tolerance_threshold,
+                ols_significance_level=self.cfg.ols_significance_level
+            )
+            
+            # Store interface results in the results structure
+            artifacts_dir = bb_dir / "interface"
+            
+            # Save hyperparameter results to parquet files
+            if 'hyperparameter_results' in interface_result:
+                hp_results = interface_result['hyperparameter_results']
+                
+                # Save elastic net hyperparameters (use alpha_grid and lambda_grid)
+                if 'elastic_net' in hp_results:
+                    enet_data = hp_results['elastic_net']
+                    # Create grid results from the grids and best values
+                    grid_data = []
+                    if 'alpha_grid' in enet_data and 'lambda_grid' in enet_data:
+                        for alpha in enet_data['alpha_grid']:
+                            for lambda_val in enet_data['lambda_grid']:
+                                grid_data.append({
+                                    'alpha': alpha,
+                                    'lambda': lambda_val,
+                                    'best_alpha': enet_data['best_alpha'],
+                                    'best_lambda': enet_data['best_lambda']
+                                })
+                    
+                    if grid_data:
+                        enet_df = pd.DataFrame(grid_data)
+                        enet_df.to_parquet(artifacts_dir / "enet_hyperparams_grid_eval.parquet", index=False)
+                
+                # Save adaptive lasso hyperparameters (use all_results)
+                if 'adaptive_lasso' in hp_results and 'all_results' in hp_results['adaptive_lasso']:
+                    ada_results = hp_results['adaptive_lasso']['all_results']
+                    if ada_results:
+                        ada_df = pd.DataFrame(ada_results)
+                        ada_df.to_parquet(artifacts_dir / "adalasso_hyperparams_grid_eval.parquet", index=False)
+                
+                # Save selected hyperparameters
+                selected_hp = {
+                    'elastic_net': {
+                        'best_alpha': hp_results['elastic_net']['best_alpha'],
+                        'best_lambda': hp_results['elastic_net']['best_lambda']
+                    },
+                    'adaptive_lasso': {
+                        'best_tau': hp_results['adaptive_lasso']['best_tau'],
+                        'best_lambda': hp_results['adaptive_lasso']['best_lambda']
+                    }
+                }
+                self._atomic_write_json(artifacts_dir / "hyperparams_selected.json", selected_hp)
+            
+            # Create a placeholder corridor plot (interface doesn't create visualization by default)
+            # This matches the expected artifact from the original placeholder
+            (artifacts_dir / "corridor_ada_lasso.png").touch()
+            
+            self.logger.info(f"Interface global update completed: {interface_result['n_selected']} variables selected from {interface_result['n_total_variables']}")
+            
+            return {
+                "status": "completed",
+                "interface_result": interface_result,
+                "selected_variables": interface_result['selected_variables'],
+                "n_selected": interface_result['n_selected'],
+                "n_total_variables": interface_result['n_total_variables'],
+                "artifacts_created": 4
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Interface global update failed: {str(e)}")
+            # Create placeholder files if interface fails
+            artifacts_dir = bb_dir / "interface"
+            (artifacts_dir / "corridor_ada_lasso.png").touch()
+            (artifacts_dir / "hyperparams_selected.json").touch()
+            (artifacts_dir / "enet_hyperparams_grid_eval.parquet").touch()
+            (artifacts_dir / "adalasso_hyperparams_grid_eval.parquet").touch()
+            
+            return {"status": "failed", "error": str(e), "artifacts_created": 4}
 
     def _run_adapter_global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path, interface_results: Dict) -> Dict[str, Any]:
         """Run adapter global update step."""
         self.logger.info("Running adapter global update...")
         
-        # Placeholder for adapter global update
-        # TODO: Implement actual adapter fitting
+        try:
+            # Create adapter bars using adapter delta
+            phys_df = phys_df.copy()
+            event_df = event_df.copy()
+            
+            # Create adapter bar assignments
+            phys_df['adapter_bar'] = (np.floor((phys_df['timestamp'] + 1e-6) / self.cfg.adelta).astype(int))
+            event_df['adapter_bar'] = (np.floor((event_df['timestamp'] + 1e-6) / self.cfg.adelta).astype(int))
+            
+            # Get unique adapter bars
+            adapter_bars = sorted(phys_df['adapter_bar'].unique())
+            self.logger.info(f"Found {len(adapter_bars)} adapter bars for processing")
+            
+            # Get the adapter from the current stack
+            current_adapter = self.adapter
+            if current_adapter is None:
+                raise RuntimeError("No adapter available for global update")
+            
+            # Initialize results tracking
+            successful_updates = 0
+            failed_updates = 0
+            all_parameters = {}
+            processing_stats = {}
+            
+            # Process each adapter bar
+            for i, adapter_bar in enumerate(adapter_bars):
+                bar_logger_prefix = f"adapter_bar_{adapter_bar:03d}"
+                
+                try:
+                    # Filter physical time data for this adapter bar
+                    bar_ptdata = phys_df[phys_df['adapter_bar'] == adapter_bar].copy()
+                    
+                    # Filter event data for this adapter bar with lookback strategy
+                    # CRITICAL FIX: Include last sampling bar from previous adapter bar to prevent NaN hidden activations
+                    # 
+                    # Problem: The first physical observation in each adapter bar had no prior event data
+                    # for neural feature extraction, causing NaN values in hidden_activations columns.
+                    # This created downstream issues in GARCH model fitting and data processing.
+                    #
+                    # Solution: For each adapter bar (except the first), include the last sampling time bar
+                    # from the previous adapter bar. This provides the necessary temporal lookback window
+                    # for neural covariate extraction while maintaining temporal integrity (only using past data).
+                    #
+                    # Benefits: 
+                    # - Eliminates NaN hidden activations for all but the very first observation globally
+                    # - Maintains temporal precedence requirements 
+                    # - Minimal memory overhead (only one sampling bar worth of events per adapter bar)
+                    # - Preserves independence of adapter bar processing
+                    
+                    if i > 0:  # Not the first adapter bar - apply lookback strategy
+                        prev_adapter_bar = adapter_bars[i-1]
+                        
+                        # Get event data from previous adapter bar to find last sampling bar
+                        prev_event_data = event_df[event_df['adapter_bar'] == prev_adapter_bar]
+                        
+                        if len(prev_event_data) > 0 and 'sampling_time_bar' in prev_event_data.columns:
+                            # Find the last sampling time bar from previous adapter bar
+                            last_sampling_bar = prev_event_data['sampling_time_bar'].max()
+                            prev_lookback = prev_event_data[
+                                prev_event_data['sampling_time_bar'] == last_sampling_bar
+                            ].copy()
+                            
+                            # Get current adapter bar event data
+                            current_event_data = event_df[event_df['adapter_bar'] == adapter_bar].copy()
+                            
+                            # Combine lookback data with current adapter bar data
+                            bar_edlob = pd.concat([prev_lookback, current_event_data], 
+                                                ignore_index=True).sort_values('timestamp')
+                            
+                            self.logger.debug(f"Added {len(prev_lookback)} lookback events from "
+                                            f"sampling bar {last_sampling_bar} of previous adapter bar")
+                        else:
+                            # Fallback: use current adapter bar data only
+                            bar_edlob = event_df[event_df['adapter_bar'] == adapter_bar].copy()
+                            self.logger.debug("No previous sampling data available, using current bar only")
+                    else:
+                        # First adapter bar - no previous data available (will still have NaN for first observation)
+                        bar_edlob = event_df[event_df['adapter_bar'] == adapter_bar].copy()
+                        self.logger.debug("First adapter bar - no lookback data available")
+                    
+                    self.logger.debug(f"Processing {bar_logger_prefix}: "
+                                    f"{len(bar_ptdata)} physical samples, "
+                                    f"{len(bar_edlob)} event samples (including lookback)")
+                    
+                    # Skip bars with insufficient data
+                    min_samples = 10  # Minimum samples required for fitting
+                    if len(bar_ptdata) < min_samples:
+                        self.logger.warning(f"Skipping {bar_logger_prefix}: insufficient data "
+                                          f"({len(bar_ptdata)} < {min_samples})")
+                        processing_stats[adapter_bar] = {
+                            'status': 'skipped',
+                            'reason': 'insufficient_data',
+                            'physical_samples': len(bar_ptdata),
+                            'event_samples': len(bar_edlob)
+                        }
+                        continue
+                    
+                    # Call adapter.update_adapter method
+                    self.logger.debug(f"Running update_adapter for {bar_logger_prefix}")
+                    adapter_result = current_adapter.update_adapter(
+                        event_driven_adapter_time_bar_data=bar_edlob,
+                        physical_time_driven_adapter_time_bar_data=bar_ptdata,
+                        adapter_bar_number=i + 1,  # 1-indexed
+                        target_col_name=self.cfg.target_col_name
+                    )
+                    
+                    # The adapter.update_adapter method now handles R model summary printing
+                    # No need for manual summary generation here
+                    
+                    # Store results
+                    all_parameters[adapter_bar] = adapter_result
+                    processing_stats[adapter_bar] = {
+                        'status': 'completed',
+                        'physical_samples': len(bar_ptdata),
+                        'event_samples': len(bar_edlob),
+                        'parameters_updated': len(adapter_result) if adapter_result else 0
+                    }
+                    
+                    successful_updates += 1
+                    self.logger.info(f"✓ {bar_logger_prefix} completed: "
+                                   f"{len(adapter_result) if adapter_result else 0} parameters updated")
+                    
+                except Exception as e:
+                    failed_updates += 1
+                    error_msg = f"Failed to process {bar_logger_prefix}: {str(e)}"
+                    self.logger.warning(error_msg)
+                    processing_stats[adapter_bar] = {
+                        'status': 'failed',
+                        'error': str(e),
+                        'physical_samples': len(bar_ptdata) if 'bar_ptdata' in locals() else 0,
+                        'event_samples': len(bar_edlob) if 'bar_edlob' in locals() else 0
+                    }
+                    continue
+            
+            # Create artifacts directory
+            artifacts_dir = bb_dir / "adapter"
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save adapter parameters to file
+            if all_parameters:
+                params_df = pd.DataFrame.from_dict(all_parameters, orient='index')
+                params_file = artifacts_dir / "param_series.parquet"
+                params_df.to_parquet(params_file)
+                self.logger.debug(f"Saved adapter parameters to {params_file}")
+            
+            # Save processing statistics
+            stats_df = pd.DataFrame.from_dict(processing_stats, orient='index')
+            stats_file = artifacts_dir / "processing_stats.parquet"
+            stats_df.to_parquet(stats_file)
+            
+            # Create performance summary (placeholder for now)
+            performance_data = {
+                'total_adapter_bars': len(adapter_bars),
+                'successful_updates': successful_updates,
+                'failed_updates': failed_updates,
+                'success_rate': successful_updates / len(adapter_bars) if adapter_bars else 0.0
+            }
+            performance_df = pd.DataFrame([performance_data])
+            performance_file = artifacts_dir / "performance_is.parquet"
+            performance_df.to_parquet(performance_file)
+            
+            # Create correlation plot placeholder (actual implementation would require data)
+            plot_file = artifacts_dir / "armax_garch_corridor.png"
+            plot_file.touch()  # Placeholder for now
+            
+            # Compile final results
+            adapter_global_results = {
+                'status': 'completed',
+                'total_adapter_bars': len(adapter_bars),
+                'successful_updates': successful_updates,
+                'failed_updates': failed_updates,
+                'success_rate': performance_data['success_rate'],
+                'parameters_by_bar': all_parameters,
+                'processing_stats': processing_stats,
+                'artifacts_created': 4
+            }
+            
+            self.logger.info(f"Adapter global update completed: "
+                           f"{successful_updates}/{len(adapter_bars)} bars successful "
+                           f"({performance_data['success_rate']:.1%} success rate)")
+            
+            return adapter_global_results
+            
+        except Exception as e:
+            self.logger.error(f"Adapter global update failed: {str(e)}")
+            # Create minimal artifacts for failed run
+            artifacts_dir = bb_dir / "adapter"
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            (artifacts_dir / "error.txt").write_text(str(e))
+            
+            return {
+                'status': 'failed',
+                'error': str(e),
+                'artifacts_created': 1
+            }
+
+    def _get_backbone_bar_bounds(self, bb_idx: int) -> tuple[float, float]:
+        """
+        Calculate the start and end timestamp bounds for a given backbone bar index.
         
-        artifacts_dir = bb_dir / "adapter"
+        Args:
+            bb_idx: Backbone bar index (0-based)
+            
+        Returns:
+            Tuple of (start_timestamp, end_timestamp)
+        """
+        bb_start = self.cfg.session_start + (bb_idx * self.cfg.bdelta)
+        bb_end = bb_start + self.cfg.bdelta
         
-        # Create placeholder files
-        (artifacts_dir / "armax_garch_corridor.png").touch()
-        (artifacts_dir / "param_series.parquet").touch()
-        (artifacts_dir / "performance_is.parquet").touch()
+        # Ensure we don't exceed session bounds
+        bb_end = min(bb_end, self.cfg.session_finish)
         
-        return {"status": "completed", "artifacts_created": 3}
+        return bb_start, bb_end
+
+    def _get_adapter_bar_bounds(self, adapter_bar: int) -> tuple[float, float]:
+        """
+        Calculate the start and end timestamp bounds for a given adapter bar index.
+        
+        Args:
+            adapter_bar: Adapter bar index (0-based)
+            
+        Returns:
+            Tuple of (start_timestamp, end_timestamp)
+        """
+        adapter_start = adapter_bar * self.cfg.adelta
+        adapter_end = (adapter_bar + 1) * self.cfg.adelta
+        return adapter_start, adapter_end
 
     def _run_backbone_local_adapt(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
-        """Run backbone local adaptation step."""
-        self.logger.info("Running backbone local adaptation...")
+        """
+        Run backbone local adaptation step - backbone remains FROZEN (no updates).
         
-        # Placeholder for backbone local adaptation
-        # TODO: Implement actual backbone OOS testing
+        In local adaptation, the backbone model is not retrained or updated.
+        We only use it to extract neural covariates for the interface and adapter.
+        """
+        self.logger.info("Running backbone local adaptation (backbone frozen - no updates)...")
         
         artifacts_dir = bb_dir / "backbone"
-        (artifacts_dir / "test_os.json").touch()
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
         
-        return {"status": "completed", "artifacts_created": 1}
+        # The backbone is frozen - no training or updates
+        # We only confirm it's ready to provide neural features
+        if not hasattr(self.backbone, 'model') or self.backbone.model is None:
+            raise RuntimeError("Backbone model not available. Must run global_update first.")
+        
+        # Save a status file indicating backbone was frozen
+        status_file = artifacts_dir / "backbone_frozen_status.json"
+        import json
+        with open(status_file, 'w') as f:
+            json.dump({
+                "status": "frozen",
+                "message": "Backbone model frozen during local adaptation",
+                "backbone_bar": self._bb_idx,
+                "model_available": True
+            }, f, indent=2)
+        
+        self.logger.info("✓ Backbone local adaptation completed (model frozen)")
+        return {"status": "frozen", "artifacts_created": 1}
 
     def _run_interface_local_adapt(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
-        """Run interface local adaptation step."""
+        """
+        Run interface local adaptation step using local_adaptation method.
+        
+        Uses the existing global hyperparameters but performs local variable selection
+        for each adapter bar using Wald tests to identify structural breaks.
+        """
         self.logger.info("Running interface local adaptation...")
         
-        # Placeholder for interface local adaptation
-        # TODO: Implement actual interface local selection
-        
         artifacts_dir = bb_dir / "interface"
-        (artifacts_dir / "corridor_ada_lasso.png").touch()
-        (artifacts_dir / "structural_breaks.parquet").touch()
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
         
-        return {"status": "completed", "artifacts_created": 2}
+        try:
+            # Ensure interface has been globally trained
+            if not hasattr(self.interface, 'selected_variables') or self.interface.selected_variables is None:
+                raise RuntimeError("Interface not globally trained. Must run global_update first.")
+            
+            # Get the backbone bar data from physical time
+            bb_start, bb_end = self._get_backbone_bar_bounds(self._bb_idx)
+            bb_mask = (phys_df['backbone_bar'] == self._bb_idx)
+            bb_data = phys_df[bb_mask].copy()
+            
+            if len(bb_data) == 0:
+                raise RuntimeError(f"No data found for backbone bar {self._bb_idx}")
+            
+            self.logger.info(f"Processing backbone bar {self._bb_idx} with {len(bb_data)} samples")
+            
+            # Extract neural covariates for the backbone bar using interface
+            self.logger.info("Extracting neural covariates from backbone...")
+            bb_data_with_neural = self.interface._prepare_data(
+                event_driven_backbone_time_bar_data=event_df,
+                physical_time_driven_backbone_time_bar_data=bb_data,
+                target_col_name=self.cfg.target_col_name,
+                n_lags=self.cfg.n_lags
+            )
+            
+            self.logger.info(f"Prepared data shape: {bb_data_with_neural.shape}")
+            
+            # Get unique adapter bars within this backbone bar
+            adapter_bars = sorted(bb_data_with_neural['adapter_bar'].unique())
+            self.logger.info(f"Found {len(adapter_bars)} adapter bars: {adapter_bars}")
+            
+            local_results = {}
+            successful_bars = 0
+            
+            # Perform local adaptation for each adapter bar
+            for adapter_bar in adapter_bars:
+                try:
+                    adapter_mask = (bb_data_with_neural['adapter_bar'] == adapter_bar)
+                    adapter_data = bb_data_with_neural[adapter_mask].copy()
+                    
+                    if len(adapter_data) < 10:  # Minimum samples needed
+                        self.logger.warning(f"Skipping adapter bar {adapter_bar}: insufficient data ({len(adapter_data)} samples)")
+                        continue
+                    
+                    self.logger.info(f"Running local adaptation for adapter bar {adapter_bar} ({len(adapter_data)} samples)")
+                    
+                    # Call the interface local_adaptation method
+                    local_result = self.interface.local_adaptation(
+                        adapter_data, 
+                        target_col_name=self.cfg.target_col_name,
+                        significance_level=0.05
+                    )
+                    
+                    local_results[f"adapter_bar_{adapter_bar:03d}"] = local_result
+                    successful_bars += 1
+                    
+                    self.logger.info(f"✓ adapter_bar_{adapter_bar:03d} local adaptation completed")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Local adaptation failed for adapter bar {adapter_bar}: {str(e)}")
+                    local_results[f"adapter_bar_{adapter_bar:03d}"] = {"error": str(e)}
+            
+            # Save local adaptation results
+            results_file = artifacts_dir / "local_adaptation_results.json"
+            import json
+            with open(results_file, 'w') as f:
+                # Convert numpy types and other non-serializable types to native Python types for JSON serialization
+                def convert_numpy(obj):
+                    if isinstance(obj, np.integer):
+                        return int(obj)
+                    elif isinstance(obj, np.floating):
+                        return float(obj)
+                    elif isinstance(obj, np.ndarray):
+                        return obj.tolist()
+                    elif isinstance(obj, np.bool_):
+                        return bool(obj)
+                    elif isinstance(obj, (bool, np.bool_)):
+                        return bool(obj)
+                    elif hasattr(obj, 'item'):  # numpy scalar
+                        return obj.item()
+                    # Skip non-serializable objects like model wrappers
+                    elif hasattr(obj, '__class__') and 'Wrapper' in str(type(obj)):
+                        return f"<{type(obj).__name__}>"
+                    elif hasattr(obj, '__module__') and 'statsmodels' in str(obj.__module__):
+                        return f"<{type(obj).__name__}>"
+                    elif hasattr(obj, '__class__') and 'Vector' in str(type(obj)):
+                        return f"<{type(obj).__name__}>"
+                    elif hasattr(obj, '__module__') and 'rpy2' in str(obj.__module__):
+                        return f"<{type(obj).__name__}>"
+                    return obj
+                
+                serializable_results = {}
+                for key, value in local_results.items():
+                    if isinstance(value, dict):
+                        def recursively_convert(d):
+                            converted = {}
+                            for k, v in d.items():
+                                # Skip non-serializable adaptive lasso result
+                                if k == 'adaptive_lasso_result' and hasattr(v, 'get') and 'ada_model' in str(v):
+                                    converted[k] = "<AdaptiveLassoResult - contains non-serializable model>"
+                                elif isinstance(v, dict):
+                                    converted[k] = recursively_convert(v)
+                                else:
+                                    converted[k] = convert_numpy(v)
+                            return converted
+                        serializable_results[key] = recursively_convert(value)
+                    else:
+                        serializable_results[key] = convert_numpy(value)
+                
+                json.dump({
+                    "backbone_bar": self._bb_idx,
+                    "total_adapter_bars": len(adapter_bars),
+                    "successful_bars": successful_bars,
+                    "success_rate": successful_bars / len(adapter_bars) if adapter_bars else 0,
+                    "results": serializable_results
+                }, f, indent=2)
+            
+            self.logger.info(f"Interface local adaptation completed: {successful_bars}/{len(adapter_bars)} bars successful")
+            return {
+                "status": "completed", 
+                "artifacts_created": 1,
+                "total_adapter_bars": len(adapter_bars),
+                "successful_bars": successful_bars,
+                "success_rate": successful_bars / len(adapter_bars) if adapter_bars else 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Interface local adaptation failed: {str(e)}")
+            raise
 
     def _run_adapter_local_adapt(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
-        """Run adapter local adaptation step."""
+        """
+        Run adapter local adaptation step.
+        
+        Updates adapter parameters in the same fashion as global_update method,
+        iterating over adapter bars and updating ARMA-GARCH parameters.
+        """
         self.logger.info("Running adapter local adaptation...")
         
-        # Placeholder for adapter local adaptation
-        # TODO: Implement actual adapter local updates
-        
         artifacts_dir = bb_dir / "adapter"
-        (artifacts_dir / "armax_garch_corridor.png").touch()
-        (artifacts_dir / "param_series.parquet").touch()
-        (artifacts_dir / "performance_os.parquet").touch()
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
         
-        return {"status": "completed", "artifacts_created": 3}
+        try:
+            # Ensure adapter has been globally trained
+            if not hasattr(self.adapter, 'parameters') or self.adapter.parameters is None:
+                raise RuntimeError("Adapter not globally trained. Must run global_update first.")
+            
+            # Get the backbone bar data from physical time
+            bb_start, bb_end = self._get_backbone_bar_bounds(self._bb_idx)
+            bb_mask = (phys_df['backbone_bar'] == self._bb_idx)
+            bb_data = phys_df[bb_mask].copy()
+            
+            if len(bb_data) == 0:
+                raise RuntimeError(f"No data found for backbone bar {self._bb_idx}")
+            
+            self.logger.info(f"Processing backbone bar {self._bb_idx} with {len(bb_data)} samples")
+            
+            # Extract neural covariates for the backbone bar using interface
+            self.logger.info("Extracting neural covariates from backbone...")
+            bb_data_with_neural = self.interface._prepare_data(
+                event_driven_backbone_time_bar_data=event_df,
+                physical_time_driven_backbone_time_bar_data=bb_data,
+                target_col_name=self.cfg.target_col_name,
+                n_lags=self.cfg.n_lags
+            )
+            
+            # Get unique adapter bars within this backbone bar  
+            adapter_bars = sorted(bb_data_with_neural['adapter_bar'].unique())
+            self.logger.info(f"Found {len(adapter_bars)} adapter bars: {adapter_bars}")
+            
+            successful_bars = 0
+            all_parameters = {}  # Track parameters for all adapter bars
+            last_sampling_bar = None  # For lookback strategy
+            
+            # Process each adapter bar
+            for i, adapter_bar in enumerate(adapter_bars):
+                try:
+                    self.logger.info(f"Preparing data for adapter bar {adapter_bar + 1}...")
+                    
+                    # Get adapter bar bounds and apply lookback strategy
+                    adapter_start, adapter_end = self._get_adapter_bar_bounds(adapter_bar)
+                    
+                    # Lookback strategy: include last sampling bar from previous adapter bar
+                    # This ensures temporal continuity and prevents NaN hidden activations
+                    if last_sampling_bar is not None:
+                        lookback_start = last_sampling_bar
+                        self.logger.debug(f"Using lookback from {lookback_start} to {adapter_end}")
+                    else:
+                        lookback_start = adapter_start
+                        self.logger.debug(f"No lookback available, using {adapter_start} to {adapter_end}")
+                    
+                    # Filter data for this adapter bar (with potential lookback)
+                    adapter_mask = (
+                        (bb_data_with_neural['timestamp'] >= lookback_start) & 
+                        (bb_data_with_neural['timestamp'] <= adapter_end)
+                    )
+                    bar_edlob = bb_data_with_neural[adapter_mask].copy()
+                    
+                    if len(bar_edlob) == 0:
+                        self.logger.warning(f"No data found for adapter bar {adapter_bar}")
+                        continue
+                    
+                    # Remember last sampling bar for next iteration
+                    if len(bar_edlob) > 0:
+                        last_sampling_bar = bar_edlob['timestamp'].iloc[-1]
+                    
+                    # Filter to only the current adapter bar for training
+                    # (lookback data was used for continuity but we train only on current bar)
+                    current_bar_mask = (bar_edlob['adapter_bar'] == adapter_bar)
+                    current_bar_data = bar_edlob[current_bar_mask].copy()
+                    
+                    if len(current_bar_data) < 10:  # Minimum samples needed
+                        self.logger.warning(f"Skipping adapter bar {adapter_bar}: insufficient data ({len(current_bar_data)} samples)")
+                        continue
+                    
+                    self.logger.info(f"Using all data: {len(current_bar_data)} observations")
+                    
+                    # Get selected variables from interface
+                    if not hasattr(self.interface, 'selected_variables') or self.interface.selected_variables is None:
+                        raise RuntimeError("Interface variable selection not available")
+                    
+                    selected_vars = self.interface.selected_variables
+                    self.logger.info(f"Selected variables from interface: {selected_vars}")
+                    
+                    # Update adapter with this bar's data
+                    self.logger.info(f"Fitting GARCH model with {len(current_bar_data)} observations and {len(selected_vars)} covariates...")
+                    
+                    garch_results = self.adapter.update_adapter(
+                        event_driven_adapter_time_bar_data=bar_edlob,
+                        physical_time_driven_adapter_time_bar_data=current_bar_data,
+                        adapter_bar_number=adapter_bar + 1,  # 1-indexed like global update
+                        target_col_name=self.cfg.target_col_name
+                    )
+                    
+                    # Store parameter results for this adapter bar
+                    all_parameters[f"adapter_bar_{adapter_bar:03d}"] = garch_results.get('coefficients', {})
+                    
+                    successful_bars += 1
+                    self.logger.info(f"✓ adapter_bar_{adapter_bar:03d} completed: {len(garch_results['coefficients'])} parameters updated")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Adapter update failed for bar {adapter_bar}: {str(e)}")
+                    continue
+            
+            # Save adapter artifacts manually (similar to global_update approach)
+            # Create parameter summary files
+            if all_parameters:
+                # Save parameter data as parquet
+                param_df = pd.DataFrame(all_parameters).T  # Transpose to have bars as rows
+                param_file = artifacts_dir / "adapter_parameters.parquet"
+                param_df.to_parquet(param_file)
+            
+            # Save performance metrics
+            performance_data = {
+                'total_bars': len(adapter_bars),
+                'successful_bars': successful_bars,
+                'failed_bars': len(adapter_bars) - successful_bars,
+                'success_rate': successful_bars / len(adapter_bars) if adapter_bars else 0
+            }
+            performance_df = pd.DataFrame([performance_data])
+            performance_file = artifacts_dir / "performance_local.parquet"
+            performance_df.to_parquet(performance_file)
+            
+            success_rate = successful_bars / len(adapter_bars) if adapter_bars else 0
+            self.logger.info(f"Adapter local adaptation completed: {successful_bars}/{len(adapter_bars)} bars successful ({success_rate:.1%} success rate)")
+            
+            return {
+                "status": "completed", 
+                "artifacts_created": 2,  # parameter and performance files
+                "total_adapter_bars": len(adapter_bars),
+                "successful_bars": successful_bars,
+                "success_rate": success_rate
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Adapter local adaptation failed: {str(e)}")
+            raise
 
     def _get_artifact_paths(self, bb_dir: Path) -> Dict[str, List[str]]:
         """Get all artifact paths for the current backbone bar."""
@@ -510,15 +1240,11 @@ class Orchestrator:
 
     def _get_environment_info(self) -> Dict[str, str]:
         """Get environment version information."""
-        import torch
-        import pandas
-        import numpy
-        
         return {
-            "python": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
             "torch": torch.__version__,
-            "pandas": pandas.__version__,
-            "numpy": numpy.__version__,
+            "pandas": pd.__version__,
+            "numpy": np.__version__,
             # TODO: Add rpy2, R, glmnet versions
         }
 

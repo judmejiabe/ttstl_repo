@@ -1,0 +1,23 @@
+{
+  "run_slug": "2025-08-18_DEMO_GLOBAL_bdelta2500000_adelta100000_sdelta100_seed42_idglobal_demo",
+  "ticker": "DEMO_GLOBAL",
+  "bdelta": 2500000.0,
+  "adelta": 100000.0,
+  "sdelta": 100.0,
+  "seed": 42,
+  "session_start": 0.0,
+  "session_finish": 10000000.0,
+  "created_at": "2025-08-18T10:46:41.289516",
+  "code_provenance": {
+    "git_commit": "placeholder",
+    "git_branch": "main",
+    "git_dirty": false
+  },
+  "environment": {
+    "python": "3.9.23",
+    "torch": "2.5.0+cu118",
+    "pandas": "2.3.1",
+    "numpy": "2.0.2"
+  },
+  "artifacts": []
+}

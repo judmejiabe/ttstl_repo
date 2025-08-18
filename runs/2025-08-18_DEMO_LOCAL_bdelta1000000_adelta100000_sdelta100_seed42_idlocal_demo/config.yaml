@@ -1,0 +1,42 @@
+adelta: 100000.0
+adf_rejection_rate_threshold: 0.8
+alpha_enet_grid:
+- 0.5
+architecture: cnn_lstm
+archm: false
+arma_order:
+- 1
+- 1
+batch_size: 16
+bdelta: 1000000.0
+buffer_proportion: 0.05
+dist: norm
+epochs: 0
+garch_order:
+- 1
+- 1
+kpss_verification_threshold: 0.2
+lambda_adalasso_grid:
+- 0.1
+lambda_enet_grid:
+- 0.1
+model: sGARCH
+n_lags: 5
+na_verification_threshold: 0.1
+ols_significance_level: 0.05
+parsimonious_mode: false
+quantile: 0.005
+run_id: local_demo
+sdelta: 100.0
+seed: 42
+selection_threshold: 0.4
+session_finish: 1000000.0
+session_start: 0.0
+target_col_name: micro_return
+tau_adalasso_grid:
+- 0.5
+ticker: DEMO_LOCAL
+tolerance_threshold: 1.0e-06
+update_method: simple_average
+validation_proportion_backbone: 0.15
+validation_proportion_interface: 0.25

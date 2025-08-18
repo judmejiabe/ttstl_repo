@@ -10,11 +10,16 @@ import json
 import pytest
 import tempfile
 import yaml
+import sys
+import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pandas as pd
 import numpy as np
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 
@@ -42,13 +47,27 @@ class TestOrchestratorConfig:
         assert cfg.selection_threshold == 0.15
         assert cfg.tolerance_threshold == 1e-6
         assert cfg.ols_significance_level == 0.05
-        assert cfg.validation_proportion == 0.1
+        assert cfg.validation_proportion_backbone == 0.1  # Backbone validation proportion
+        assert cfg.validation_proportion_interface == 0.2  # Interface validation proportion
         assert cfg.buffer_proportion == 0.05
+        assert cfg.architecture == 'cnn_lstm'  # New architecture default
+        assert cfg.target_col_name == 'micro_return'  # New target column default
+        assert cfg.adf_rejection_rate_threshold == 0.8  # New stationarity test defaults
+        assert cfg.kpss_verification_threshold == 0.2
+        assert cfg.na_verification_threshold == 0.1
+        
+        # Check adapter configuration defaults
+        assert cfg.update_method == 'myopic'
+        assert cfg.arma_order == (1, 1)
+        assert cfg.garch_order == (1, 1)
+        assert cfg.dist == 'norm'
+        assert cfg.model == 'sGARCH'
+        assert cfg.archm is False
         
         # Check default grids are set
-        assert cfg.alpha_enet_grid == [0.1, 0.5, 0.9]
-        assert len(cfg.lambda_enet_grid) == 20  # logspace(-4, 0, 20)
-        assert cfg.tau_adalasso_grid == [0.5, 1.0, 1.5, 2.0]
+        assert cfg.alpha_enet_grid == [0.1, 0.25, 0.5, 0.75, 0.9]
+        assert len(cfg.lambda_enet_grid) == 20  # logspace(-4, 5, 20)
+        assert cfg.tau_adalasso_grid == [0.25, 0.5, 1.0, 1.5, 2.0]
         assert len(cfg.lambda_adalasso_grid) == 20
         
     def test_orchestrator_config_custom_grids(self):
@@ -71,7 +90,7 @@ class TestOrchestratorConfig:
         assert cfg.alpha_enet_grid == custom_alpha
         assert cfg.lambda_enet_grid == custom_lambda
         # Defaults should still be set for others
-        assert cfg.tau_adalasso_grid == [0.5, 1.0, 1.5, 2.0]
+        assert cfg.tau_adalasso_grid == [0.25, 0.5, 1.0, 1.5, 2.0]
 
 
 class TestOrchestrator:
@@ -164,7 +183,95 @@ class TestOrchestrator:
                 
                 # Check backbone index is initialized
                 assert orchestrator._bb_idx == -1
-    
+
+    def test_component_initialization_stacks(self):
+        """Test that multiple backbone-interface-adapter stacks are created correctly."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runs_root = Path(temp_dir)
+            
+            # Test case 1: Session length that creates multiple stacks with warning about last bar
+            cfg1 = OrchestratorConfig(
+                ticker='TEST',
+                bdelta=100000.0,  # 100k units per backbone bar
+                adelta=10000.0,
+                sdelta=1000.0,
+                seed=42,
+                session_start=0.0,
+                session_finish=350000.0,  # Should create 4 stacks (3 full + 1 partial)
+                run_id='test_stacks'
+            )
+            
+            with patch('ttstl.architectures.cnn_lstm.CNNLSTM') as mock_cnn, \
+                 patch('ttstl.orchestrator.Backbone') as mock_backbone, \
+                 patch('ttstl.orchestrator.Interface') as mock_interface, \
+                 patch('ttstl.orchestrator.Adapter') as mock_adapter:
+                
+                # Mock the stacked structure where adapter.interface.backbone exists
+                mock_adapter_instance = MagicMock()
+                mock_interface_instance = MagicMock()
+                mock_backbone_instance = MagicMock()
+                
+                mock_adapter_instance.interface = mock_interface_instance
+                mock_interface_instance.backbone = mock_backbone_instance
+                mock_adapter.return_value = mock_adapter_instance
+                
+                orchestrator = Orchestrator(runs_root, cfg1)
+                
+                # Should create 4 stacks (floor(350000/100000) + 1 = 3 + 1 = 4)
+                assert len(orchestrator.stacks) == 4
+                assert "backbone_0" in orchestrator.stacks
+                assert "backbone_1" in orchestrator.stacks
+                assert "backbone_2" in orchestrator.stacks
+                assert "backbone_3" in orchestrator.stacks
+                
+                # Check that all stacks contain adapter instances
+                for i in range(4):
+                    stack_key = f"backbone_{i}"
+                    assert stack_key in orchestrator.stacks
+                    assert orchestrator.stacks[stack_key] == mock_adapter_instance
+                
+                # Check backward compatibility attributes
+                assert orchestrator.adapter == orchestrator.stacks["backbone_0"]
+                assert orchestrator.interface == orchestrator.stacks["backbone_0"].interface
+                assert orchestrator.backbone == orchestrator.stacks["backbone_0"].interface.backbone
+                
+                # Verify the neural network model was created correctly
+                assert mock_cnn.call_count == 4  # One for each stack
+                
+            # Test case 2: Session with small residual that gets dropped
+            cfg2 = OrchestratorConfig(
+                ticker='TEST2',
+                bdelta=100000.0,
+                adelta=10000.0,
+                sdelta=1000.0,
+                seed=42,
+                session_start=0.0,
+                session_finish=300500.0,  # Small residual (500/100000 = 0.5% < 1%)
+                run_id='test_drop'
+            )
+            
+            with patch('ttstl.architectures.cnn_lstm.CNNLSTM'), \
+                 patch('ttstl.orchestrator.Backbone'), \
+                 patch('ttstl.orchestrator.Interface'), \
+                 patch('ttstl.orchestrator.Adapter') as mock_adapter:
+                
+                mock_adapter_instance = MagicMock()
+                mock_interface_instance = MagicMock()
+                mock_backbone_instance = MagicMock()
+                
+                mock_adapter_instance.interface = mock_interface_instance
+                mock_interface_instance.backbone = mock_backbone_instance
+                mock_adapter.return_value = mock_adapter_instance
+                
+                orchestrator2 = Orchestrator(runs_root, cfg2)
+                
+                # Should create 3 stacks (residual dropped)
+                assert len(orchestrator2.stacks) == 3
+                assert "backbone_0" in orchestrator2.stacks
+                assert "backbone_1" in orchestrator2.stacks
+                assert "backbone_2" in orchestrator2.stacks
+                assert "backbone_3" not in orchestrator2.stacks
+
     def test_run_slug_generation(self, sample_config):
         """Test run slug generation format."""
         with tempfile.TemporaryDirectory() as temp_dir:
