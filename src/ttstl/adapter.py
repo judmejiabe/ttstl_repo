@@ -44,6 +44,24 @@ class Adapter:
                     self.parameters[key] = (ell - 1) / ell * self.parameters[key] + \
                         1 / ell * new_parameters[key]
     
+    def _update_power_law(self):
+        pass
+
+    def _update_exponential_smoothing(self):
+        pass
+
+    def _update_minimum_variance(self):
+        pass
+
+    def _update_newton_raphson(self):
+        pass
+
+    def _update_fischer_scoring(self):
+        pass
+
+    def _update_gradient_descent(self):
+        pass
+    
     def _print_parameters_summary(self, adapter_bar_number: int, new_parameters: dict, garch_results: dict):
         """
         Print a Python summary of the GARCH model parameters.
@@ -92,7 +110,7 @@ class Adapter:
             print(f"{display_name:<20} {coef:>12.6f} {se:>12.6f} {pval:>10.4f}")
         
         # Print carried estimates (averaged parameters)
-        print(f"\n📈 CARRIED ESTIMATES (Running Average, {adapter_bar_number} bars):")
+        print(f"\n📈 CARRIED ESTIMATES (Bar {adapter_bar_number}):")
         print(f"{'Parameter':<20} {'Coefficient':>12}")
         print("-" * 35)
         
@@ -102,25 +120,6 @@ class Adapter:
             print(f"{display_name:<20} {carried_value:>12.6f}")
         
         print(f"{'='*60}")
-        
-
-    def _update_power_law(self):
-        pass
-
-    def _update_exponential_smoothing(self):
-        pass
-
-    def _update_minimum_variance(self):
-        pass
-
-    def _update_newton_raphson(self):
-        pass
-
-    def _update_fischer_scoring(self):
-        pass
-
-    def _update_gradient_descent(self):
-        pass
 
     def _fit_garch_model(self, y : np.ndarray, 
                          X : np.ndarray = None, 
@@ -205,7 +204,7 @@ class Adapter:
         result_dict['standardized_residuals'] = np.array(r_result.rx2('stdresid'))
         result_dict['saddle_point_indicator'] = int(r_result.rx2('saddle')[0])
         result_dict['spec'] = r_result.rx2('spec')  # Store GARCH specification
-        
+
         # Store model specification info
         result_dict['model_info'] = {
             'model': self.model,

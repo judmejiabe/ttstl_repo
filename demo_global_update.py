@@ -275,8 +275,8 @@ def main():
         session_start=session_start,
         session_finish=session_finish,
         
-        # Zero epochs for mock run
-        epochs=0,
+        # Small number of epochs for testing training history and model saving
+        epochs=3,
         batch_size=16,
         validation_proportion_backbone=0.15,
         validation_proportion_interface=0.25,
@@ -319,6 +319,8 @@ def main():
         bb_dir = orchestrator.run_dir / "bb_000" / "global_update"
         if bb_dir.exists():
             print(f"  ✓ Backbone artifacts: {bb_dir}")
+            
+            # Check correlation artifacts
             correlation_dir = bb_dir / "backbone" / "correlation"
             if correlation_dir.exists():
                 heatmaps = list(correlation_dir.glob("*.png"))
@@ -326,6 +328,55 @@ def main():
                     print(f"    - Correlation heatmaps: {len(heatmaps)} files")
                     for heatmap in heatmaps[:3]:  # Show first 3
                         print(f"      • {heatmap.name}")
+            
+            # Check training artifacts
+            architecture_dir = bb_dir / "backbone" / "architecture"
+            if architecture_dir.exists():
+                print(f"    - Architecture artifacts:")
+                
+                # Check for training history
+                train_log = architecture_dir / "train_log.parquet"
+                if train_log.exists():
+                    print(f"      ✓ Training history: {train_log.name}")
+                    # Load and show basic info about training history
+                    try:
+                        import pandas as pd
+                        df = pd.read_parquet(train_log)
+                        print(f"        - Epochs recorded: {len(df)}")
+                        print(f"        - Final train loss: {df['train_loss'].iloc[-1]:.6f}")
+                        print(f"        - Final validation loss: {df['validation_loss'].iloc[-1]:.6f}")
+                        print(f"        - Best validation loss: {df['validation_loss'].min():.6f}")
+                    except Exception as e:
+                        print(f"        - Error reading training history: {e}")
+                else:
+                    print(f"      ❌ Training history not found")
+                
+                # Check for model weights
+                best_model = architecture_dir / "best.pt"
+                if best_model.exists():
+                    print(f"      ✓ Model weights: {best_model.name}")
+                    # Show file size
+                    size_mb = best_model.stat().st_size / (1024 * 1024)
+                    print(f"        - Size: {size_mb:.2f} MB")
+                else:
+                    print(f"      ❌ Model weights not found")
+                
+                # Check for model metadata
+                metadata_file = architecture_dir / "model_metadata.json"
+                if metadata_file.exists():
+                    print(f"      ✓ Model metadata: {metadata_file.name}")
+                    # Load and show basic info
+                    try:
+                        import json
+                        with open(metadata_file, 'r') as f:
+                            metadata = json.load(f)
+                        print(f"        - Model class: {metadata.get('model_class', 'N/A')}")
+                        print(f"        - Device: {metadata.get('device', 'N/A')}")
+                        print(f"        - Epochs trained: {metadata.get('epochs_trained', 'N/A')}")
+                    except Exception as e:
+                        print(f"        - Error reading metadata: {e}")
+                else:
+                    print(f"      ❌ Model metadata not found")
     else:
         print(f"\n❌ Demo failed!")
     

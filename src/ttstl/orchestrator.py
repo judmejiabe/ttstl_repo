@@ -55,17 +55,17 @@ class OrchestratorConfig:
     batch_size: int = 32
     validation_proportion_backbone: float = 0.1
     buffer_proportion: float = 0.05
-    quantile: float = 0.005
+    quantile: float = 0.005 # Windsorization quantile
     adf_rejection_rate_threshold : float = 0.8
     kpss_verification_threshold : float = 0.2
     na_verification_threshold : float = 0.1
 
     # Interface knobs
-    # Hyperparameter grids (explicitly included)
-    alpha_enet_grid: Optional[List[float]] = None
-    lambda_enet_grid: Optional[List[float]] = None
-    tau_adalasso_grid: Optional[List[float]] = None
-    lambda_adalasso_grid: Optional[List[float]] = None
+    # Hyperparameter grids (using default factory approach)
+    alpha_enet_grid: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
+    lambda_enet_grid: Optional[List[float]] = field(default_factory=lambda: np.logspace(-4, 2, 20).tolist())
+    tau_adalasso_grid: Optional[List[float]] = field(default_factory=lambda: [0.25, 0.5, 1.0, 1.5, 2.0])
+    lambda_adalasso_grid: Optional[List[float]] = field(default_factory=lambda: np.logspace(-4, 2, 20).tolist())
 
     validation_proportion_interface : float = 0.2
     selection_threshold: float = 0.40
@@ -84,16 +84,7 @@ class OrchestratorConfig:
     # Optional run-id override
     run_id: Optional[str] = None
 
-    def __post_init__(self):
-        """Set default grids if None provided."""
-        if self.alpha_enet_grid is None:
-            self.alpha_enet_grid = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]
-        if self.lambda_enet_grid is None:
-            self.lambda_enet_grid = np.logspace(-4, 2, 20).tolist()
-        if self.tau_adalasso_grid is None:
-            self.tau_adalasso_grid = [0.25, 0.5, 1.0, 1.5, 2.0]
-        if self.lambda_adalasso_grid is None:
-            self.lambda_adalasso_grid = np.logspace(-4, 2, 20).tolist()
+    
 
 
 class Orchestrator:
@@ -133,6 +124,9 @@ class Orchestrator:
         
         # Initialize backbone counter
         self._bb_idx = -1
+
+        # Placeholder for the number of backbone bars
+        self.total_backbone_bars = None
         
         # Seed RNGs for reproducibility
         self._seed_rngs()
@@ -147,15 +141,166 @@ class Orchestrator:
         
         self.logger.info(f"Orchestrator initialized with run: {self.run_slug}")
 
-    def global_update(self, 
-                      event_df: pd.DataFrame, 
-                      phys_df: pd.DataFrame) -> Dict[str, Any]:
+    def global_update_session(self, 
+                             event_df: pd.DataFrame, 
+                             phys_df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
-        Perform global update: full backbone training, interface selection, adapter fitting.
+        Perform global update for all backbone bars in the session automatically.
         
         Args:
-            event_df: Event-driven trading session data
-            phys_df: Physical-time trading session data
+            event_df: Full event-driven trading session data
+            phys_df: Full physical-time trading session data
+            
+        Returns:
+            List of results for each backbone bar processed
+        """
+        self.logger.info("Starting global_update_session for full trading session")
+        
+        # Add time bar columns if not present
+        event_df_processed = self._add_time_bar_columns(event_df.copy())
+        phys_df_processed = self._add_time_bar_columns(phys_df.copy())
+        
+        # Get all backbone bars to process
+        backbone_bars = sorted(event_df_processed['backbone_bar'].unique())
+        total_backbone_bars = len(backbone_bars)
+        self.total_backbone_bars = total_backbone_bars
+
+        self.logger.info(f"Processing {total_backbone_bars} backbone bars")
+
+        all_results = []
+        
+        for i, bb in enumerate(backbone_bars):
+            self.logger.info(f"Processing backbone bar {bb} ({i+1}/{total_backbone_bars})")
+            
+            # Filter data for this specific backbone bar
+            event_bb_data = event_df_processed[event_df_processed['backbone_bar'] == bb].copy()
+            phys_bb_data = phys_df_processed[phys_df_processed['backbone_bar'] == bb].copy()
+            
+            self.logger.info(f"Backbone bar {bb} data: {len(event_bb_data):,} events, {len(phys_bb_data):,} sampling time bars of length {self.cfg.sdelta:.2f}")
+            
+            # Run global update for this backbone bar
+            try:
+                results = self.global_update_single_bar(event_bb_data, phys_bb_data)
+                all_results.append(results)
+                self.logger.info(f"✅ Backbone bar {bb} completed successfully")
+            except Exception as e:
+                self.logger.error(f"❌ Backbone bar {bb} failed: {str(e)}")
+                raise RuntimeError(f"Global update failed for backbone bar {bb}: {str(e)}")
+        
+        self.logger.info(f"Global update session completed successfully for {total_backbone_bars} backbone bars")
+        return all_results
+
+    def local_adapt_session(self, 
+                           event_df: pd.DataFrame, 
+                           phys_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        Perform local adaptation for all backbone bars in the session automatically.
+        
+        Args:
+            event_df: Full event-driven trading session data
+            phys_df: Full physical-time trading session data
+            
+        Returns:
+            List of results for each backbone bar processed
+        """
+        if self._bb_idx < 0:
+            self.logger.error("Cannot run local_adapt_session before global_update_session")
+            raise RuntimeError("Cannot run local_adapt_session before global_update_session")
+            
+        self.logger.info("Starting local_adapt_session for full trading session")
+        
+        # Add time bar columns if not present
+        event_df_processed = self._add_time_bar_columns(event_df.copy())
+        phys_df_processed = self._add_time_bar_columns(phys_df.copy())
+        
+        # Get all backbone bars to process (should match those from global update)
+        backbone_bars = sorted(event_df_processed['backbone_bar'].unique())
+        total_backbone_bars = len(backbone_bars)
+        
+        # Validate that we have global update results for all backbone bars
+        expected_bb_count = self._bb_idx + 1  # _bb_idx is 0-based
+        if total_backbone_bars != expected_bb_count:
+            raise RuntimeError(f"Mismatch: found {total_backbone_bars} backbone bars in data, but have global update results for {expected_bb_count}")
+        
+        self.logger.info(f"Processing local adaptation for {total_backbone_bars} backbone bars: {backbone_bars}")
+        
+        all_results = []
+        
+        # Reset backbone index for local adaptation processing
+        original_bb_idx = self._bb_idx
+        self._bb_idx = -1  # Will be incremented in local_adapt_single_bar
+        
+        for i, bb in enumerate(backbone_bars):
+            self.logger.info(f"Processing local adaptation for backbone bar {bb} ({i+1}/{total_backbone_bars})")
+            
+            # Filter data for this specific backbone bar
+            event_bb_data = event_df_processed[event_df_processed['backbone_bar'] == bb].copy()
+            phys_bb_data = phys_df_processed[phys_df_processed['backbone_bar'] == bb].copy()
+            
+            self.logger.info(f"Backbone bar {bb} data: {len(event_bb_data):,} event samples, {len(phys_bb_data):,} physical samples")
+            
+            # Run local adaptation for this backbone bar
+            try:
+                results = self.local_adapt_single_bar(event_bb_data, phys_bb_data)
+                all_results.append(results)
+                self.logger.info(f"✅ Local adaptation for backbone bar {bb} completed successfully")
+            except Exception as e:
+                self.logger.error(f"❌ Local adaptation for backbone bar {bb} failed: {str(e)}")
+                raise RuntimeError(f"Local adaptation failed for backbone bar {bb}: {str(e)}")
+        
+        self.logger.info(f"Local adaptation session completed successfully for {total_backbone_bars} backbone bars")
+        return all_results
+
+    # New API methods that handle full session processing automatically
+    def global_update(self, 
+                      event_df: pd.DataFrame, 
+                      phys_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        Perform global update for the full session (automatic backbone bar iteration).
+        
+        This is the recommended method that handles all backbone bars automatically.
+        For single backbone bar processing, use global_update_single_bar().
+        
+        Args:
+            event_df: Full event-driven trading session data
+            phys_df: Full physical-time trading session data
+            
+        Returns:
+            List of results for each backbone bar processed
+        """
+        return self.global_update_session(event_df, phys_df)
+
+    def local_adapt(self, 
+                    event_df: pd.DataFrame, 
+                    phys_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        Perform local adaptation for the full session (automatic backbone bar iteration).
+        
+        This is the recommended method that handles all backbone bars automatically.
+        For single backbone bar processing, use local_adapt_single_bar().
+        
+        Args:
+            event_df: Full event-driven trading session data
+            phys_df: Full physical-time trading session data
+            
+        Returns:
+            List of results for each backbone bar processed
+        """
+        return self.local_adapt_session(event_df, phys_df)
+
+    # Single backbone bar methods (for advanced users)
+    def global_update_single_bar(self, 
+                                 event_df: pd.DataFrame, 
+                                 phys_df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Perform global update for a single backbone bar.
+        
+        Note: This is the original global_update behavior. Most users should use
+        global_update() which handles all backbone bars automatically.
+        
+        Args:
+            event_df: Event-driven data for one backbone bar
+            phys_df: Physical-time data for one backbone bar
             
         Returns:
             Dict containing key metrics, selected variables, and artifact paths
@@ -163,6 +308,7 @@ class Orchestrator:
         # Increment backbone index and create directory structure
         self._bb_idx += 1
         bb_dir = self._create_backbone_directories("global_update")
+
         
         self.logger.info(f"Starting global_update for backbone bar {self._bb_idx:03d}")
         
@@ -204,13 +350,16 @@ class Orchestrator:
             self.logger.error(f"Global update failed for backbone bar {self._bb_idx:03d}: {str(e)}")
             raise RuntimeError(f"Cannot proceed without global update artifacts: {str(e)}")
 
-    def local_adapt(self, event_df: pd.DataFrame, phys_df: pd.DataFrame) -> Dict[str, Any]:
+    def local_adapt_single_bar(self, event_df: pd.DataFrame, phys_df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Perform local adaptation: frozen backbone, interface local selection, adapter updates.
+        Perform local adaptation for a single backbone bar.
+        
+        Note: This is the original local_adapt behavior. Most users should use
+        local_adapt() which handles all backbone bars automatically.
         
         Args:
-            event_df: Event-driven trading session data
-            phys_df: Physical-time trading session data
+            event_df: Event-driven data for one backbone bar
+            phys_df: Physical-time data for one backbone bar
             
         Returns:
             Dict containing OOS metrics, adapter bar specific coeffs, and break decisions
@@ -262,23 +411,31 @@ class Orchestrator:
             return {"error": str(e), "backbone_bar": self._bb_idx}
 
     def _seed_rngs(self) -> None:
-        """Seed all random number generators for reproducibility."""
+        """Seed all random number generators for reproducibility with independent seeds."""
+        # Generate independent seeds from base seed using Python's random module
+        base_rng = random.Random(self.cfg.seed)
+        
+        # Generate independent seeds for each library
+        python_seed = self.cfg.seed  # Use base seed for Python
+        numpy_seed = base_rng.randint(0, 2**32 - 1)  # Independent seed for NumPy
+        torch_seed = base_rng.randint(0, 2**32 - 1)  # Independent seed for PyTorch
+        
         # Seed Python RNG
-        random.seed(self.cfg.seed)
+        random.seed(python_seed)
         
         # Seed NumPy
-        np.random.seed(self.cfg.seed)
+        np.random.seed(numpy_seed)
         
         # Seed PyTorch
-        torch.manual_seed(self.cfg.seed)
+        torch.manual_seed(torch_seed)
         if torch.cuda.is_available():
-            torch.cuda.manual_seed(self.cfg.seed)
-            torch.cuda.manual_seed_all(self.cfg.seed)
+            torch.cuda.manual_seed(torch_seed)
+            torch.cuda.manual_seed_all(torch_seed)
             # For deterministic behavior
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
         
-        self.logger.debug(f"Seeded RNGs with seed: {self.cfg.seed}")
+        self.logger.debug(f"Seeded RNGs - Base: {self.cfg.seed}, Python: {python_seed}, NumPy: {numpy_seed}, PyTorch: {torch_seed}")
 
     def _create_run_slug(self) -> str:
         """Create a reproducible run slug."""
@@ -331,7 +488,7 @@ class Orchestrator:
         """Initialize multiple Backbone-Interface-Adapter stacks for the trading session."""
         # Calculate session length and number of backbone bars
         session_length = self.cfg.session_finish - self.cfg.session_start
-        num_backbone_bars = int((session_length) // self.cfg.bdelta)
+        num_backbone_bars = int(np.rint(session_length / self.cfg.bdelta))
         residual_length = session_length - (num_backbone_bars * self.cfg.bdelta)
         
         # Check if we need to add one more bar or warn about dropped interval
@@ -451,6 +608,8 @@ class Orchestrator:
             df['adapter_bar'] = ((adjusted_timestamps + 1e-6) // self.cfg.adelta).astype(int)
 
         # Add sampling_time_bar column - used for OFI calculations
+        # Sampling time bar as a name can be misleading as it is a timestamp rather than an index. 
+        # Consider changing with a lot of care
         if 'sampling_time_bar' not in df.columns:
             df['sampling_time_bar'] = np.rint((np.floor((df['timestamp'] - self.cfg.session_start + 1e-6) / self.cfg.sdelta) * self.cfg.sdelta) + self.cfg.session_start)
 
@@ -475,8 +634,9 @@ class Orchestrator:
         current_backbone = self.stacks[f"backbone_{self._bb_idx}"].interface.backbone
         
         # Create criterion and optimizer
+        # Consider modifying to use the configuration parameters
         criterion = nn.MSELoss(reduction='sum')
-        optimizer = optim.Adam(current_backbone.model.parameters(), lr=0.001)
+        optimizer = optim.Adam(current_backbone.model.parameters(), lr=0.0001)
         
         try:
             # Run actual backbone global update with configuration parameters
@@ -495,35 +655,30 @@ class Orchestrator:
                 na_verification_threshold=self.cfg.na_verification_threshold,
                 kpss_drop=True,
                 correlation_threshold=0.95,  # Could be added to config if needed
-                target_col_name=self.cfg.target_col_name
+                target_col_name=self.cfg.target_col_name,
+                save_dir=str(bb_dir / "backbone")  # Enable checkpoints and nn_weights saving
             )
             
             # Save correlation heatmaps using the backbone's method
-            heatmap_dir = bb_dir / "backbone" / "correlation"
-            current_backbone.save_correlation_heatmaps(save_dir=str(heatmap_dir))
+            # heatmap_dir = bb_dir / "backbone" / "correlation"
+            # current_backbone.save_correlation_heatmaps(save_dir=str(heatmap_dir))
+            
+            # Save training history and model weights to architecture directory
+            architecture_dir = bb_dir / "backbone" / "architecture"
+            current_backbone.save_training_history(save_dir=str(architecture_dir))
+            current_backbone.save_model_weights(save_dir=str(architecture_dir))
             
             return {
                 "status": "completed", 
                 "backbone_result": backbone_result,
                 "event_samples": len(current_bb_event_df),
                 "phys_samples": len(current_bb_phys_df),
-                "artifacts_created": 8
+                "artifacts_created": 11  # Updated count: added nn_weights.npz and checkpoints
             }
             
         except Exception as e:
             self.logger.error(f"Backbone global update failed: {str(e)}")
-            # Create placeholder artifacts for testing
-            artifacts_dir = bb_dir / "backbone"
-            
-            # Create placeholder files
-            (artifacts_dir / "architecture" / "train_log.parquet").touch()
-            (artifacts_dir / "architecture" / "best.pt").touch()
-            (artifacts_dir / "stationarity" / "stationarity_raw.parquet").touch()
-            (artifacts_dir / "stationarity" / "stationarity_summary.parquet").touch()
-            (artifacts_dir / "correlation" / "corr_matrix.npz").touch()
-            (artifacts_dir / "correlation" / "corr_heatmap.png").touch()
-            (artifacts_dir / "extended_covariates.json").touch()
-            (artifacts_dir / "nn_weights.npz").touch()
+            raise RuntimeError(f"Backbone global update failed for backbone bar {self._bb_idx}: {str(e)}")
             
             return {
                 "status": "failed", 
@@ -873,31 +1028,61 @@ class Orchestrator:
         Run backbone local adaptation step - backbone remains FROZEN (no updates).
         
         In local adaptation, the backbone model is not retrained or updated.
-        We only use it to extract neural covariates for the interface and adapter.
+        We use the frozen model for out-of-sample evaluation and save test results.
         """
-        self.logger.info("Running backbone local adaptation (backbone frozen - no updates)...")
+        self.logger.info("Running backbone local adaptation (backbone frozen - evaluating out-of-sample)...")
         
-        artifacts_dir = bb_dir / "backbone"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        # Filter data for the current backbone bar
+        current_bb_event_df = event_df[event_df['backbone_bar'] == self._bb_idx].copy()
+        
+        self.logger.info(f"Backbone bar {self._bb_idx}: {len(current_bb_event_df)} event samples for evaluation")
+        
+        # Check if we have sufficient data
+        if len(current_bb_event_df) < 10:
+            self.logger.warning(f"Insufficient event data for backbone bar {self._bb_idx}: {len(current_bb_event_df)} samples")
+            return {"status": "insufficient_data", "event_samples": len(current_bb_event_df)}
+        
+        # Get the current backbone for this backbone bar
+        current_backbone = self.stacks[f"backbone_{self._bb_idx}"].interface.backbone
         
         # The backbone is frozen - no training or updates
-        # We only confirm it's ready to provide neural features
-        if not hasattr(self.backbone, 'model') or self.backbone.model is None:
+        # We only confirm it's ready and perform out-of-sample evaluation
+        if not hasattr(current_backbone, 'model') or current_backbone.model is None:
             raise RuntimeError("Backbone model not available. Must run global_update first.")
         
-        # Save a status file indicating backbone was frozen
-        status_file = artifacts_dir / "backbone_frozen_status.json"
-        import json
-        with open(status_file, 'w') as f:
-            json.dump({
-                "status": "frozen",
-                "message": "Backbone model frozen during local adaptation",
-                "backbone_bar": self._bb_idx,
-                "model_available": True
-            }, f, indent=2)
-        
-        self.logger.info("✓ Backbone local adaptation completed (model frozen)")
-        return {"status": "frozen", "artifacts_created": 1}
+        try:
+            # Perform out-of-sample evaluation on the current backbone bar data
+            architecture_dir = bb_dir / "backbone" / "architecture"
+            test_loss = current_backbone.evaluate_out_of_sample(
+                event_driven_data=current_bb_event_df,
+                criterion=nn.MSELoss(reduction='sum'),
+                batch_size=self.cfg.batch_size,
+                quantile=self.cfg.quantile,
+                save_dir=str(architecture_dir)
+            )
+            
+            self.logger.info(f"✓ Backbone local adaptation completed (test_loss: {test_loss:.4f})")
+            return {
+                "status": "completed", 
+                "test_loss": test_loss,
+                "event_samples": len(current_bb_event_df),
+                "artifacts_created": 1  # test_os.json
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Backbone local adaptation failed: {str(e)}")
+            
+            # Create placeholder artifacts for testing
+            artifacts_dir = bb_dir / "backbone" / "architecture"
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            (artifacts_dir / "test_os.json").touch()
+            
+            return {
+                "status": "failed", 
+                "error": str(e),
+                "event_samples": len(current_bb_event_df),
+                "artifacts_created": 1
+            }
 
     def _run_interface_local_adapt(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
         """

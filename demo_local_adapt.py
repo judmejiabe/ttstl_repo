@@ -165,7 +165,7 @@ def main():
         session_finish=session_finish,
         
         # Zero epochs for mock run (no neural network training)
-        epochs=0,
+        epochs=5,
         batch_size=16,
         validation_proportion_backbone=0.15,
         validation_proportion_interface=0.25,
@@ -213,7 +213,7 @@ def main():
         print("STEP 1: RUNNING GLOBAL UPDATE (PREREQUISITE)")
         print("="*60)
         print("Local adaptation requires global update to be run first...")
-        print("🚫 Neural network training: DISABLED (epochs=0)")
+        print("� Neural network training: ENABLED (epochs=5)")
         print("📊 Processing: First backbone bar only (fast testing)")
         
         global_results = orchestrator.global_update(event_bb_data, phys_bb_data)

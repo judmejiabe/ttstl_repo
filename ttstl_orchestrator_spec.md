@@ -138,21 +138,21 @@ runs/
       global_update/
         backbone/
           architecture/
-            train_log.parquet             # Train and validation MSE per epoch
-            best.pt                       # Serialized weights and optimizer state at best validation loss
+            train_log.parquet             # Train and validation MSE per epoch (Check)
+            best.pt                       # Serialized weights and optimizer state at best validation loss (Check)
             checkpoints/
-              epoch_0005.pt               # Add a checkpoint of the serialized weights and optimizer state every 5 epochs to recover from disruptions
+              epoch_0005.pt               # Add a checkpoint of the serialized weights and optimizer state every 5 epochs to recover from disruptions (Check: Saved a checkpoint on every epoch instead of five)
 
           stationarity/
-            stationarity_raw.parquet      # Row-wise outcomes of ADF/PP/KPSS per variable × adapter_bar. Each row should contain variable, bar, test, and rejection 
-            stationarity_summary.parquet  # aggregated rates per variable
+            stationarity_raw.parquet      # Row-wise outcomes of ADF/PP/KPSS per variable × adapter_bar. Each row should contain variable, bar, test, and rejection (Check)
+            stationarity_summary.parquet  # aggregated rates per variable (Check)
 
           correlation/
             corr_matrix.npz               # np.savez_compressed: {corr, vars}
-            corr_heatmap.png              # Correlation matrix heatmap
+            corr_heatmap.png              # Correlation matrix heatmap (Check: There are three heatmas when running in full mode. Not only one)
 
           extended_covariates.json        # full covariate set after pruning for stationarity
-          nn_weights.npz                  # layer weights snapshot
+          nn_weights.npz                  # layer weights snapshot (CheckHow can)
 
         interface/
           corridor_ada_lasso.png        # Corridor plot of adaptive lasso using the selected hyperparameters
@@ -167,7 +167,8 @@ runs/
 
       local_adapt/
         backbone/
-          test_os.json                    # test MSE of the trained architecture
+          architecture/
+            test_os.json                    # test MSE of the trained architecture (Pending verification)
 
         interface/
           corridor_ada_lasso.png          # adaptive lasso corridor plot with selected hyperparameters

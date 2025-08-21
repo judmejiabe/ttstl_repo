@@ -1,0 +1,92 @@
+{
+  "run_slug": "2025-08-20_SIM_bdelta500000_adelta100000_sdelta100_seed19991810_id2d4296",
+  "ticker": "SIM",
+  "bdelta": 500000.0,
+  "adelta": 100000.0,
+  "sdelta": 100.0,
+  "seed": 19991810,
+  "session_start": 0.0,
+  "session_finish": 1000000.0,
+  "created_at": "2025-08-20T18:44:16.134834",
+  "code_provenance": {
+    "git_commit": "placeholder",
+    "git_branch": "main",
+    "git_dirty": false
+  },
+  "environment": {
+    "python": "3.9.23",
+    "torch": "2.5.0+cu118",
+    "pandas": "2.3.1",
+    "numpy": "2.0.2"
+  },
+  "artifacts": [
+    {
+      "backbone_bar": 0,
+      "mode": "global_update",
+      "timestamp": "2025-08-20T18:50:17.134067",
+      "artifact_paths": {
+        "backbone": [
+          "bb_000/global_update/backbone/stationarity/stationarity_summary.parquet",
+          "bb_000/global_update/backbone/stationarity/stationarity_raw.parquet",
+          "bb_000/global_update/backbone/correlation/corr_matrices.npz",
+          "bb_000/global_update/backbone/architecture/train_log.parquet",
+          "bb_000/global_update/backbone/architecture/model_metadata.json",
+          "bb_000/global_update/backbone/architecture/best.pt",
+          "bb_000/global_update/backbone/architecture/checkpoints/epoch_0001.pt",
+          "bb_000/global_update/backbone/architecture/checkpoints/epoch_0002.pt"
+        ],
+        "interface": [
+          "bb_000/global_update/interface/enet_hyperparams_grid_eval.parquet",
+          "bb_000/global_update/interface/hyperparams_selected.json",
+          "bb_000/global_update/interface/adalasso_hyperparams_grid_eval.parquet",
+          "bb_000/global_update/interface/corridor_ada_lasso.png"
+        ],
+        "adapter": [
+          "bb_000/global_update/adapter/armax_garch_corridor.png",
+          "bb_000/global_update/adapter/param_series.parquet",
+          "bb_000/global_update/adapter/performance_is.parquet",
+          "bb_000/global_update/adapter/processing_stats.parquet"
+        ]
+      },
+      "summary": {
+        "backbone_status": "completed",
+        "interface_status": "completed",
+        "adapter_status": "completed"
+      }
+    },
+    {
+      "backbone_bar": 1,
+      "mode": "global_update",
+      "timestamp": "2025-08-20T18:56:05.727870",
+      "artifact_paths": {
+        "backbone": [
+          "bb_001/global_update/backbone/stationarity/stationarity_summary.parquet",
+          "bb_001/global_update/backbone/stationarity/stationarity_raw.parquet",
+          "bb_001/global_update/backbone/correlation/corr_matrices.npz",
+          "bb_001/global_update/backbone/architecture/train_log.parquet",
+          "bb_001/global_update/backbone/architecture/model_metadata.json",
+          "bb_001/global_update/backbone/architecture/best.pt",
+          "bb_001/global_update/backbone/architecture/checkpoints/epoch_0001.pt",
+          "bb_001/global_update/backbone/architecture/checkpoints/epoch_0002.pt"
+        ],
+        "interface": [
+          "bb_001/global_update/interface/enet_hyperparams_grid_eval.parquet",
+          "bb_001/global_update/interface/hyperparams_selected.json",
+          "bb_001/global_update/interface/adalasso_hyperparams_grid_eval.parquet",
+          "bb_001/global_update/interface/corridor_ada_lasso.png"
+        ],
+        "adapter": [
+          "bb_001/global_update/adapter/armax_garch_corridor.png",
+          "bb_001/global_update/adapter/param_series.parquet",
+          "bb_001/global_update/adapter/performance_is.parquet",
+          "bb_001/global_update/adapter/processing_stats.parquet"
+        ]
+      },
+      "summary": {
+        "backbone_status": "completed",
+        "interface_status": "completed",
+        "adapter_status": "completed"
+      }
+    }
+  ]
+}

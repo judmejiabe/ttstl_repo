@@ -1,20 +1,28 @@
-import warnings
-from typing import Optional
-import traceback
+# Standard library imports
+import copy
+import json
+import logging
 import os
+import traceback
+import warnings
 from pathlib import Path
+from typing import Optional, List
 
+# Third-party imports
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import seaborn as sns
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from rpy2.robjects.packages import importr
-from rpy2.robjects import pandas2ri
-from rpy2.rinterface_lib import callbacks
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 
+# R interface imports
+from rpy2.rinterface_lib import callbacks
+from rpy2.robjects import pandas2ri
+from rpy2.robjects.packages import importr
+
+# Local application imports
 from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm
 
 # Suppress R console output to reduce noise from stationarity tests
@@ -59,6 +67,8 @@ class Backbone():
         self.neural_covariate_columns = None
         self.stationary_variables = None
         self.available_extra_covariates = None
+
+        self.logger = logging.getLogger("ttstl.orchestrator.backbone")
 
     def _one_epoch(self, 
                    train_loader : DataLoader,
@@ -106,14 +116,20 @@ class Backbone():
         criterion: nn.modules.loss,
         optimizer: Optional[torch.optim.Optimizer] = None,
         epochs: int = 10,
-        validation_loader: Optional[DataLoader] = None) -> float:
-        """Train the model for one epoch.
+        validation_loader: Optional[DataLoader] = None,
+        save_checkpoints: bool = False,
+        checkpoint_dir: Optional[str] = None) -> float:
+        """Train the model for specified epochs with optional checkpoint saving.
         Args:
             train_loader (DataLoader): DataLoader for the training data.
             criterion (nn.modules.loss): Loss function.
             optimizer (torch.optim.Optimizer): Optimizer for the model.
+            epochs (int): Number of training epochs.
+            validation_loader (DataLoader): DataLoader for validation data.
+            save_checkpoints (bool): Whether to save checkpoints every epoch.
+            checkpoint_dir (str): Directory to save checkpoints.
         Returns:
-            float: Average loss over the epoch.
+            float: Best validation loss achieved.
         """
         print("Starting training...")
         validation_loader = validation_loader or train_loader
@@ -121,9 +137,17 @@ class Backbone():
         validation_losses = []
         best_model = self.model
         best_validation_loss = float('inf')
+        best_epoch = 0
+        
+        # Setup checkpoint directory if needed
+        if save_checkpoints and checkpoint_dir:
+            checkpoint_path = Path(checkpoint_dir)
+            checkpoint_path.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Saving checkpoints to: {checkpoint_path}")
+
         for epoch in range(epochs):
 
-            print(f"Epoch {epoch + 1}/{epochs}")
+            self.logger.info(f"Epoch {epoch + 1}/{epochs}")
 
             self._one_epoch(train_loader, criterion, optimizer)
             this_train_loss = self._one_epoch(train_loader, criterion)
@@ -135,11 +159,32 @@ class Backbone():
 
             if this_validation_loss < best_validation_loss:
                 best_validation_loss = this_validation_loss
-                best_model = self.model
+                best_model = copy.deepcopy(self.model)  # Deep copy to avoid reference issues
+                best_epoch = epoch + 1
 
-            print(f"Train Loss: {this_train_loss:.4f}, Validation Loss: {this_validation_loss:.4f}")
+            self.logger.info(f"Mean Train Loss: {this_train_loss:.4f}, Mean Validation Loss: {this_validation_loss:.4f}")
+            
+            # Save checkpoint every epoch if requested
+            if save_checkpoints and checkpoint_dir:
+                checkpoint_file = checkpoint_path / f"epoch_{epoch + 1:04d}.pt"
+                checkpoint_data = {
+                    'epoch': epoch + 1,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict() if optimizer else None,
+                    'train_loss': this_train_loss,
+                    'validation_loss': this_validation_loss,
+                    'best_validation_loss': best_validation_loss
+                }
+                torch.save(checkpoint_data, checkpoint_file)
+                self.logger.info(f"Saved checkpoint: {checkpoint_file}")
 
-        print(f"Training complete. Best validation loss: {best_validation_loss:.4f}")
+        self.training_history_df = pd.DataFrame({
+            "epoch": range(1, epochs + 1),
+            "train_loss": train_losses,
+            "validation_loss": validation_losses
+        })
+
+        self.logger.info(f"Training complete. Best Mean Validation Loss: {best_validation_loss:.4f} at epoch {best_epoch}")
 
         self.model = best_model
         return best_validation_loss
@@ -173,7 +218,6 @@ class Backbone():
                     'KPSS' : int(kpss_rej),
                     'NA' : 0} 
         except Exception as e:
-            print(f"Error running stationarity tests: {e}")
             return {'ADF': 0, 'PP': 0, 'KPSS': 0, 'NA': 1}
 
     def _run_multiple_stationarity_tests(self,
@@ -219,6 +263,8 @@ class Backbone():
                     'KPSS': tests['KPSS'],
                     'NA': tests['NA']
                 })
+                if tests['NA'] == 1:
+                    self.logger.info(f'At least one stationarity test failed for variable {column} in adapter bar {ell}. This could be due to lack of variation, excessive variation, or missingness.')
         
         rejections_df = pd.DataFrame.from_records(records)
 
@@ -230,7 +276,8 @@ class Backbone():
                                      kpss_verification_threshold : float = 0.2,
                                      na_verification_threshold : float = 0.1,
                                      kpss_drop : bool = True,
-                                     target_col_name : str = 'micro_return') -> pd.DataFrame:
+                                     target_col_name : str = 'micro_return',
+                                     save_dir: Optional[str] = None) -> pd.DataFrame:
         """Select stationary variables from the DataFrame.
         Args:
             data (pd.DataFrame): DataFrame containing the time series data.
@@ -239,13 +286,32 @@ class Backbone():
             na_verification_threshold (float): NA verification threshold.
             kpss_drop (bool): Whether to use strict KPSS dropping.
             target_col_name (str): Name of the target variable column.
+            save_dir (Optional[str]): Directory to save stationarity test results.
         Returns:
             pd.DataFrame: DataFrame with only stationary variables.
         """
-        
+        self.logger.info(f'Running stationarity tests with kpss_drop:{kpss_drop}')
+
         rejections_df = self._run_multiple_stationarity_tests(data)
+
         grouped = rejections_df.groupby('variable')[['ADF', 'KPSS', 'NA']]\
             .mean()
+
+        # Save stationarity test results if save_dir provided
+        if save_dir:
+            save_path = Path(save_dir)
+            save_path.mkdir(parents=True, exist_ok=True)
+            
+            # Save raw stationarity test results per variable × adapter_bar
+            stationarity_raw_path = save_path / "stationarity_raw.parquet"
+            rejections_df.to_parquet(stationarity_raw_path, index=False)
+            self.logger.info(f"Saved raw stationarity test results to {stationarity_raw_path}")
+            
+            # Save aggregated rates per variable
+            stationarity_summary_path = save_path / "stationarity_summary.parquet"
+            grouped.to_parquet(stationarity_summary_path, index=True)  # Keep variable as index
+            self.logger.info(f"Saved stationarity summary to {stationarity_summary_path}")
+
 
         # Define base condition for stationarity
         adf_stationary = grouped['ADF'] > adf_rejection_rate_threshold
@@ -269,17 +335,29 @@ class Backbone():
         high_na_vars = grouped.index[adf_stationary & \
                                      high_na].tolist()
         
-        
+        if target_col_name in stationary_variables:
+            self.logger.info(f"✓ Target column '{target_col_name}' passed stationarity tests.")
+        else:
+            self.logger.warning(f"Target column '{target_col_name}' does not pass stationarity tests.")
 
         self.full_covariate_list = [var for var in stationary_variables \
                                     if var not in {'timestamp', target_col_name}]
 
+        self.logger.info("=" * 80)
+        self.logger.info("STATIONARY COVARIATES FOUND")
+        self.logger.info("=" * 80)
+
+        for i, var in enumerate(self.full_covariate_list):
+            self.logger.info(f"{i + 1}. {var}")
+
+        self.logger.info("=" * 80)
+
         # Issue warnings
         if warning_variables:
-            warnings.warn(f"Variables meeting ADF threshold but requiring verification for high KPSS rejections: {warning_variables}", UserWarning)
+            self.logger.warning(f"Variables meeting ADF threshold but requiring verification for high KPSS rejections: {warning_variables}")
 
         if high_na_vars:
-            warnings.warn(f"Variables passing stationarity criteria but with high NA rates:: {high_na_vars}", UserWarning)
+            self.logger.warning(f"Variables passing stationarity criteria but with high NA rates: {high_na_vars}")
 
         return stationary_variables
     
@@ -300,16 +378,18 @@ class Backbone():
     def drop_highly_correlated_variables(self, 
                                     data: pd.DataFrame, 
                                     threshold : float = 0.95) -> pd.DataFrame:
-        """Perform covariance matrix analysis on the DataFrame.
+        """Drops highly correlated variables from data at a random order.
         Args:
             data (pd.DataFrame): DataFrame containing the time series data.
         Returns:
             pd.DataFrame: DataFrame with covariance matrix analysis results.
         """
 
-        cov_matrix = data[self.full_covariate_list].corr(method='pearson')
+        self.logger.info('Dropping highly correlated variables')
+
+        corr_matrix = data[self.full_covariate_list].corr(method='pearson')
         # Determine highly correlated pairs
-        highly_correlated_pairs = cov_matrix.abs() > threshold
+        highly_correlated_pairs = corr_matrix.abs() > threshold
         adjacency_dict = {}
         for var in highly_correlated_pairs.columns:
             if sum(highly_correlated_pairs[var]) > 1:
@@ -324,6 +404,7 @@ class Backbone():
         for var in shuffled_variables:
             if var not in adjacency_dict:
                 continue
+            self.logger.info(f"Dropping variable {var} with neighbors {adjacency_dict[var]}")
             for neighbor in list(adjacency_dict[var]):
                 self.dropped_pairs[var] = neighbor
                 self.dropped_pairs[neighbor] = var
@@ -335,13 +416,22 @@ class Backbone():
 
         self.full_covariate_list = [var for var in self.full_covariate_list if var not in dropped_vars]
 
-        return cov_matrix
+        self.logger.info("=" * 80)
+        self.logger.info("RETAINED VARIABLES")
+        self.logger.info("=" * 80)
+        for i, var in enumerate(self.full_covariate_list):
+            self.logger.info(f"{i + 1}. {var}")
+
+        self.logger.info("=" * 80)
+
+        return corr_matrix
     
     def _extract_neural_covariates(self,
                                    event_driven_data: pd.DataFrame,
                                    physical_time_data: pd.DataFrame,
                                    quantile: Optional[float] = 0.005,
-                                   parsimonious_mode: bool = False) -> dict:
+                                   parsimonious_mode: bool = False,
+                                   batch_size: int = 512) -> dict:
         """Extract neural network covariates from event-driven data for physical time-driven data.
         
         For each timestamp in the physical time-driven data, find the last row in the event-driven
@@ -358,7 +448,7 @@ class Backbone():
             dict: Dictionary with covariate names as keys and pandas Series as values.
         """
         try:
-            print(f"Extracting neural covariates in {'parsimonious' if parsimonious_mode else 'full'} mode...")
+            self.logger.info(f"Extracting neural covariates in {'parsimonious' if parsimonious_mode else 'full'} mode")
             
             # Create dataset from event-driven data (using train=False to keep all data)
             event_dataset = get_dataset_cnn_lstm(
@@ -366,7 +456,6 @@ class Backbone():
                 train=False)
             
             # Create a DataLoader for batch processing with larger batch size for efficiency
-            batch_size = min(256, len(event_dataset))  # Use larger batch size
             if self.device != torch.device('cpu'):
                 event_loader = DataLoader(
                     event_dataset, batch_size=batch_size, 
@@ -374,9 +463,9 @@ class Backbone():
                 )
             else:
                 event_loader = DataLoader(event_dataset, batch_size=batch_size, shuffle=False)
-            
-            print(f"Processing {len(event_dataset)} samples in batches of {batch_size}")
-            
+
+            self.logger.info(f"Processing {len(event_dataset)} samples in batches of {batch_size}")
+
             # Extract features using the trained model
             self.model.eval()
             representations = []
@@ -392,15 +481,12 @@ class Backbone():
                         rep = self.model(inputs)  
                     else:
                         # Use hidden activations (higher dimensional)
-                        # Shape: (batch_size, 64)
                         rep = self.model.hidden_activations(inputs)  
 
                     representations.append(rep.cpu())
 
             # Concatenate all predictions and convert to numpy
             representations = torch.cat(representations).numpy()
-            
-            print(f"Extracted features shape: {representations.shape}")
 
             reps = []
 
@@ -444,173 +530,133 @@ class Backbone():
                 covariates_df.columns = ['timestamp'] + \
                     [f'hidden_activations_{i}' for i in range(reps.shape[1])]
 
+            self.logger.info(f'Created {covariates_df.shape[1] - 1:,} new neural covariates. The variables will appear with {"forward_pass_" if parsimonious_mode else "hidden_activations_"} prefix.')
 
-            print(covariates_df.info()) # Debugging output
-            print(covariates_df.head()) # Debugging output
+
+            #print(covariates_df.info()) # Debugging output
+            #print(covariates_df.head()) # Debugging output
 
             return covariates_df
 
             
         except Exception as e:
-            print(f"Error extracting neural covariates: {str(e)}")
-            import traceback
+            self.logger.error(f"Error extracting neural covariates: {str(e)}")
             traceback.print_exc()
+            raise RuntimeError('Neural covariate extraction failed')
             return {}
     
-    def _compute_correlation_matrices(self,
-                                      neural_covariates_df: pd.DataFrame,
-                                      physical_time_data: pd.DataFrame,
-                                      save_plots: bool = False,
-                                      save_dir: Optional[str] = None) -> None:
-        """Compute and store correlation matrices for neural and manually extracted covariates.
-        
-        Args:
-            neural_covariates_df (pd.DataFrame): DataFrame with neural covariates and timestamp.
-            physical_time_data (pd.DataFrame): DataFrame with manually extracted covariates.
-            save_plots (bool): Whether to save correlation heatmaps to disk.
-            save_dir (Optional[str]): Directory to save plots.
+    def _compute_correlation_matrices(self, data : pd.DataFrame, 
+                                      neural_covariates_names : List, 
+                                      microstructural_covariates_names : List, 
+                                      target_col_name, save_dir : Path) -> None:
         """
-        try:
-            print("\n--- Computing Correlation Matrices ---")
-            
-            # Set up save directory
-            if save_plots:
-                if save_dir is None:
-                    save_dir = "runs/test_runs"
-                save_path = Path(save_dir)
-                save_path.mkdir(parents=True, exist_ok=True)
-                print(f"Saving plots to: {save_path}")
-            
-            # Identify neural covariate columns (exclude timestamp)
-            neural_cols = [col for col in neural_covariates_df.columns if col != 'timestamp']
-            
-            # Identify manually extracted covariate columns (exclude timestamp and target if present)
-            manual_cols = [col for col in physical_time_data.columns 
-                          if col not in ['timestamp', 'micro_return'] and 
-                          col not in neural_cols]
-            
-            print(f"Neural covariates: {len(neural_cols)} variables")
-            print(f"Manually extracted covariates: {len(manual_cols)} variables")
-            
-            if len(neural_cols) == 0:
-                print("Warning: No neural covariates found")
-                return
-                
-            if len(manual_cols) == 0:
-                print("Warning: No manually extracted covariates found")
-                return
-            
-            # Merge the data on timestamp for correlation analysis
-            if 'timestamp' in physical_time_data.columns:
-                # Ensure both timestamp columns are the same type (float)
-                physical_time_data = physical_time_data.copy()
-                physical_time_data['timestamp'] = physical_time_data['timestamp'].astype(float)
-                neural_covariates_df = neural_covariates_df.copy()
-                neural_covariates_df['timestamp'] = neural_covariates_df['timestamp'].astype(float)
-                
-                merged_data = pd.merge_asof(
-                    physical_time_data.sort_values('timestamp'),
-                    neural_covariates_df.sort_values('timestamp'),
-                    on='timestamp',
-                    direction='nearest',
-                    tolerance=1e-6
-                )
-            else:
-                # If timestamp is in index
-                physical_reset = physical_time_data.reset_index()
-                if 'timestamp' not in physical_reset.columns:
-                    physical_reset['timestamp'] = physical_reset.index
-                
-                # Ensure both timestamp columns are the same type (float)
-                physical_reset['timestamp'] = physical_reset['timestamp'].astype(float)
-                neural_covariates_df = neural_covariates_df.copy()
-                neural_covariates_df['timestamp'] = neural_covariates_df['timestamp'].astype(float)
-                
-                merged_data = pd.merge_asof(
-                    physical_reset.sort_values('timestamp'),
-                    neural_covariates_df.sort_values('timestamp'),
-                    on='timestamp',
-                    direction='nearest',
-                    tolerance=1e-6
-                )
-            
-            # Drop rows with NaN values
-            merged_data = merged_data.dropna()
-            
-            if len(merged_data) == 0:
-                print("Warning: No valid data after merging")
-                return
-            
-            print(f"Merged data shape: {merged_data.shape}")
-            
-            # Compute correlation matrices
-            # 1. Neural covariates correlation
-            neural_data = merged_data[neural_cols]
-            if len(neural_cols) > 1:
-                self.neural_covariates_correlation = neural_data.corr(method='pearson')
-                print(f"Neural covariates correlation matrix shape: {self.neural_covariates_correlation.shape}")
-            
-            # 2. Manually extracted covariates correlation
-            manual_data = merged_data[manual_cols]
-            if len(manual_cols) > 1:
-                self.manually_extracted_covariates_correlation = manual_data.corr(method='pearson')
-                print(f"Manual covariates correlation matrix shape: {self.manually_extracted_covariates_correlation.shape}")
-            
-            # 3. Cross-correlation between neural and manual covariates
-            all_data = merged_data[neural_cols + manual_cols]
-            if len(neural_cols) > 0 and len(manual_cols) > 0:
-                full_correlation = all_data.corr(method='pearson')
-                # Extract cross-correlation submatrix
-                self.cross_correlation_matrix = full_correlation.loc[neural_cols, manual_cols]
-                print(f"Cross-correlation matrix shape: {self.cross_correlation_matrix.shape}")
-            
-            # Save plots if requested
-            if save_plots:
-                self._save_correlation_heatmaps(save_path, neural_cols, manual_cols)
-            
-            print("--- Correlation Matrices Computation Complete ---\n")
-            
-        except Exception as e:
-            print(f"Error computing correlation matrices: {str(e)}")
-            traceback.print_exc()
-    
-    def save_correlation_heatmaps(self, save_dir: str = "runs/test_runs") -> None:
-        """Save correlation heatmaps to disk using stored correlation matrices and variable lists.
-        
-        This method can be called externally to save the correlation heatmaps after global_update
-        has been run and correlation matrices have been computed.
-        
-        Args:
-            save_dir (str): Directory to save plots. Defaults to "runs/test_runs".
+        Compute and store correlation matrices for neural and manually extracted covariates.
         """
-        if self.neural_covariates_correlation is None:
-            print("Warning: No correlation matrices computed yet. Run global_update first.")
-            return
         
-        if (self.neural_covariate_columns is None or 
-            self.stationary_variables is None or 
-            self.available_extra_covariates is None):
-            print("Warning: Variable lists not stored. Cannot generate heatmaps.")
-            return
-        
-        save_path = Path(save_dir)
-        save_path.mkdir(parents=True, exist_ok=True)
-        
+        self.logger.info('Computing correlation matrices for stationary variables and neural covariates')
+
+        # Prepare correlation data including extra covariates
+        correlation_variables = [target_col_name] + neural_covariates_names + microstructural_covariates_names
+        correlation_data = data[correlation_variables].copy()
+
+        # Count and log rows with at least one NA value
+        na_rows_count = correlation_data.isnull().any(axis=1).sum()
+        total_rows = len(correlation_data)
+        self.logger.info(f"Found {na_rows_count} rows with at least one NA value out of {total_rows} total rows ({na_rows_count/total_rows*100:.2f}%)")
+
+        # Identify which variables have missing values
+        na_by_variable = correlation_data.isnull().sum()
+        variables_with_na = na_by_variable[na_by_variable > 0]
+        if len(variables_with_na) > 0:
+            self.logger.info(f"Variables with missing values: {dict(variables_with_na)}")
+
+        if na_rows_count > 0:
+            self.logger.info("Dropping rows with NaN values for correlation analysis")
+            correlation_data = correlation_data.dropna()
+
         if self.parsimonious_mode:
-            # For parsimonious mode, create combined variable list
-            parsimonious_variables = (self.available_extra_covariates + 
-                                    self.neural_covariate_columns + 
-                                    self.stationary_variables)
-            self._save_correlation_heatmaps(save_path, parsimonious_variables, [], 
-                                          self.neural_covariate_columns, self.stationary_variables)
+            # Parsimonious mode: Create single correlation matrix with neural covariates below extra covariates
+            self.logger.info("Using parsimonious mode: creating single correlation matrix")
+            
+            self.neural_covariates_correlation = correlation_data.corr(method='pearson')
+            self.manually_extracted_covariates_correlation = None
+            self.cross_correlation_matrix = None
+
+            self.logger.info(f"Computed a single correlation matrix with all variables, shape: {self.neural_covariates_correlation.shape}.")
+            self.logger.info("The correlation matrix can be accessed via the 'neural_covariates_correlation' attribute.")
+
         else:
-            # For non-parsimonious mode, use separate matrices
-            neural_with_extra = self.available_extra_covariates + self.neural_covariate_columns
-            stationary_with_extra = self.available_extra_covariates + self.stationary_variables
-            self._save_correlation_heatmaps(save_path, neural_with_extra, stationary_with_extra,
-                                          self.neural_covariate_columns, self.stationary_variables)
-    
-    def _save_correlation_heatmaps(self, save_path: Path, neural_with_extra: list, stationary_with_extra: list, neural_cols: list, stationary_cols: list) -> None:
+                # Non-parsimonious mode: Create separate correlation matrices as before
+                self.logger.info("Using full mode: creating separate correlation matrices for the microstructural features and neural features")
+
+                # 1. Stationary variables + extra covariates correlation
+                stationary_with_target = [target_col_name] + microstructural_covariates_names
+                stationary_data = correlation_data[stationary_with_target]
+                self.manually_extracted_covariates_correlation = stationary_data.corr(method='pearson')
+                self.logger.info(f"Computed microstructural covariates correlation matrix with shape: {self.manually_extracted_covariates_correlation.shape}.")
+                self.logger.info("The correlation matrix can be accessed via the 'manually_extracted_covariates_correlation' attribute.")
+
+                # 2. Neural covariates + extra covariates correlation
+                neural_with_target = [target_col_name] + neural_covariates_names
+                neural_data = correlation_data[neural_with_target]
+                self.neural_covariates_correlation = neural_data.corr(method='pearson')
+                self.logger.info(f"Computed neural covariates correlation matrix with shape: {self.neural_covariates_correlation.shape}.")
+                self.logger.info("The correlation matrix can be accessed via the 'neural_covariates_correlation' attribute.")
+
+                # 3. Cross-correlation between neural and stationary variables (NO extra covariates)
+                cross_correlation_data = correlation_data[neural_covariates_names + microstructural_covariates_names]
+                full_correlation = cross_correlation_data.corr(method='pearson')
+                # Extract cross-correlation submatrix (neural vs stationary only)
+                self.cross_correlation_matrix = full_correlation.loc[neural_covariates_names, microstructural_covariates_names]
+                self.logger.info(f"Computed cross-correlation matrix with shape: {self.cross_correlation_matrix.shape}.")
+                self.logger.info("The correlation matrix can be accessed via the 'cross_correlation_matrix' attribute.")
+
+        
+        # Save correlation matrices if save_dir provided
+        if save_dir:
+            save_path = Path(save_dir)
+            save_path.mkdir(parents=True, exist_ok=True)
+            
+            # Prepare dictionary for correlation matrices
+            correlation_matrices = dict()
+
+            if self.parsimonious_mode:
+                correlation_matrices['all_covariates_correlation'] = self.neural_covariates_correlation.values
+                correlation_matrices['all_covariates_columns'] = self.neural_covariates_correlation.columns.tolist()
+                correlation_matrices['all_covariates_index'] = self.neural_covariates_correlation.index.tolist()
+
+            else:
+
+            # Add neural covariates correlation matrix if not None
+                if self.neural_covariates_correlation is not None:
+                    correlation_matrices['neural_covariates_correlation'] = self.neural_covariates_correlation.values
+                    correlation_matrices['neural_covariates_columns'] = self.neural_covariates_correlation.columns.tolist()
+                    correlation_matrices['neural_covariates_index'] = self.neural_covariates_correlation.index.tolist()
+                
+                # Add manually extracted covariates correlation matrix if not None
+                if self.manually_extracted_covariates_correlation is not None:
+                    correlation_matrices['microstructural_covariates_correlation'] = self.manually_extracted_covariates_correlation.values
+                    correlation_matrices['microstructural_covariates_columns'] = self.manually_extracted_covariates_correlation.columns.tolist()
+                    correlation_matrices['microstructural_covariates_index'] = self.manually_extracted_covariates_correlation.index.tolist()
+                
+                # Add cross correlation matrix if not None
+                if self.cross_correlation_matrix is not None:
+                    correlation_matrices['cross_correlation_matrix'] = self.cross_correlation_matrix.values
+                    correlation_matrices['cross_correlation_columns'] = self.cross_correlation_matrix.columns.tolist()
+                    correlation_matrices['cross_correlation_index'] = self.cross_correlation_matrix.index.tolist()
+            
+            # Save all correlation matrices to npz file
+            if correlation_matrices:
+                correlation_path = save_path / "corr_matrices.npz"
+                np.savez_compressed(correlation_path, **correlation_matrices)
+                self.logger.info(f"Saved correlation matrices to {correlation_path}")
+
+    def _save_correlation_heatmaps(self, 
+                                   save_path: Path, 
+                                   neural_with_extra: list, 
+                                   stationary_with_extra: list, 
+                                   neural_cols: list, 
+                                   stationary_cols: list) -> None:
         """Save correlation heatmaps to disk.
         
         Args:
@@ -701,6 +747,165 @@ class Backbone():
             print(f"Error saving correlation heatmaps: {str(e)}")
             traceback.print_exc()
     
+    def save_training_history(self, save_dir: str) -> None:
+        """Save training history to parquet file.
+        
+        Args:
+            save_dir (str): Directory to save the training history file.
+        """
+        if not hasattr(self, 'training_history_df') or self.training_history_df is None:
+            print("Warning: No training history available to save.")
+            return
+        
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save training history as parquet file
+        train_log_path = save_path / "train_log.parquet"
+        self.training_history_df.to_parquet(train_log_path, index=False)
+        print(f"Saved training history to {train_log_path}")
+    
+    def save_model_weights(self, save_dir: str) -> None:
+        """Save the best model weights to disk.
+        
+        Args:
+            save_dir (str): Directory to save the model weights.
+        """
+        if self.model is None:
+            print("Warning: No model available to save.")
+            return
+        
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save model state dict as PyTorch checkpoint
+        model_path = save_path / "best.pt"
+        torch.save(self.model.state_dict(), model_path)
+        print(f"Saved model weights to {model_path}")
+        
+        # Also save model architecture info and training metadata
+        metadata = {
+            'model_class': self.model.__class__.__name__,
+            'device': str(self.device),
+            'delta_adapter': self.delta_adapter,
+            'delta_sample': self.delta_sample,
+            'parsimonious_mode': self.parsimonious_mode
+        }
+        
+        # Add training history info if available
+        if hasattr(self, 'training_history_df') and self.training_history_df is not None:
+            metadata['final_train_loss'] = float(self.training_history_df['train_loss'].iloc[-1])
+            metadata['final_validation_loss'] = float(self.training_history_df['validation_loss'].iloc[-1])
+            metadata['best_validation_loss'] = float(self.training_history_df['validation_loss'].min())
+            metadata['epochs_trained'] = len(self.training_history_df)
+        
+        # Save metadata as JSON
+        metadata_path = save_path / "model_metadata.json"
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        print(f"Saved model metadata to {metadata_path}")
+    
+    def save_nn_weights(self, save_dir: str) -> None:
+        """Save neural network weights in portable numpy format.
+        
+        Args:
+            save_dir (str): Directory to save the weights.
+        """
+        if self.model is None:
+            print("Warning: No model available to save.")
+            return
+        
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        
+        # Convert PyTorch state dict to numpy arrays
+        state_dict = self.model.state_dict()
+        numpy_weights = {}
+        
+        for name, tensor in state_dict.items():
+            # Convert to numpy and store
+            numpy_weights[name] = tensor.cpu().detach().numpy()
+        
+        # Save as compressed numpy format
+        weights_path = save_path / "nn_weights.npz"
+        np.savez_compressed(weights_path, **numpy_weights)
+        print(f"Saved neural network weights to {weights_path}")
+    
+    def save_test_results(self, save_dir: str, test_loss: float) -> None:
+        """Save test results for out-of-sample evaluation.
+        
+        Args:
+            save_dir (str): Directory to save test results.
+            test_loss (float): Test loss value.
+        """
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create test results metadata
+        test_results = {
+            'model_class': self.model.__class__.__name__,
+            'parsimonious_mode': self.parsimonious_mode,
+            'test_loss': test_loss
+        }
+        
+        # Save as JSON
+        test_path = save_path / "test_os.json"
+        with open(test_path, 'w') as f:
+            json.dump(test_results, f, indent=2)
+        print(f"Saved test results to {test_path}")
+    
+    def evaluate_out_of_sample(self, 
+                               event_driven_data: pd.DataFrame,
+                               criterion: nn.modules.loss = nn.MSELoss(reduction='sum'),
+                               batch_size: int = 32,
+                               quantile: Optional[float] = 0.005,
+                               save_dir: Optional[str] = None) -> float:
+        """Evaluate the trained model on out-of-sample data.
+        
+        Args:
+            event_driven_data (pd.DataFrame): Event-driven data for evaluation.
+            criterion (nn.modules.loss): Loss function.
+            batch_size (int): Batch size for evaluation.
+            quantile (Optional[float]): Winsorization quantile.
+            save_dir (Optional[str]): Directory to save test results.
+            
+        Returns:
+            float: Test loss.
+        """
+        if self.model is None:
+            raise ValueError("No model available for evaluation. Run global_update first.")
+        
+        print("Starting out-of-sample evaluation...")
+        
+        # Create dataset using the CNN-LSTM preprocessor
+        test_dataset = get_dataset_cnn_lstm(
+            event_driven_data, delta=self.delta_sample, quantile=quantile, 
+            train=False)  # Use test mode
+        
+        # Create data loader
+        if self.device != torch.device('cpu'):
+            test_loader = DataLoader(
+                test_dataset, batch_size=batch_size, 
+                num_workers=4, pin_memory=True, shuffle=False
+            )
+        else:
+            test_loader = DataLoader(
+                test_dataset, batch_size=batch_size, shuffle=False
+            )
+        
+        print(f"Evaluating on {len(test_dataset)} samples")
+        
+        # Evaluate using existing _one_epoch method (without optimizer for evaluation)
+        test_loss = self._one_epoch(test_loader, criterion, optimizer=None)
+        
+        print(f"Out-of-sample evaluation complete. Test loss: {test_loss:.4f}")
+        
+        # Save test results if save_dir provided
+        if save_dir:
+            self.save_test_results(save_dir, test_loss)
+        
+        return test_loss
+    
     
     def global_update(self,
                       event_driven_backbone_time_bar_data : pd.DataFrame,
@@ -717,7 +922,8 @@ class Backbone():
                       na_verification_threshold: float = 0.1,
                       kpss_drop: bool = True,
                       correlation_threshold: float = 0.95,
-                      target_col_name: str = 'micro_return') -> float:
+                      target_col_name: str = 'micro_return',
+                      save_dir: Optional[str] = None) -> float:
         """Perform global update of the model with time-based train/validation split.
         
         Creates a 90/10% (configurable) partition of the backbone interval event driven data.
@@ -728,7 +934,7 @@ class Backbone():
             event_driven_backbone_time_bar_data (pd.DataFrame): Event-driven data for the current time bar.
             physical_time_driven_backbone_time_bar_data (pd.DataFrame): Physical time-driven data for stationarity analysis.
             criterion (nn.modules.loss): Loss function. Defaults to MSELoss with sum reduction.
-            optimizer (torch.optim.Optimizer): Optimizer for the model. Defaults to Adam with lr=0.001.
+            optimizer (torch.optim.Optimizer): Optimizer for the model. Defaults to Adam with lr=0.0001.
             epochs (int, optional): Number of epochs to train. Defaults to 10.
             validation_proportion (float, optional): Proportion of data for validation. Defaults to 0.1.
             buffer_proportion (float, optional): Buffer proportion to avoid data leakage. Defaults to 0.05.
@@ -740,14 +946,12 @@ class Backbone():
             kpss_drop (bool, optional): Whether to use strict KPSS dropping. Defaults to True.
             correlation_threshold (float, optional): Threshold for dropping highly correlated variables. Defaults to 0.95.
             target_col_name (str, optional): Name of the target variable column. Defaults to 'micro_return'.
+            save_dir (Optional[str], optional): Directory to save results of the global_update
         Returns:
             float: Best validation loss achieved during training.
         """
 
-        print("\n--- Starting Global Update ---")
-
-        print(f"Event-driven data shape: {event_driven_backbone_time_bar_data.shape}") # Debugging output
-        print(f"Physical time-driven data shape: {physical_time_driven_backbone_time_bar_data.shape}") # Debugging output
+        self.logger.info("Running Backbone module global_update")
 
 
         train_proportion = 1.0 - validation_proportion
@@ -757,6 +961,7 @@ class Backbone():
 
         # Ensure we have timestamp column for partitioning
         if 'timestamp' not in event_driven_backbone_time_bar_data.columns:
+            self.logger.error("event_driven_backbone_time_bar_data must contain 'timestamp' column")
             raise ValueError("event_driven_backbone_time_bar_data must contain 'timestamp' column")
         
         # Sort data by timestamp to ensure proper ordering
@@ -798,9 +1003,15 @@ class Backbone():
         
         # Check if we have enough data
         if len(train_data) == 0:
+            self.logger.error("No training data available after partitioning")
             raise ValueError("No training data available after partitioning")
         if len(validation_data) == 0:
+            self.logger.error("No validation data available after partitioning")
             raise ValueError("No validation data available after partitioning")
+        
+        self.logger.info(f"Training with {len(train_data)} samples, validating with {len(validation_data)} samples")
+        self.logger.info(f"Validation interval: [{validation_start:.2f}, {validation_end:.2f}]")
+        self.logger.info(f"Buffer intervals: [{validation_buffer_start:.2f}, {validation_start:.2f}] and [{validation_end:.2f}, {validation_buffer_end:.2f}]")
 
         # Create datasets using the CNN-LSTM preprocessor
         train_dataset = get_dataset_cnn_lstm(
@@ -835,24 +1046,31 @@ class Backbone():
             validation_dataset, batch_size=batch_size, shuffle=False
             )
         
-        print(f"Training with {len(train_data)} samples, validating with {len(validation_data)} samples")
-        print(f"Validation interval: [{validation_start:.2f}, {validation_end:.2f}]")
-        print(f"Buffer intervals: [{validation_buffer_start:.2f}, {validation_start:.2f}] and [{validation_end:.2f}, {validation_buffer_end:.2f}]")
         
         # Train the model using existing batch_gradient_descent method
+        checkpoint_dir = None
+        if save_dir:
+            checkpoint_dir = str(Path(save_dir) / "architecture" / "checkpoints")
+        
         best_validation_loss = self.batch_gradient_descent(
             train_loader=train_loader,
             criterion=criterion,
             optimizer=optimizer,
             epochs=epochs,
-            validation_loader=validation_loader
+            validation_loader=validation_loader,
+            save_checkpoints=True,
+            checkpoint_dir=checkpoint_dir
         )
 
         # Apply stationarity analysis to the physical time-driven data
-        print("\n--- Running Stationarity Analysis ---")
         if physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
-            print("Selecting stationary variables from augmented physical time-driven data...")
             
+            # Construct save directory for stationarity results
+
+            stationarity_save_dir = None
+            if save_dir:
+                stationarity_save_dir = Path(save_dir) / "stationarity"
+
             # Run stationarity tests on the augmented physical time-driven data
             stationary_vars = self.select_stationary_variables(
                 data=physical_time_driven_backbone_time_bar_data,
@@ -860,18 +1078,17 @@ class Backbone():
                 kpss_verification_threshold=kpss_verification_threshold,
                 na_verification_threshold=na_verification_threshold,
                 kpss_drop=kpss_drop,
-                target_col_name=target_col_name
+                target_col_name=target_col_name,
+                save_dir=stationarity_save_dir
             )
         
         else:
+            self.logger.error("No physical time-driven data provided for stationarity analysis")
             raise ValueError("No physical time-driven data provided for stationarity analysis")
             
-        print("--- Stationarity Analysis Complete ---\n")
 
         # Extract neural network covariates from the trained model
-        print("\n--- Constructing Neural Network Covariates ---")
         if physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
-            print("Extracting neural network features for physical time-driven data...")
             
             # Extract features from event-driven data using the trained model
             neural_covariates = self._extract_neural_covariates(
@@ -880,8 +1097,6 @@ class Backbone():
                 quantile=quantile,
                 parsimonious_mode=self.parsimonious_mode
             )
-
-            print(f"Neural covariates extracted with shape: {neural_covariates.shape}") # Debugging output
 
             # Add neural covariate columns to the full covariate set
             neural_covariate_columns = [col for col in \
@@ -899,141 +1114,55 @@ class Backbone():
                 neural_covariates['timestamp'] = \
                     neural_covariates['timestamp'].astype(float)
                 # Merge the neural covariates with physical data
+                self.logger.info('Extending physical time driven data with neural covariates')
                 augmented_physical_data = pd.merge_asof(physical_time_driven_backbone_time_bar_data,
                                                         neural_covariates,
                                                         on='timestamp',
                                                         direction = 'nearest',
                                                         tolerance = 1e-6)
-                print(augmented_physical_data.info()) # Debugging output
-                print(f"Augmented physical data shape: {augmented_physical_data.shape}") # Debugging output
+                self.logger.info(f'Extended physical time driven data resulted in {augmented_physical_data.shape[0]:,} rows and {augmented_physical_data.shape[1]:,} columns.')
+                #print(augmented_physical_data.info()) # Debugging output
+                #print(f"Augmented physical data shape: {augmented_physical_data.shape}") # Debugging output
                 
             else:
+                self.logger.error("No neural covariates extracted from the model")
                 raise ValueError("There was an error extracting neural covariates.")
         else:
+            self.logger.error("No physical time-driven data provided for neural covariate extraction")
             raise ValueError("No physical time-driven data provided for neural covariate extraction")
 
-        print("--- Neural Network Covariate Construction Complete ---\n")
 
-        # Add extra covariates for correlation analysis
-        print("\n--- Adding Extra Covariates for Correlation Analysis ---")
-        extra_covariates = []
-        
-        # Calculate micro return if micro column exists
-        if 'micro' in augmented_physical_data.columns:
-            augmented_physical_data['micro_return'] = augmented_physical_data['micro'].pct_change() * 1e3
-            augmented_physical_data['micro_return_squared'] = augmented_physical_data['micro_return'] ** 2
-            extra_covariates.extend(['micro_return', 'micro_return_squared'])
-            print(f"Added micro return covariates: micro_return, micro_return_squared")
-        
-        # Add any other extra covariates here as needed
-        
-        print(f"Total extra covariates added: {len(extra_covariates)}")
-        print("--- Extra Covariates Addition Complete ---\n")
-
-        # Compute and save correlation matrices for stationary variables and neural covariates
-        print("\n--- Computing Correlation Matrices ---")
+        self.logger.info('Computing correlation matrices for stationary variables and neural covariates')
         if self.full_covariate_list and len(self.full_covariate_list) > 1:
             # Get stationary variables (excluding neural covariates)
             neural_covariate_columns = [col for col in neural_covariates.columns if col != 'timestamp']
-            stationary_variables = [var for var in self.full_covariate_list if var not in neural_covariate_columns]
-            
-            # Include extra covariates that are available in the data
-            available_extra_covariates = [var for var in extra_covariates if var in augmented_physical_data.columns]
-            
-            print(f"Stationary variables: {len(stationary_variables)} variables")
-            print(f"Neural covariates: {len(neural_covariate_columns)} variables")
-            print(f"Extra covariates: {len(available_extra_covariates)} variables")
-            if available_extra_covariates:
-                print(f"  Extra covariates: {available_extra_covariates}")
-            
-            # Only proceed if we have variables to analyze
-            if len(stationary_variables) > 0 or len(neural_covariate_columns) > 0:
-                
-                # Prepare correlation data including extra covariates
-                correlation_variables = available_extra_covariates + stationary_variables + neural_covariate_columns
-                correlation_data = augmented_physical_data[correlation_variables].copy()
-                
-                # Drop rows with NaN values (important for micro returns)
-                correlation_data = correlation_data.dropna()
-                print(f"Correlation data shape after dropping NaN: {correlation_data.shape}")
-                
-                # Compute correlation matrices based on parsimonious mode
-                if self.parsimonious_mode:
-                    # Parsimonious mode: Create single correlation matrix with neural covariates below extra covariates
-                    print("Using parsimonious mode: creating single correlation matrix")
-                    
-                    # Arrange variables: extra covariates first, then neural covariates, then stationary variables
-                    parsimonious_variables = available_extra_covariates + neural_covariate_columns + stationary_variables
-                    
-                    if len(parsimonious_variables) > 1:
-                        parsimonious_data = correlation_data[parsimonious_variables]
-                        self.neural_covariates_correlation = parsimonious_data.corr(method='pearson')
-                        print(f"Parsimonious correlation matrix shape: {self.neural_covariates_correlation.shape}")
-                        print(f"Variable order: {len(available_extra_covariates)} extra + {len(neural_covariate_columns)} neural + {len(stationary_variables)} stationary")
-                    
-                    # Set other matrices to None since we only use one matrix in parsimonious mode
-                    self.manually_extracted_covariates_correlation = None
-                    self.cross_correlation_matrix = None
-                    
-                else:
-                    # Non-parsimonious mode: Create separate correlation matrices as before
-                    print("Using full mode: creating separate correlation matrices")
-                    
-                    # 1. Stationary variables + extra covariates correlation
-                    stationary_with_extra = available_extra_covariates + stationary_variables
-                    if len(stationary_with_extra) > 1:
-                        stationary_data = correlation_data[stationary_with_extra]
-                        self.manually_extracted_covariates_correlation = stationary_data.corr(method='pearson')
-                        print(f"Stationary + extra variables correlation matrix shape: {self.manually_extracted_covariates_correlation.shape}")
-                    
-                    # 2. Neural covariates + extra covariates correlation  
-                    neural_with_extra = available_extra_covariates + neural_covariate_columns
-                    if len(neural_with_extra) > 1:
-                        neural_data = correlation_data[neural_with_extra]
-                        self.neural_covariates_correlation = neural_data.corr(method='pearson')
-                        print(f"Neural + extra variables correlation matrix shape: {self.neural_covariates_correlation.shape}")
-                    
-                    # 3. Cross-correlation between neural and stationary variables (NO extra covariates)
-                    if len(neural_covariate_columns) > 0 and len(stationary_variables) > 0:
-                        cross_correlation_data = correlation_data[neural_covariate_columns + stationary_variables]
-                        full_correlation = cross_correlation_data.corr(method='pearson')
-                        # Extract cross-correlation submatrix (neural vs stationary only)
-                        self.cross_correlation_matrix = full_correlation.loc[neural_covariate_columns, stationary_variables]
-                        print(f"Cross-correlation matrix shape: {self.cross_correlation_matrix.shape}")
-                
-                # Store variable lists for external heatmap generation
-                self.neural_covariate_columns = neural_covariate_columns
-                self.stationary_variables = stationary_variables  
-                self.available_extra_covariates = available_extra_covariates
-                
-                print("Correlation matrices computed and stored as attributes.")
-                print("Call save_correlation_heatmaps() method to generate and save heatmap plots.")
-                
-            else:
-                print("Warning: No variables available for correlation analysis")
-        else:
-            print("Warning: Insufficient variables for correlation analysis")
+            stationary_covariates = [col for col in stationary_vars if col not in {'timestamp', target_col_name}]
+
+            save_dir_correlation = None
+            if save_dir:
+                save_dir_correlation = Path(save_dir) / "correlation"
+
+            self._compute_correlation_matrices(augmented_physical_data,
+                                               neural_covariate_columns,
+                                               stationary_covariates,
+                                               target_col_name,
+                                               save_dir_correlation)
         
-        print("--- Correlation Matrices Computation Complete ---\n")
+        return {'backbone_model': self.model,
+                'full_covariate_set': self.full_covariate_list}
 
         # Drop highly correlated variables from the augmented dataset
-        print("\n--- Dropping Highly Correlated Variables ---")
         if self.full_covariate_list and len(self.full_covariate_list) > 1:
             init_size = len(self.full_covariate_list)
-            print(f"Initial covariate set size: {init_size}")
-            
+            self.logger.info(f"Initial covariate set size: {init_size}")
+
             self.drop_highly_correlated_variables(
                 data=augmented_physical_data,
                 threshold=correlation_threshold
             )
             
-            print(f"Dropped pairs: {self.dropped_pairs}")
-            print(f"Final covariate set size: {len(self.full_covariate_list)}")
-            print(f"Dropped {init_size - len(self.full_covariate_list)} highly correlated variables")
         else:
             raise ValueError("No covariates available for correlation analysis or only one covariate present.")
-
-        print("--- Highly Correlated Variable Removal Complete ---\n")
 
         # Final cleanup
         if self.full_covariate_list:
@@ -1045,6 +1174,12 @@ class Backbone():
         print(f"Final covariate set:")
         for i, var in enumerate(self.full_covariate_list):
             print(f"{i + 1}. {var}")
+        
+        # Save neural network weights in portable format if save_dir provided
+        if save_dir:
+            print("\n--- Saving Neural Network Weights ---")
+            self.save_nn_weights(save_dir)
+            print("--- Neural Network Weights Saved ---\n")
 
         return {'backbone_model': self.model,
                 'full_covariate_set': self.full_covariate_list}
