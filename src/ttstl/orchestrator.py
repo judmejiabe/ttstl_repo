@@ -176,8 +176,6 @@ class Orchestrator:
             event_bb_data = event_df_processed[event_df_processed['backbone_bar'] == bb].copy()
             phys_bb_data = phys_df_processed[phys_df_processed['backbone_bar'] == bb].copy()
             
-            self.logger.info(f"Backbone bar {bb} data: {len(event_bb_data):,} events, {len(phys_bb_data):,} sampling time bars of length {self.cfg.sdelta:.2f}")
-            
             # Run global update for this backbone bar
             try:
                 results = self.global_update_single_bar(event_bb_data, phys_bb_data)
@@ -237,7 +235,7 @@ class Orchestrator:
             event_bb_data = event_df_processed[event_df_processed['backbone_bar'] == bb].copy()
             phys_bb_data = phys_df_processed[phys_df_processed['backbone_bar'] == bb].copy()
             
-            self.logger.info(f"Backbone bar {bb} data: {len(event_bb_data):,} event samples, {len(phys_bb_data):,} physical samples")
+            self.logger.info(f"Backbone bar {bb} data: {len(event_bb_data):,} observed events, {len(phys_bb_data):,} sampling time bars")
             
             # Run local adaptation for this backbone bar
             try:
@@ -309,8 +307,6 @@ class Orchestrator:
         self._bb_idx += 1
         bb_dir = self._create_backbone_directories("global_update")
 
-        
-        self.logger.info(f"Starting global_update for backbone bar {self._bb_idx:03d}")
         
         try:
             # Add time bar columns if not present
@@ -617,7 +613,6 @@ class Orchestrator:
 
     def _run_backbone_global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
         """Run backbone global update step."""
-        self.logger.info("Running backbone global update...")
         
         # Filter data for the current backbone bar
         current_bb_event_df = event_df[event_df['backbone_bar'] == self._bb_idx].copy()
@@ -664,9 +659,9 @@ class Orchestrator:
             # current_backbone.save_correlation_heatmaps(save_dir=str(heatmap_dir))
             
             # Save training history and model weights to architecture directory
-            architecture_dir = bb_dir / "backbone" / "architecture"
-            current_backbone.save_training_history(save_dir=str(architecture_dir))
-            current_backbone.save_model_weights(save_dir=str(architecture_dir))
+            # architecture_dir = bb_dir / "backbone" / "architecture"
+            # current_backbone.save_training_history(save_dir=str(architecture_dir))
+            # current_backbone.save_model_weights(save_dir=str(architecture_dir))
             
             return {
                 "status": "completed", 
@@ -678,8 +673,7 @@ class Orchestrator:
             
         except Exception as e:
             self.logger.error(f"Backbone global update failed: {str(e)}")
-            raise RuntimeError(f"Backbone global update failed for backbone bar {self._bb_idx}: {str(e)}")
-            
+            #raise RuntimeError(f"Backbone global update failed for backbone bar {self._bb_idx}: {str(e)}")
             return {
                 "status": "failed", 
                 "error": str(e), 

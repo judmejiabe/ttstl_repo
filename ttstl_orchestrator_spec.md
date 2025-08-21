@@ -152,7 +152,7 @@ runs/
             corr_heatmap.png              # Correlation matrix heatmap (Check: There are three heatmas when running in full mode. Not only one)
 
           extended_covariates.json        # full covariate set after pruning for stationarity
-          nn_weights.npz                  # layer weights snapshot (CheckHow can)
+          nn_weights.npz                  # layer weights snapshot 
 
         interface/
           corridor_ada_lasso.png        # Corridor plot of adaptive lasso using the selected hyperparameters

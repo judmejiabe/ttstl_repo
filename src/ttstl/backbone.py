@@ -68,7 +68,7 @@ class Backbone():
         self.stationary_variables = None
         self.available_extra_covariates = None
 
-        self.logger = logging.getLogger("ttstl.orchestrator.backbone")
+        self.logger = logging.getLogger("ttstl.backbone")
 
     def _one_epoch(self, 
                    train_loader : DataLoader,
@@ -310,7 +310,7 @@ class Backbone():
             # Save aggregated rates per variable
             stationarity_summary_path = save_path / "stationarity_summary.parquet"
             grouped.to_parquet(stationarity_summary_path, index=True)  # Keep variable as index
-            self.logger.info(f"Saved stationarity summary to {stationarity_summary_path}")
+            self.logger.info(f"Summary of stationarity tests saved to to {stationarity_summary_path}")
 
 
         # Define base condition for stationarity
@@ -387,6 +387,10 @@ class Backbone():
 
         self.logger.info('Dropping highly correlated variables')
 
+        self.logger.info(f"Initial covariate set size: {len(self.full_covariate_list):,}")
+
+        
+
         corr_matrix = data[self.full_covariate_list].corr(method='pearson')
         # Determine highly correlated pairs
         highly_correlated_pairs = corr_matrix.abs() > threshold
@@ -396,6 +400,14 @@ class Backbone():
                 adjacency_dict[var] = set(highly_correlated_pairs.\
                                           index[highly_correlated_pairs[var]]\
                                             .tolist()) - {var}
+        self.logger.info(f"="*80)
+        self.logger.info("HIGHLY CORRELATED VARIABLES")
+        self.logger.info("="*80)
+
+        for var, neighbors in adjacency_dict.items():
+            self.logger.info(f"Variable {var} is highly correlated with : {neighbors}")
+
+        self.logger.info("="*80)
 
         shuffled_variables = np.random.permutation(list(adjacency_dict.\
                                                         keys())).tolist()
@@ -404,7 +416,7 @@ class Backbone():
         for var in shuffled_variables:
             if var not in adjacency_dict:
                 continue
-            self.logger.info(f"Dropping variable {var} with neighbors {adjacency_dict[var]}")
+            self.logger.info(f"Dropping variable {var}")
             for neighbor in list(adjacency_dict[var]):
                 self.dropped_pairs[var] = neighbor
                 self.dropped_pairs[neighbor] = var
@@ -530,7 +542,7 @@ class Backbone():
                 covariates_df.columns = ['timestamp'] + \
                     [f'hidden_activations_{i}' for i in range(reps.shape[1])]
 
-            self.logger.info(f'Created {covariates_df.shape[1] - 1:,} new neural covariates. The variables will appear with {"forward_pass_" if parsimonious_mode else "hidden_activations_"} prefix.')
+            self.logger.info(f'Created {covariates_df.shape[1] - 1:,} new neural covariates. These will appear with {"forward_pass_" if parsimonious_mode else "hidden_activations_"} prefix.')
 
 
             #print(covariates_df.info()) # Debugging output
@@ -651,102 +663,58 @@ class Backbone():
                 np.savez_compressed(correlation_path, **correlation_matrices)
                 self.logger.info(f"Saved correlation matrices to {correlation_path}")
 
-    def _save_correlation_heatmaps(self, 
-                                   save_path: Path, 
-                                   neural_with_extra: list, 
-                                   stationary_with_extra: list, 
-                                   neural_cols: list, 
-                                   stationary_cols: list) -> None:
-        """Save correlation heatmaps to disk.
-        
+    def _create_correlation_heatmap(self, 
+                                    correlation_matrix : pd.DataFrame,
+                                    main_title : str,
+                                    save_path : Path) -> None:
+        """Create and save correlation heatmap.
+
         Args:
-            save_path (Path): Directory to save plots.
-            neural_with_extra (list): List of neural covariate + extra covariate column names.
-            stationary_with_extra (list): List of stationary + extra covariate column names.
-            neural_cols (list): List of neural covariate column names only.
-            stationary_cols (list): List of stationary variable column names only.
+            correlation_matrix (pd.DataFrame): Correlation matrix to visualize.
+            main_title (str): Title for the heatmap.
         """
-        try:
-            # Handle parsimonious mode: single correlation matrix with structured variable order
-            if self.parsimonious_mode and self.neural_covariates_correlation is not None and len(neural_with_extra) > 1:
-                fig, ax = plt.subplots(figsize=(14, 12))
-                sns.heatmap(self.neural_covariates_correlation, annot=False, cmap='coolwarm',
-                           ax=ax, vmin=-1, vmax=1)
-                
-                # Set tick positions and labels for the combined matrix
-                ax.set_xticks(np.arange(len(neural_with_extra)) + 0.5)
-                ax.set_xticklabels(neural_with_extra, rotation=90, ha='center', fontsize=6)
-                ax.set_yticks(np.arange(len(neural_with_extra)) + 0.5)
-                ax.set_yticklabels(neural_with_extra, rotation=0, fontsize=6)
-                
-                ax.set_title('Parsimonious Mode: Combined Correlation Matrix\n(Extra Covariates → Neural Covariates → Stationary Variables)')
-                plt.tight_layout()
-                plt.savefig(save_path / 'parsimonious_correlation_matrix.png', dpi=300, bbox_inches='tight')
-                plt.close()
-                print("Saved parsimonious mode correlation heatmap")
-                return  # Exit early for parsimonious mode
-            
-            # Handle non-parsimonious mode: separate correlation matrices
-            # 1. Neural covariates + extra covariates correlation heatmap
-            if self.neural_covariates_correlation is not None and len(neural_with_extra) > 1:
-                fig, ax = plt.subplots(figsize=(12, 10))
-                sns.heatmap(self.neural_covariates_correlation, annot=False, cmap='coolwarm',
-                           ax=ax, vmin=-1, vmax=1)
-                
-                # Set tick positions and labels
-                ax.set_xticks(np.arange(len(neural_with_extra)) + 0.5)
-                ax.set_xticklabels(neural_with_extra, rotation=90, ha='center', fontsize=6)
-                ax.set_yticks(np.arange(len(neural_with_extra)) + 0.5)
-                ax.set_yticklabels(neural_with_extra, rotation=0, fontsize=6)
-                
-                ax.set_title('Neural Covariates + Extra Variables Correlation Matrix')
-                plt.tight_layout()
-                plt.savefig(save_path / 'neural_covariates_correlation_matrix.png', dpi=300, bbox_inches='tight')
-                plt.close()
-                print("Saved neural covariates + extra variables correlation heatmap")
-            
-            # 2. Stationary variables + extra covariates correlation heatmap
-            if self.manually_extracted_covariates_correlation is not None and len(stationary_with_extra) > 1:
-                fig, ax = plt.subplots(figsize=(12, 10))
-                sns.heatmap(self.manually_extracted_covariates_correlation, annot=False, cmap='coolwarm',
-                           ax=ax, vmin=-1, vmax=1)
-                
-                # Set tick positions and labels
-                ax.set_xticks(np.arange(len(stationary_with_extra)) + 0.5)
-                ax.set_xticklabels(stationary_with_extra, rotation=90, ha='center', fontsize=6)
-                ax.set_yticks(np.arange(len(stationary_with_extra)) + 0.5)
-                ax.set_yticklabels(stationary_with_extra, rotation=0, fontsize=6)
-                
-                ax.set_title('Stationary + Extra Variables Correlation Matrix')
-                plt.tight_layout()
-                plt.savefig(save_path / 'stationary_variables_correlation_matrix.png', dpi=300, bbox_inches='tight')
-                plt.close()
-                print("Saved stationary + extra variables correlation heatmap")
-            
-            # 3. Cross-correlation heatmap (neural vs stationary only, no extra variables)
-            if self.cross_correlation_matrix is not None and len(neural_cols) > 0 and len(stationary_cols) > 0:
-                fig, ax = plt.subplots(figsize=(14, 10))
-                sns.heatmap(self.cross_correlation_matrix, annot=False, cmap='coolwarm',
-                           ax=ax, vmin=-1, vmax=1)
-                
-                # Set tick positions and labels
-                ax.set_xticks(np.arange(len(stationary_cols)) + 0.5)
-                ax.set_xticklabels(stationary_cols, rotation=90, ha='center', fontsize=6)
-                ax.set_yticks(np.arange(len(neural_cols)) + 0.5)
-                ax.set_yticklabels(neural_cols, rotation=0, fontsize=6)
-                
-                ax.set_title('Cross-Correlation Matrix (Neural vs Stationary Variables)')
-                ax.set_xlabel('Stationary Variables')
-                ax.set_ylabel('Neural Covariates')
-                plt.tight_layout()
-                plt.savefig(save_path / 'cross_correlation_matrix.png', dpi=300, bbox_inches='tight')
-                plt.close()
-                print("Saved cross-correlation heatmap")
-            
-        except Exception as e:
-            print(f"Error saving correlation heatmaps: {str(e)}")
-            traceback.print_exc()
-    
+
+        self.logger.info(f"Creating correlation heatmap with title {main_title}")
+        fig, ax = plt.subplots(figsize = (14, 12))
+        sns.heatmap(correlation_matrix, annot=False, cmap='coolwarm', ax=ax, vmin=-1, vmax=1)
+
+        # Set tick positions and labels for the combined matrix
+        ax.set_xticks(np.arange(len(correlation_matrix.columns.tolist())) + 0.5)
+        ax.set_xticklabels(correlation_matrix.columns.tolist(), rotation=90, ha='center', fontsize=6)
+        ax.set_yticks(np.arange(len(correlation_matrix.index.tolist())) + 0.5)
+        ax.set_yticklabels(correlation_matrix.index.tolist(), rotation=0, fontsize=6)
+
+        ax.set_title(main_title)
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        self.logger.info(f"Saved correlation heatmap to {save_path}")
+
+
+
+    def _save_correlation_heatmaps(self, 
+                                   save_dir: Path) -> None:
+        """Save correlation heatmaps to disk. This function will handle parsimonious mode and full mode automatically.
+
+        Args:
+            save_dir (Path): Directory to save plots.
+        """
+        
+        if self.parsimonious_mode:
+            self._create_correlation_heatmap(self.neural_covariates_correlation, 
+                                             "Correlation Heatmap Full Covariate Set", 
+                                             save_dir / "corr_heatmap.png")
+        else:
+            self._create_correlation_heatmap(self.neural_covariates_correlation, 
+                                             "Correlation Heatmap Neural Covariates", 
+                                             save_dir / "corr_heatmap_neural.png")
+            self._create_correlation_heatmap(self.manually_extracted_covariates_correlation,
+                                             "Correlation Heatmap Microstructural Measures",
+                                             save_dir / "corr_heatmap_microstructural.png")
+            self._create_correlation_heatmap(self.cross_correlation_matrix,
+                                             "Cross Correlation Heatmap: Neural Covariates and Microstructural Measures",
+                                             save_dir / "corr_heatmap_cross_covariates.png")
+
     def save_training_history(self, save_dir: str) -> None:
         """Save training history to parquet file.
         
@@ -754,16 +722,16 @@ class Backbone():
             save_dir (str): Directory to save the training history file.
         """
         if not hasattr(self, 'training_history_df') or self.training_history_df is None:
-            print("Warning: No training history available to save.")
-            return
-        
+            self.logger.error("No training history available for saving.")
+            raise ValueError("No training history available for saving.")
+
         save_path = Path(save_dir)
         save_path.mkdir(parents=True, exist_ok=True)
         
         # Save training history as parquet file
         train_log_path = save_path / "train_log.parquet"
         self.training_history_df.to_parquet(train_log_path, index=False)
-        print(f"Saved training history to {train_log_path}")
+        self.logger.info(f"Saved training history to {train_log_path}")
     
     def save_model_weights(self, save_dir: str) -> None:
         """Save the best model weights to disk.
@@ -772,7 +740,7 @@ class Backbone():
             save_dir (str): Directory to save the model weights.
         """
         if self.model is None:
-            print("Warning: No model available to save.")
+            self.logger.error("No model available for saving.")
             return
         
         save_path = Path(save_dir)
@@ -781,8 +749,8 @@ class Backbone():
         # Save model state dict as PyTorch checkpoint
         model_path = save_path / "best.pt"
         torch.save(self.model.state_dict(), model_path)
-        print(f"Saved model weights to {model_path}")
-        
+        self.logger.info(f"Saved model weights in .pt format to {model_path}")
+
         # Also save model architecture info and training metadata
         metadata = {
             'model_class': self.model.__class__.__name__,
@@ -803,9 +771,9 @@ class Backbone():
         metadata_path = save_path / "model_metadata.json"
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
-        print(f"Saved model metadata to {metadata_path}")
+        self.logger.info(f"Saved model metadata to {metadata_path}")
     
-    def save_nn_weights(self, save_dir: str) -> None:
+    def save_nn_weights(self, save_dir: str) -> None: # Checked
         """Save neural network weights in portable numpy format.
         
         Args:
@@ -829,8 +797,8 @@ class Backbone():
         # Save as compressed numpy format
         weights_path = save_path / "nn_weights.npz"
         np.savez_compressed(weights_path, **numpy_weights)
-        print(f"Saved neural network weights to {weights_path}")
-    
+        self.logger.info(f"Saved neural network weights in .npz format to {weights_path}")
+
     def save_test_results(self, save_dir: str, test_loss: float) -> None:
         """Save test results for out-of-sample evaluation.
         
@@ -923,7 +891,7 @@ class Backbone():
                       kpss_drop: bool = True,
                       correlation_threshold: float = 0.95,
                       target_col_name: str = 'micro_return',
-                      save_dir: Optional[str] = None) -> float:
+                      save_dir: str = None) -> float:
         """Perform global update of the model with time-based train/validation split.
         
         Creates a 90/10% (configurable) partition of the backbone interval event driven data.
@@ -951,7 +919,15 @@ class Backbone():
             float: Best validation loss achieved during training.
         """
 
+        if save_dir is None:
+            self.logger.error("No save directory specified. Please specify a save directory through the 'save_dir' argument.")
+            raise ValueError("No save directory specified. Please specify a save directory through the 'save_dir' argument.")
+
+        self.logger.info("="*80)
+        self.logger.info("="*80)
         self.logger.info("Running Backbone module global_update")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
 
 
         train_proportion = 1.0 - validation_proportion
@@ -1062,6 +1038,13 @@ class Backbone():
             checkpoint_dir=checkpoint_dir
         )
 
+        architecture_dir = None
+        if save_dir:
+            architecture_dir = Path(save_dir) / "architecture"
+            self.save_training_history(save_dir=str(architecture_dir))
+            self.save_model_weights(save_dir=str(architecture_dir))
+            self.save_nn_weights(save_dir=str(architecture_dir))
+
         # Apply stationarity analysis to the physical time-driven data
         if physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
             
@@ -1142,19 +1125,16 @@ class Backbone():
             if save_dir:
                 save_dir_correlation = Path(save_dir) / "correlation"
 
-            self._compute_correlation_matrices(augmented_physical_data,
-                                               neural_covariate_columns,
-                                               stationary_covariates,
-                                               target_col_name,
-                                               save_dir_correlation)
+                self._compute_correlation_matrices(augmented_physical_data,
+                                                neural_covariate_columns,
+                                                stationary_covariates,
+                                                target_col_name,
+                                                save_dir_correlation)
+                self._save_correlation_heatmaps(save_dir_correlation)
         
-        return {'backbone_model': self.model,
-                'full_covariate_set': self.full_covariate_list}
 
         # Drop highly correlated variables from the augmented dataset
         if self.full_covariate_list and len(self.full_covariate_list) > 1:
-            init_size = len(self.full_covariate_list)
-            self.logger.info(f"Initial covariate set size: {init_size}")
 
             self.drop_highly_correlated_variables(
                 data=augmented_physical_data,
@@ -1168,18 +1148,23 @@ class Backbone():
         if self.full_covariate_list:
             self.full_covariate_list = [var for var in self.full_covariate_list 
                                     if var not in {'timestamp', target_col_name}]
-
-        print("--- Global Update Complete ---\n")
-        print(f"Best validation loss achieved: {best_validation_loss:.4f}")
-        print(f"Final covariate set:")
-        for i, var in enumerate(self.full_covariate_list):
-            print(f"{i + 1}. {var}")
         
-        # Save neural network weights in portable format if save_dir provided
+        # Save final covariate list if save_dir provided
         if save_dir:
-            print("\n--- Saving Neural Network Weights ---")
-            self.save_nn_weights(save_dir)
-            print("--- Neural Network Weights Saved ---\n")
+            save_path = Path(save_dir)
+            save_path.mkdir(parents=True, exist_ok=True)
+            
+            # Save covariate list as JSON
+            covariate_list_path = save_path / "final_covariate_list.json"
+            with open(covariate_list_path, 'w') as f:
+                json.dump(self.full_covariate_list, f, indent=2)
+            self.logger.info(f"Saved final covariate list ({len(self.full_covariate_list)} variables) to {covariate_list_path}")
+
+        self.logger.info("="*80)
+        self.logger.info("="*80)
+        self.logger.info("Global Update Completed")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
 
         return {'backbone_model': self.model,
                 'full_covariate_set': self.full_covariate_list}

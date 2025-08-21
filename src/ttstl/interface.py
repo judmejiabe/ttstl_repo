@@ -1,5 +1,6 @@
 import math
 import os
+import logging
 import warnings
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -76,6 +77,8 @@ class Interface:
         self.best_lambda_enet = None
         self.best_tau_adalasso = None
         self.best_lambda_adalasso = None
+
+        self.logger = logging.getLogger('ttstl.interface')
 
         
 

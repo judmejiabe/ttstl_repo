@@ -1,0 +1,11 @@
+{
+  "model_class": "CNNLSTM",
+  "device": "cuda:2",
+  "delta_adapter": 100000.0,
+  "delta_sample": 100.0,
+  "parsimonious_mode": false,
+  "final_train_loss": 0.5154197485260068,
+  "final_validation_loss": 1.1704727846148029,
+  "best_validation_loss": 1.0821109350399978,
+  "epochs_trained": 2
+}
