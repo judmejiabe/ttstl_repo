@@ -1,21 +1,24 @@
-import math
-import os
-import logging
-import warnings
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
+import json
+import logging
+import math
+import os
+import warnings
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
-import rpy2.robjects.numpy2ri as numpy2ri
-import rpy2.robjects.packages as rpackages
-from rpy2.robjects import pandas2ri
-from rpy2.robjects.conversion import localconverter
+import seaborn as sns
+import statsmodels.api as sm
+from matplotlib import transforms
+from rpy2.robjects import numpy2ri, pandas2ri
 from rpy2.robjects.packages import importr
 from scipy import stats
 from scipy.stats import chi2
 from sklearn.preprocessing import StandardScaler
-import statsmodels.api as sm
 from statsmodels.regression.linear_model import OLS
 from statsmodels.stats.diagnostic import het_white
 
@@ -103,10 +106,12 @@ class Interface:
             DataFrame with neural covariates, adapter bars, lagged targets, and standardized variables
         """
         if self.backbone.full_covariate_list is None:
+            self.logger.info("Backbone module must have full_covariate_list defined before preparing data.")
             raise ValueError("Backbone module must have full_covariate_list defined before preparing data.")
+        
+        self.logger.info(f'Augmenting physical time data with neural covariates')
 
         # Augment physical_time_data with neural covariates from backbone
-        print("Extracting neural covariates from backbone...")
         neural_covariates = self.backbone._extract_neural_covariates(
             event_driven_data=event_driven_backbone_time_bar_data,
             physical_time_data=physical_time_driven_backbone_time_bar_data,
@@ -119,7 +124,8 @@ class Interface:
         physical_time_driven_backbone_time_bar_data['timestamp'] = \
             physical_time_driven_backbone_time_bar_data['timestamp'].astype(float)
 
-        number_of_neural_covariates = len(neural_covariates.columns)
+
+        number_of_neural_covariates = len(neural_covariates.columns) - 1
 
         # Merge neural covariates with physical time data
         augmented_physical_data = pd.merge_asof(
@@ -129,9 +135,9 @@ class Interface:
             direction='nearest',
             tolerance=1e-6
         )
-        
-        print(f"Added {number_of_neural_covariates} neural covariates to physical time data")
-        
+
+        self.logger.info(f"Added {number_of_neural_covariates} neural covariates to physical time data")
+
         # Assign adapter time bars using delta_adapter from backbone
         delta_adapter = self.backbone.delta_adapter
         augmented_physical_data['adapter_bar'] = (
@@ -139,7 +145,7 @@ class Interface:
         )
         
         # Create lagged values of target variable
-        print(f"Creating {n_lags} lagged values of {target_col_name}...")
+        self.logger.info(f"Creating {n_lags} lagged values of {target_col_name}")
         lag_columns = []
         for lag in range(1, n_lags + 1):
             lag_col_name = f"{target_col_name}_lag_{lag}"
@@ -148,7 +154,7 @@ class Interface:
         
         # Drop rows with NaN values from lagging (first n_lags rows)
         augmented_physical_data = augmented_physical_data.iloc[n_lags:].reset_index(drop=True)
-        print(f"Dropped {n_lags} rows due to lagging, remaining data shape: {augmented_physical_data.shape}")
+        self.logger.info(f"Dropped {n_lags} rows due to lagging, remaining sampling time bars: {len(augmented_physical_data)}")
         
         # Prepare extended covariate list including lagged target variables
         extended_covariate_list = self.backbone.full_covariate_list + lag_columns
@@ -158,7 +164,7 @@ class Interface:
         augmented_physical_data = augmented_physical_data[relevant_columns].copy()
         
         # Apply standard scaling to all variables (both covariates and target)
-        print("Applying standard scaling to all variables...")
+        self.logger.info("Prewhitening variables to suit adaLASSO")
         scaler = StandardScaler()
         
         # Scale all variables except timestamp and adapter_bar
@@ -172,10 +178,9 @@ class Interface:
         self.scaled_variables = variables_to_scale
         self.extended_covariate_list = extended_covariate_list
         
-        print(f"Prepared data shape: {augmented_physical_data.shape}")
-        print(f"Extended covariates (including {n_lags} lags): {len(extended_covariate_list)}")
-        print(f"Columns: {list(augmented_physical_data.columns)}")
-        
+        self.logger.info(f"Prepared data shape: {augmented_physical_data.shape}.")
+        self.logger.info(f"Columns include the target variable {target_col_name}, {n_lags} lags of the target variable, {len(self.backbone.full_covariate_list)} neural covariates, a 'timestamp', and 'adapter_bar' columns")
+
         return augmented_physical_data
 
     def _split_data(self, 
@@ -193,31 +198,37 @@ class Interface:
         Returns:
             Tuple of (train_data, validation_data, validation_bars)
         """
+        self.logger.info("Splitting data into training and validation by adapter bars")
+        self.logger.info(f"Validation proportion: {validation_proportion}")
         # Check required columns
         required_columns = ['timestamp', 'adapter_bar', target_col_name]
         for col in required_columns:
             if col not in augmented_data.columns:
+                self.logger.error(f"Required column '{col}' not found in augmented data")
                 raise ValueError(f"Required column '{col}' not found in augmented data")
         
         if not hasattr(self, 'extended_covariate_list') or self.extended_covariate_list is None:
+            self.logger.error("Extended covariate list not available. Run _prepare_data first.")
             raise ValueError("Extended covariate list not available. Run _prepare_data first.")
         
         for col in self.extended_covariate_list:
             if col not in augmented_data.columns:
+                self.logger.error(f"Covariate column '{col}' not found in augmented data")
                 raise ValueError(f"Covariate column '{col}' not found in augmented data")
         
         # Split data by adapter bars for train/validation
         unique_bars = augmented_data['adapter_bar'].unique()
         total_bars = len(unique_bars)
         n_validation_bars = math.ceil(validation_proportion * total_bars)
+        self.logger.info(f'{n_validation_bars} bars selected for validation out of {total_bars} total bars')
         
         # Randomly select validation bars
         validation_bars = np.random.choice(unique_bars, size=n_validation_bars, replace=False)
         train_bars = np.setdiff1d(unique_bars, validation_bars)
-        
-        print(f"Total adapter bars: {total_bars}")
-        print(f"Training bars: {len(train_bars)}, Validation bars: {len(validation_bars)}")
-        
+
+        self.logger.info(f"The elastic net, used for the initial estimate, will be trained on the adapter time bars: {train_bars}")
+        self.logger.info(f"The elastic net mean squared error will be computed on the adapter time bars: {validation_bars}")
+
         # Split data
         train_data = augmented_data[
             augmented_data['adapter_bar'].isin(train_bars)
@@ -227,9 +238,9 @@ class Interface:
             augmented_data['adapter_bar'].isin(validation_bars)
         ].copy(deep=True)
         
-        print(f"Train data shape: {train_data.shape}")
-        print(f"Validation data shape: {validation_data.shape}")
-        
+        self.logger.info(f"Train data shape: {train_data.shape}")
+        self.logger.info(f"Validation data shape: {validation_data.shape}")
+
         return train_data, validation_data, validation_bars.tolist()
 
         
@@ -279,7 +290,8 @@ class Interface:
     def _update_enet_hyperparameters(self, 
                                      physical_time_train_data: pd.DataFrame,
                                      physical_time_validation_data: pd.DataFrame,
-                                     target_col_name = 'micro_return') \
+                                     target_col_name : str = 'micro_return',
+                                     save_dir : str = None) \
                                         -> Tuple[float, float]:
         """
         Find the best elastic net hyperparameters using grid search.
@@ -295,15 +307,22 @@ class Interface:
         best_mse = float('inf')
         best_alpha = None
         best_lambda = None
-        
-        print(f"Testing {len(self.alpha_enet_grid)} alpha values and {len(self.lambda_enet_grid)} lambda values...")
-        
+
+        self.logger.info("Running Elastic Net hyperparameter tuning")
+        self.logger.info("Finding best Elastic Net hyperparameters using grid search. The performance will be assessed through the MSE metric")
+
+        self.logger.info(f"Comparing {len(self.alpha_enet_grid)} values for alpha_enet: {self.alpha_enet_grid}")
+        self.logger.info(f"Comparing {len(self.lambda_enet_grid)} values for lambda_enet: {self.lambda_enet_grid}")
+
+        enet_mse_array = []
+
         for alpha in self.alpha_enet_grid:
             for lambda_enet in self.lambda_enet_grid:
                 # Get the data (already scaled in _prepare_data)
                 if not hasattr(self, 'extended_covariate_list') or self.extended_covariate_list is None:
+                    self.logger.error("Extended covariate list not available. Run _prepare_data first.")
                     raise ValueError("Extended covariate list not available. Run _prepare_data first.")
-                
+
                 X_train = physical_time_train_data[self.extended_covariate_list].values
                 X_val = physical_time_validation_data[self.extended_covariate_list].values
 
@@ -317,16 +336,17 @@ class Interface:
 
                 # Get coefficients from our new format
                 coefs = fit_result['coefficients']
-                print(f"Coefficients shape: {coefs.shape}")
                 
                 if len(coefs) == X_val.shape[1] + 1:  
                     predictions = X_val @ coefs[1:] + coefs[0]
                 else:  
+                    self.logger.error(f"Coefficient mismatch: expected {X_val.shape[1] + 1} but got {len(coefs)}")
                     raise ValueError(f"Coefficient mismatch: expected {X_val.shape[1] + 1} but got {len(coefs)}")
                 mse = np.mean((predictions - y_val) ** 2)
-                
-                print(f"Alpha: {alpha:.3f}, Lambda: {lambda_enet:.4f}, MSE: {mse:.6f}")
-                
+
+                enet_mse_array.append({'alpha_enet' : alpha, 'lambda_enet' : lambda_enet, 'val_mse' : mse})
+                self.logger.info(f"α: {alpha:.3f}, λ: {lambda_enet:.4f}, Validation MSE: {mse:.6f}")
+
                 # Update best parameters if this is better
                 if mse < best_mse:
                     best_mse = mse
@@ -337,12 +357,20 @@ class Interface:
                 #     print(f"Error with alpha={alpha}, lambda={lambda_enet}: {e}")
                     
         if best_alpha is None or best_lambda is None:
+            self.logger.error("No valid hyperparameter combination found")
             raise RuntimeError("No valid hyperparameter combination found")
+
+        self.enet_mse_df = pd.DataFrame(enet_mse_array)
+        if save_dir is not None:
+            save_path = Path(save_dir) / 'enet_hyperparams_grid_eval.parquet'
+            self.enet_mse_df.to_parquet(save_path, index=False)
+            self.logger.info(f"Saved Elastic Net hyperparameter tuning results to {save_path}")
         
         self.best_alpha_enet = best_alpha
         self.best_lambda_enet = best_lambda
-            
-        print(f"\nBest hyperparameters: alpha={best_alpha:.3f}, lambda={best_lambda:.4f}, MSE={best_mse:.6f}")
+        self.best_mse_enet = best_mse
+
+        self.logger.info(f"Selected elastic net hyperparameters: α={best_alpha:.3f}, λ={best_lambda:.4f}, Validation MSE={best_mse:.6f}")
         return best_alpha, best_lambda
 
     def _fit_flexible_adalasso(self, 
@@ -353,7 +381,7 @@ class Interface:
                        tau_adalasso : float = 1.0,
                        lambda_adalasso: float = 0.0,
                        garch_order: tuple = (1, 1),
-                       distribution_model: str = 'sstd') -> Dict:
+                       distribution_model: str = None) -> Dict:
         """
         Fit an Adaptive Lasso model using R script with GARCH modeling.
         
@@ -370,6 +398,10 @@ class Interface:
         Returns:
             Dictionary with adaptive lasso fit, GARCH fit, coefficients, and information criteria
         """
+        # Debugging
+        if distribution_model is None:
+            raise ValueError("distribution_model must be specified for GARCH fitting")
+
         if glmnet is None or rugarch is None:
             raise RuntimeError("glmnet and rugarch R packages not available")
         
@@ -420,7 +452,9 @@ class Interface:
                                           physical_time_driven_backbone_time_bar_data: pd.DataFrame,
                                           alpha_enet: float = 1.0,
                                           lambda_enet: float = 0.0,
-                                          target_col_name: str = 'micro_return') -> Dict:
+                                          target_col_name: str = 'micro_return',
+                                          distribution_model: str = None,
+                                          save_dir: str = None) -> Dict:
         """
         Find the best adaptive lasso hyperparameters using BIC across adapter time bars.
         
@@ -433,26 +467,31 @@ class Interface:
         Returns:
             Dictionary with best hyperparameters and BIC results
         """
+
+        self.logger.info("Running Adaptive Lasso hyperparameter tuning")
+        self.logger.info("Finding best Adaptive Lasso hyperparameters using grid search. The performance will be assessed through the average BIC computed across the adapter time bars in the current backbone time bar")
+
         if self.tau_adalasso_grid is None or self.lambda_adalasso_grid is None:
+            self.logger.error("tau_adalasso_grid and lambda_adalasso_grid must be defined for hyperparameter tuning")
             raise ValueError("tau_adalasso_grid and lambda_adalasso_grid must be defined")
         
         if 'adapter_bar' not in physical_time_driven_backbone_time_bar_data.columns:
+            self.logger.error("Input data must contain 'adapter_bar' column. Use _prepare_data first.")
             raise ValueError("Input data must contain 'adapter_bar' column. Use _prepare_data first.")
         
+        self.logger.info(f"Comparing {len(self.tau_adalasso_grid)} values of tau_adalasso: {self.tau_adalasso_grid}")
+        self.logger.info(f"Comparing {len(self.lambda_adalasso_grid)} values of lambda_adalasso: {self.lambda_adalasso_grid}")
+
         best_bic = float('inf')
         best_tau = None
         best_lambda = None
         results = []
         
-        print(f"Testing {len(self.tau_adalasso_grid)} tau values and {len(self.lambda_adalasso_grid)} lambda values...")
-        print(f"Number of adapter bars: {physical_time_driven_backbone_time_bar_data['adapter_bar'].nunique()}")
         
         for tau_adalasso in self.tau_adalasso_grid:
             for lambda_adalasso in self.lambda_adalasso_grid:
                 total_bic = 0.0
                 valid_bars = 0
-                
-                print(f"Testing tau={tau_adalasso:.3f}, lambda={lambda_adalasso:.6f}")
                 
                 # Iterate through each adapter time bar
                 for adapter_bar in physical_time_driven_backbone_time_bar_data['adapter_bar'].unique():
@@ -479,7 +518,8 @@ class Interface:
                             alpha_enet=alpha_enet,
                             lambda_enet=lambda_enet,
                             tau_adalasso=tau_adalasso,
-                            lambda_adalasso=lambda_adalasso
+                            lambda_adalasso=lambda_adalasso,
+                            distribution_model=distribution_model
                         )
                         
                         # Add BIC from this bar
@@ -488,12 +528,12 @@ class Interface:
                         valid_bars += 1
                         
                     except Exception as e:
-                        print(f"  Warning: Error processing adapter bar {adapter_bar}: {e}")
+                        self.logger.warning(f"Warning: Error processing adapter bar {adapter_bar}, with hyperparameters τ = {tau_adalasso}, λ = {lambda_adalasso}: {e}")
                         continue
                 
                 # Skip this hyperparameter combination if no valid bars
                 if valid_bars == 0:
-                    print(f"  No valid bars for tau={tau_adalasso:.3f}, lambda={lambda_adalasso:.6f}")
+                    self.logger.warning(f"No valid bars for τ={tau_adalasso:.3f}, λ={lambda_adalasso:.6f}")
                     continue
                 
                 # Compute average BIC across all adapter bars
@@ -505,24 +545,33 @@ class Interface:
                     'average_bic': average_bic,
                     'valid_bars': valid_bars
                 })
-                
-                print(f"  Average BIC: {average_bic:.6f} (from {valid_bars} bars)")
-                
+
+                self.logger.info(f"τ = {tau_adalasso}, λ = {lambda_adalasso}, Average BIC: {average_bic:.6f} (from {valid_bars} bars)")
+
                 # Update best parameters if this is better
                 if average_bic < best_bic:
                     best_bic = average_bic
                     best_tau = tau_adalasso
                     best_lambda = lambda_adalasso
         
+        # Save results as parquet file if save_dir provided
+        self.ada_lasso_results_df = pd.DataFrame(results)
+        if save_dir is not None:
+            save_path = Path(save_dir) / 'adalasso_hyperparams_grid_eval.parquet'
+            self.ada_lasso_results_df.to_parquet(save_path, index=False)
+            self.logger.info(f"Saved Adaptive Lasso hyperparameter tuning results to {save_path}")
+        
         if best_tau is None or best_lambda is None:
+            self.logger.error("No valid hyperparameter combination found")
             raise RuntimeError("No valid hyperparameter combination found")
         
         # Set as class attributes
         self.best_tau_adalasso = best_tau
         self.best_lambda_adalasso = best_lambda
-        
-        print(f"\nBest hyperparameters: tau={best_tau:.3f}, lambda={best_lambda:.6f}, Ave. BIC={best_bic:.6f}")
-        
+        self.best_bic_adalasso = best_bic
+
+        self.logger.info(f"Best hyperparameters: τ={best_tau:.3f}, λ={best_lambda:.6f}, Average BIC={best_bic:.6f}")
+
         return {
             'best_tau_adalasso': best_tau,
             'best_lambda_adalasso': best_lambda,
@@ -538,7 +587,9 @@ class Interface:
                                  quantile: float = 0.005,
                                  target_col_name: str = 'micro_return',
                                  n_lags: int = 5,
-                                 validation_proportion: float = 0.2) -> Dict:
+                                 validation_proportion: float = 0.2,
+                                 distribution_model : str = None,
+                                 save_dir : str = None) -> Dict:
         """
         Complete hyperparameter tuning procedure for both Elastic Net and Adaptive Lasso.
         
@@ -559,10 +610,9 @@ class Interface:
         Returns:
             Dictionary with all hyperparameter tuning results
         """
-        print("\n=== Starting Complete Hyperparameter Tuning ===")
+        self.logger.info("Starting full hyperparameter tuning")
         
         # Step 1: Prepare data with neural covariates, adapter bars, lagged targets, and scaling
-        print("Preparing data...")
         augmented_data = self._prepare_data(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
@@ -572,7 +622,6 @@ class Interface:
         )
         
         # Step 2: Split data into training and validation sets by adapter bars
-        print("Splitting data into training and validation sets...")
         train_data, validation_data, validation_bars = self._split_data(
             augmented_data=augmented_data,
             validation_proportion=validation_proportion,
@@ -580,14 +629,14 @@ class Interface:
         )
         
         # Step 3: Tune Elastic Net hyperparameters using MSE on validation set
-        print("Tuning Elastic Net hyperparameters...")
         if self.alpha_enet_grid is None or self.lambda_enet_grid is None:
             raise ValueError("alpha_enet_grid and lambda_enet_grid must be defined for hyperparameter tuning")
         
         best_alpha_enet, best_lambda_enet = self._update_enet_hyperparameters(
             physical_time_train_data=train_data,
             physical_time_validation_data=validation_data,
-            target_col_name=target_col_name
+            target_col_name=target_col_name,
+            save_dir=save_dir
         )
         
         # Step 4: Tune Adaptive Lasso hyperparameters using BIC, keeping Elastic Net parameters fixed
@@ -596,7 +645,9 @@ class Interface:
             physical_time_driven_backbone_time_bar_data=augmented_data,
             alpha_enet=best_alpha_enet,
             lambda_enet=best_lambda_enet,
-            target_col_name=target_col_name
+            target_col_name=target_col_name,
+            distribution_model=distribution_model,
+            save_dir=save_dir
         )
         
         # Compile complete results
@@ -625,11 +676,12 @@ class Interface:
             }
         }
         
-        print(f"\n=== Hyperparameter Tuning Complete ===")
-        print(f"Best Elastic Net: alpha={best_alpha_enet:.3f}, lambda={best_lambda_enet:.4f}")
-        print(f"Best Adaptive Lasso: tau={ada_lasso_results['best_tau_adalasso']:.3f}, lambda={ada_lasso_results['best_lambda_adalasso']:.6f}")
-        print(f"Features used: {len(self.extended_covariate_list)} (including {n_lags} lags)")
+        self.logger.info(f"Hyperparameter tuning complete")
+        self.logger.info(f"Best Elastic Net: alpha={best_alpha_enet:.3f}, lambda={best_lambda_enet:.4f}")
+        self.logger.info(f"Best Adaptive Lasso: tau={ada_lasso_results['best_tau_adalasso']:.3f}, lambda={ada_lasso_results['best_lambda_adalasso']:.6f}")
+        self.logger.info(f"Features used: {len(self.extended_covariate_list)} (including {n_lags} lags)")
         
+
         return hyperparameter_results
 
     def _fit_ols_HC(self, X: np.ndarray, y: np.ndarray) -> sm.regression.linear_model.RegressionResultsWrapper:
@@ -651,18 +703,160 @@ class Interface:
         except Exception as e:
             warnings.warn(f"Error in OLS fitting: {e}")
             return None
-        
+    
+    def _corridor_plot_adalasso(self,
+                                ada_coef_df: pd.DataFrame,
+                                sig_coefs_df: pd.DataFrame,
+                                title: str,
+                                save_path: Path) -> None:
+        """
+        Generate and save a corridor plot for adaptive lasso coefficients.
+
+        Args:
+            ada_coef_df (pd.DataFrame): DataFrame of adaptive lasso coefficients (adapter bars x variables).
+            sig_coefs_df (pd.DataFrame): DataFrame of booleans indicating significance (adapter bars x variables).
+            title (str): The title for the plot.
+            save_path (Path): The full path (including filename) to save the plot.
+        """
+        self.logger.info(f"Generating corridor plot: '{title}'")
+
+        if ada_coef_df.empty:
+            self.logger.error("Coefficient dataframe is empty. Skipping plot generation.")
+            raise ValueError("Coefficient dataframe is empty. Skipping plot generation.")
+            return
+
+        # Ensure the save directory exists
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Calculate counts of positive and negative coefficients for annotation
+        pos_counts = (ada_coef_df > 0).sum()
+        neg_counts = (ada_coef_df < 0).sum()
+
+        # Determine the color map limit
+        max_abs_value = np.nanmax(np.abs(ada_coef_df.values))
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        sns.heatmap(ada_coef_df.T, cmap='coolwarm', annot=False,
+                    vmin=-max_abs_value, vmax=max_abs_value, ax=ax)
+
+        # Set ticks and labels
+        ax.set_yticks(np.arange(len(ada_coef_df.columns)) + 0.5)
+        ax.set_yticklabels(ada_coef_df.columns, rotation=0, fontsize=5)
+
+        ax.set_xticks(np.arange(len(ada_coef_df.index)) + 0.5)
+        ax.set_xticklabels(ada_coef_df.index, rotation=90, fontsize=5)
+
+        # Annotate the counts of significant bars on the right margin
+        if sig_coefs_df is not None:
+            significant_counts = sig_coefs_df.sum(axis=0)
+            total_bars = len(sig_coefs_df.index)
+            # Use a blended transform for consistent annotation placement
+            trans = transforms.blended_transform_factory(ax.transAxes, ax.transData)
+            for idx, coef_name in enumerate(ada_coef_df.columns):
+                count = significant_counts.get(coef_name, 0)
+                text_str = f'(*) {count}/{total_bars}'
+                ax.text(1.01, idx + 0.5, text_str,
+                        ha='left', va='center', fontsize=6, color='black',
+                        transform=trans)
+
+        if sig_coefs_df is not None:
+            # Annotate significant coefficients with white ones
+            # Note: sig_coefs_df is (bars x variables), same as ada_coef_df.
+            # Heatmap transposes this, so we need to access elements accordingly.
+            for i, adapter_bar in enumerate(sig_coefs_df.index):
+                for j, var_name in enumerate(sig_coefs_df.columns):
+                    if sig_coefs_df.loc[adapter_bar, var_name]:
+                        ax.text(i + 0.5, j + 0.5, '*', ha='center', va='center', color='white', fontsize=6)
+
+        plt.title(title)
+        plt.xlabel('Adapter Bar')
+        plt.ylabel('Covariate')
+        plt.tight_layout(rect=[0, 0, 0.9, 1]) # Adjust layout to make space for annotations
+        plt.savefig(save_path, dpi=300)
+        plt.close(fig)
+        self.logger.info(f"Saved adaLASSO corridor plot to {save_path}")
+
+    def _corridor_plot_enet(self,
+                            enet_coef_df: pd.DataFrame,
+                            adalasso_coef_df: pd.DataFrame,
+                            title: str,
+                            save_path: Path,
+                            tolerance: float = 1e-6) -> None:
+        """
+        Generate and save a corridor plot for elastic net coefficients,
+        annotated with the sign of the adaptive lasso coefficients.
+
+        Args:
+            enet_coef_df (pd.DataFrame): DataFrame of elastic net coefficients (adapter bars x variables).
+            adalasso_coef_df (pd.DataFrame): DataFrame of adaptive lasso coefficients for sign annotation.
+            title (str): The title for the plot.
+            save_path (Path): The full path (including filename) to save the plot.
+            tolerance (float): The tolerance to determine if a coefficient is non-zero.
+        """
+        self.logger.info(f"Generating Elastic Net corridor plot: '{title}'")
+
+        if enet_coef_df.empty or adalasso_coef_df.empty:
+            self.logger.warning("Coefficient dataframe is empty. Skipping plot generation.")
+            return
+
+        # Ensure the save directory exists
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Calculate counts of positive and negative coefficients for annotation
+        pos_counts = (enet_coef_df > 0).sum()
+        neg_counts = (enet_coef_df < 0).sum()
+
+        # Determine the color map limit from the elastic net coefficients
+        max_abs_value = np.nanmax(np.abs(enet_coef_df.values))
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        sns.heatmap(enet_coef_df.T, cmap='coolwarm', annot=False,
+                    vmin=-max_abs_value, vmax=max_abs_value, ax=ax)
+
+        # Set ticks and labels
+        ax.set_yticks(np.arange(len(enet_coef_df.columns)) + 0.5)
+        ax.set_yticklabels(enet_coef_df.columns, rotation=0, fontsize=5)
+
+        ax.set_xticks(np.arange(len(enet_coef_df.index)) + 0.5)
+        ax.set_xticklabels(enet_coef_df.index, rotation=90, fontsize=5)
+
+        # Annotate the counts of positive and negative initial estimates on the right margin
+        # Use a blended transform for consistent annotation placement
+        trans = transforms.blended_transform_factory(ax.transAxes, ax.transData)
+        for idx, coef_name in enumerate(enet_coef_df.columns):
+            text_str = f'(+){pos_counts[coef_name]} (-){neg_counts[coef_name]}'
+            ax.text(1.005, idx + 0.5, text_str,
+                    ha='left', va='center', fontsize=6, color='black',
+                    transform=trans)
+
+        # Annotate the tiles with + or - based on the sign of adalasso_coef_df
+        for i, adapter_bar in enumerate(adalasso_coef_df.index):
+            for j, var_name in enumerate(adalasso_coef_df.columns):
+                if adalasso_coef_df.loc[adapter_bar, var_name] > tolerance:
+                    ax.text(i + 0.5, j + 0.5, '+', ha='center', va='center', color='white', fontsize=6)
+                elif adalasso_coef_df.loc[adapter_bar, var_name] < -tolerance:
+                    ax.text(i + 0.5, j + 0.5, '-', ha='center', va='center', color='white', fontsize=6)
+
+        plt.title(title)
+        plt.xlabel('Adapter Bar')
+        plt.ylabel('Covariate')
+        plt.tight_layout(rect=[0, 0, 0.9, 1]) # Adjust layout to make space for annotations
+        plt.savefig(save_path, dpi=300)
+        plt.close(fig)
+        self.logger.info(f"Saved Elastic Net corridor plot to {save_path}")
 
     def global_update(self, 
                       event_driven_backbone_time_bar_data: pd.DataFrame,
                       physical_time_driven_backbone_time_bar_data: pd.DataFrame,
                       quantile: float = 0.005,
                       target_col_name: str = 'micro_return',
+                      distribution_model : str = 'sstd',
                       n_lags: int = 5,
                       validation_proportion: float = 0.2,
                       selection_threshold: float = 0.5,
                       tolerance_threshold: float = 1e-6,
-                      ols_significance_level: float = 0.05) -> Dict:
+                      ols_significance_level: float = 0.05,
+                      save_dir : str = None) -> Dict:
         """
         Perform global variable selection for the TTSTL Interface module.
         
@@ -687,34 +881,58 @@ class Interface:
         Returns:
             Dictionary with selected variables and global update results
         """
-        print("\n" + "="*60)
-        print("STARTING INTERFACE GLOBAL UPDATE")
-        print("="*60)
-        
+
+        if save_dir is None:
+            self.logger.error('save_dir must be specified for global_update')
+            raise ValueError('save_dir must be specified for global_update')
+
+        self.logger.info("="*80)
+        self.logger.info("="*80)
+        self.logger.info("Running Interface module global_update")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
+
         # Step 1: Run hyperparameter tuning
-        print("Step 1: Running hyperparameter tuning...")
         hyperparameter_results = self._update_hyperparameters(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
             quantile=quantile,
             target_col_name=target_col_name,
             n_lags=n_lags,
-            validation_proportion=validation_proportion
+            validation_proportion=validation_proportion,
+            distribution_model=distribution_model,
+            save_dir=save_dir
         )
         
         # Extract optimal hyperparameters from class attributes (set by _update_hyperparameters)
         best_alpha_enet = self.best_alpha_enet
         best_lambda_enet = self.best_lambda_enet
+        best_mse_enet = self.best_mse_enet
         best_tau_adalasso = self.best_tau_adalasso
         best_lambda_adalasso = self.best_lambda_adalasso
-        
-        print(f"Optimal hyperparameters found:")
-        print(f"  Elastic Net: α={best_alpha_enet:.3f}, λ={best_lambda_enet:.4f}")
-        print(f"  Adaptive Lasso: τ={best_tau_adalasso:.3f}, λ={best_lambda_adalasso:.6f}")
-        
+        best_bic_adalasso = self.best_bic_adalasso
+
+        # Store optimal hyperparameters and metrics in JSON file
+        hyperparams_and_metrics = {
+            'elastic_net': {
+                'best_alpha': float(best_alpha_enet),
+                'best_lambda': float(best_lambda_enet),
+                'best_mse': float(best_mse_enet)
+            },
+            'adaptive_lasso': {
+                'best_tau': float(best_tau_adalasso),
+                'best_lambda': float(best_lambda_adalasso),
+                'best_bic': float(best_bic_adalasso)
+            }
+        }
+
+        json_save_path = Path(save_dir) / 'hyperparams_selected.json'
+        with open(json_save_path, 'w') as f:
+            json.dump(hyperparams_and_metrics, f, indent=2)
+        self.logger.info(f"Saved optimal flexible adaLASSO hyperparameters and metrics to {json_save_path}")
+
         # Get the prepared data from hyperparameter tuning (it should be stored in the interface)
         # We need to re-prepare the data since _update_hyperparameters used a subset for validation
-        print("Step 2: Re-preparing full dataset for global variable selection...")
         augmented_data = self._prepare_data(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
@@ -726,10 +944,14 @@ class Interface:
         # Get unique adapter bars
         unique_adapter_bars = augmented_data['adapter_bar'].unique()
         n_adapter_bars = len(unique_adapter_bars)
-        print(f"Processing {n_adapter_bars} adapter time bars for variable selection...")
+        self.logger.info(f"Processing {n_adapter_bars} adapter time bars for variable selection")
         
         # Initialize variable selection tracking
         variable_significance_count = {}
+        enet_coefs_dict = {}
+        adalasso_coefs_dict = {}
+        ols_significance_dict = {}
+
         for var in self.extended_covariate_list:
             variable_significance_count[var] = 0
         
@@ -737,11 +959,11 @@ class Interface:
         failed_bars = 0
         
         # Step 3: Process each adapter time bar
-        print("Step 3: Processing each adapter time bar with Flexible Adaptive Lasso + OLS...")
-        
+        self.logger.info("Running variable selection on each adapter time bar with optimal hyperparameters")
+
         for i, adapter_bar in enumerate(unique_adapter_bars):
-            print(f"Processing adapter bar {adapter_bar} ({i+1}/{n_adapter_bars})...")
-            
+            self.logger.info(f"Processing adapter bar {adapter_bar} ({i+1}/{n_adapter_bars})...")
+
             # Extract data for this adapter bar
             bar_data = augmented_data[
                 augmented_data['adapter_bar'] == adapter_bar
@@ -749,7 +971,7 @@ class Interface:
             
             # Skip bars with insufficient data
             if len(bar_data) < 10:
-                print(f"  Skipping adapter bar {adapter_bar}: insufficient data ({len(bar_data)} samples)")
+                self.logger.warning(f"Skipping adapter bar {adapter_bar}: insufficient data ({len(bar_data)} samples)")
                 failed_bars += 1
                 continue
             
@@ -765,11 +987,13 @@ class Interface:
                     alpha_enet=best_alpha_enet,
                     lambda_enet=best_lambda_enet,
                     tau_adalasso=best_tau_adalasso,
-                    lambda_adalasso=best_lambda_adalasso
+                    lambda_adalasso=best_lambda_adalasso,
+                    distribution_model=distribution_model
                 )
                 
                 # Step 3b: Extract coefficients above tolerance threshold
                 ada_coefficients = ada_result['ada_coefficients']
+                enet_coefficients = ada_result['enet_coefficients']
                 
                 # Find variables with coefficients above tolerance threshold
                 # Note: ada_coefficients may include intercept, so we need to handle indexing
@@ -784,18 +1008,27 @@ class Interface:
                     intercept = 0.0
                     coef_without_intercept = ada_coefficients
                 else:
-                    raise ValueError(f"Coefficient dimension mismatch: expected {len(self.extended_covariate_list)} or {len(self.extended_covariate_list)+1}, got {len(ada_coefficients)}")
+                    self.logger.error(f"Coefficient dimension mismatch for adapter bar {adapter_bar}: expected {len(self.extended_covariate_list)} or {len(self.extended_covariate_list)+1}, got {len(ada_coefficients)}")
+                    raise ValueError(f"Coefficient dimension mismatch: expected {len(self.extended_covariate_list)} or {len(self.extended_covariate_list)+1}, got {len(ada_coefficients)}")            
+
+                # Store coefficients for plotting
+                if len(enet_coefficients) == len(self.extended_covariate_list) + 1:
+                    enet_coefs_dict[adapter_bar] = enet_coefficients[1:]
+                else:
+                    enet_coefs_dict[adapter_bar] = enet_coefficients
                 
+                adalasso_coefs_dict[adapter_bar] = coef_without_intercept
+
                 # Get indices of variables with significant coefficients
                 significant_var_indices = np.where(significant_coef_mask)[0]
                 
                 if len(significant_var_indices) == 0:
-                    print(f"  No variables above tolerance threshold for adapter bar {adapter_bar}")
+                    self.logger.info(f"No variables above tolerance threshold for adapter bar {adapter_bar}")
                     processed_bars += 1
                     continue
-                
-                print(f"  {len(significant_var_indices)} variables above tolerance threshold")
-                
+
+                self.logger.info(f"{len(significant_var_indices)} variables above tolerance threshold")
+
                 # Step 3c: Apply OLS with heteroskedasticity-robust tests
                 # Select only the variables with significant coefficients
                 X_selected = X_bar[:, significant_var_indices]
@@ -819,19 +1052,26 @@ class Interface:
                     # Map back to original variable indices
                     ols_significant_indices = significant_var_indices[ols_significant_mask]
                     
+                    # Store full significance mask for this bar
+                    full_ols_mask = np.zeros(len(self.extended_covariate_list), dtype=bool)
+                    full_ols_mask[ols_significant_indices] = True
+                    ols_significance_dict[adapter_bar] = full_ols_mask
+
                     # Update significance counts for OLS-significant variables
                     for idx in ols_significant_indices:
                         var_name = self.extended_covariate_list[idx]
                         variable_significance_count[var_name] += 1
-                    
-                    print(f"  {len(ols_significant_indices)} variables significant in OLS test")
+
+                    self.logger.info(f"{len(ols_significant_indices)} variables significant in OLS test")
                 else:
-                    print(f"  OLS test failed for adapter bar {adapter_bar}")
-                
+                    self.logger.info(f"OLS test failed for adapter bar {adapter_bar}")
+                    # Store an all-False mask if OLS fails
+                    ols_significance_dict[adapter_bar] = np.zeros(len(self.extended_covariate_list), dtype=bool)
+
                 processed_bars += 1
                 
             except Exception as e:
-                print(f"  Error processing adapter bar {adapter_bar}: {e}")
+                self.logger.error(f"Error processing adapter bar {adapter_bar}: {e}")
                 failed_bars += 1
                 continue
         
@@ -840,12 +1080,34 @@ class Interface:
         print(f"Successfully processed: {processed_bars} bars")
         print(f"Failed to process: {failed_bars} bars")
         
+        # Create and save corridor plots
+        if processed_bars > 0:
+            adalasso_coef_df = pd.DataFrame.from_dict(adalasso_coefs_dict, orient='index', columns=self.extended_covariate_list)
+            
+            # ENET Plot
+            enet_coef_df = pd.DataFrame.from_dict(enet_coefs_dict, orient='index', columns=self.extended_covariate_list)
+            self._corridor_plot_enet(
+                enet_coef_df=enet_coef_df,
+                adalasso_coef_df=adalasso_coef_df,
+                title='Elastic Net Coefficient Estimates Corridor\n(Tile color: ENET Estimates, Annotation: adaLASSO Sign)',
+                save_path=Path(save_dir) / 'enet_coef_corridor.png'
+            )
+
+            # AdaLasso Plot
+            ols_sig_df = pd.DataFrame.from_dict(ols_significance_dict, orient='index', columns=self.extended_covariate_list)
+            self._corridor_plot_adalasso(
+                ada_coef_df=adalasso_coef_df,
+                sig_coefs_df=ols_sig_df,
+                title='Adaptive LASSO Coefficient Estimates Corridor\n(Tile color: adaLASSO Estimates, Annotation: Statistical Significance)',
+                save_path=Path(save_dir) / 'adalasso_coef_corridor.png'
+            )
+
         if processed_bars == 0:
             raise RuntimeError("No adapter bars were successfully processed")
         
         # Calculate minimum number of bars for selection
-        min_bars_for_selection = max(1, int(selection_threshold * processed_bars))
-        print(f"Selection threshold: {selection_threshold:.2%} = minimum {min_bars_for_selection} bars")
+        min_bars_for_selection = max(1, int(np.floor(selection_threshold * processed_bars)) + 1)
+        self.logger.info(f"Selection threshold: {selection_threshold:.2%} = minimum {min_bars_for_selection} bars")
         
         # Select variables that appear in at least the minimum number of bars
         selected_variables = []
@@ -866,26 +1128,41 @@ class Interface:
         self.selected_variables = selected_variables
         self.tolerance_threshold = tolerance_threshold
         
+
         # Sort variables by selection frequency for reporting
         sorted_vars = sorted(variable_selection_info.items(), 
                            key=lambda x: x[1]['count'], reverse=True)
         
-        print(f"\n" + "="*50)
-        print(f"GLOBAL VARIABLE SELECTION RESULTS")
-        print(f"="*50)
-        print(f"Selected {len(selected_variables)} variables out of {len(self.extended_covariate_list)}")
-        print(f"Selection criteria: significant in ≥{min_bars_for_selection} bars ({selection_threshold:.1%})")
+        self.logger.info("="*80)
+        self.logger.info(f"GLOBAL UPDATE VARIABLE SELECTION RESULTS")
+        self.logger.info("="*80)
+        self.logger.info(f"Selected {len(selected_variables)} variables out of {len(self.extended_covariate_list)}")
+        self.logger.info(f"Selection criteria: significant in ≥{min_bars_for_selection} bars ({selection_threshold:.1%})")
         
-        print(f"\nSelected Variables:")
+        self.logger.info(f"Selected Variables:")
         for i, var in enumerate(selected_variables, 1):
             info = variable_selection_info[var]
-            print(f"  {i:2d}. {var:<30} ({info['count']:2d}/{processed_bars} bars, {info['proportion']:.1%})")
+            self.logger.info(f"{i:2d}. {var:<30} ({info['count']:2d}/{processed_bars} bars, {info['proportion']:.1%})")
         
-        print(f"\nTop 10 Variables by Selection Frequency:")
+        self.logger.info(f"Top 10 Variables by Selection Frequency:")
         for i, (var, info) in enumerate(sorted_vars[:10], 1):
             status = "✓" if info['selected'] else "✗"
-            print(f"  {i:2d}. {status} {var:<30} ({info['count']:2d}/{processed_bars} bars, {info['proportion']:.1%})")
+            self.logger.info(f"  {i:2d}. {status} {var:<30} ({info['count']:2d}/{processed_bars} bars, {info['proportion']:.1%})")
+
+        self.logger.info("="*80)
+
+        # Save selected variables and their selection info to a JSON file
+        selected_variables_path = Path(save_dir) / 'selected_variables.json'
+        with open(selected_variables_path, 'w') as f:
+            json.dump({'selected_variables': selected_variables}, f, indent=2)
+        self.logger.info(f"Saved selected variables to {selected_variables_path}")
         
+        # Convert variable_selection_info to DataFrame and save as Parquet
+        selection_info_df = pd.DataFrame.from_dict(variable_selection_info, orient='index')
+        selection_info_path = Path(save_dir) / 'variable_selection_info.parquet'
+        selection_info_df.to_parquet(selection_info_path)
+        self.logger.info(f"Saved variable selection info to {selection_info_path}")
+
         # Compile results
         global_update_results = {
             'selected_variables': selected_variables,
@@ -905,9 +1182,11 @@ class Interface:
             'extended_covariate_list': self.extended_covariate_list
         }
         
-        print(f"\nGlobal Update Complete!")
-        print(f"{len(selected_variables)} variables selected for adapter-level modeling")
-        print("="*60)
+        self.logger.info("="*80)
+        self.logger.info("="*80)
+        self.logger.info("Interface module global_update completed")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
         
         return global_update_results
 
@@ -1160,5 +1439,5 @@ class Interface:
             
         except Exception as e:
             raise RuntimeError(f"Error in Wald test: {e}")
-    
+
 

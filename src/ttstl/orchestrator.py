@@ -654,15 +654,6 @@ class Orchestrator:
                 save_dir=str(bb_dir / "backbone")  # Enable checkpoints and nn_weights saving
             )
             
-            # Save correlation heatmaps using the backbone's method
-            # heatmap_dir = bb_dir / "backbone" / "correlation"
-            # current_backbone.save_correlation_heatmaps(save_dir=str(heatmap_dir))
-            
-            # Save training history and model weights to architecture directory
-            # architecture_dir = bb_dir / "backbone" / "architecture"
-            # current_backbone.save_training_history(save_dir=str(architecture_dir))
-            # current_backbone.save_model_weights(save_dir=str(architecture_dir))
-            
             return {
                 "status": "completed", 
                 "backbone_result": backbone_result,
@@ -682,9 +673,12 @@ class Orchestrator:
                 "artifacts_created": 8
             }
 
-    def _run_interface_global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path, backbone_results: Dict) -> Dict[str, Any]:
+    def _run_interface_global_update(self, 
+                                    event_df: pd.DataFrame, 
+                                    phys_df: pd.DataFrame, 
+                                    bb_dir: Path, 
+                                    backbone_results: Dict) -> Dict[str, Any]:
         """Run interface global update step."""
-        self.logger.info("Running interface global update...")
         
         try:
             # Get the current backbone for this backbone bar
@@ -710,61 +704,10 @@ class Orchestrator:
                 validation_proportion=self.cfg.validation_proportion_interface,
                 selection_threshold=self.cfg.selection_threshold,
                 tolerance_threshold=self.cfg.tolerance_threshold,
-                ols_significance_level=self.cfg.ols_significance_level
+                ols_significance_level=self.cfg.ols_significance_level,
+                save_dir=str(bb_dir / "interface")
             )
-            
-            # Store interface results in the results structure
-            artifacts_dir = bb_dir / "interface"
-            
-            # Save hyperparameter results to parquet files
-            if 'hyperparameter_results' in interface_result:
-                hp_results = interface_result['hyperparameter_results']
-                
-                # Save elastic net hyperparameters (use alpha_grid and lambda_grid)
-                if 'elastic_net' in hp_results:
-                    enet_data = hp_results['elastic_net']
-                    # Create grid results from the grids and best values
-                    grid_data = []
-                    if 'alpha_grid' in enet_data and 'lambda_grid' in enet_data:
-                        for alpha in enet_data['alpha_grid']:
-                            for lambda_val in enet_data['lambda_grid']:
-                                grid_data.append({
-                                    'alpha': alpha,
-                                    'lambda': lambda_val,
-                                    'best_alpha': enet_data['best_alpha'],
-                                    'best_lambda': enet_data['best_lambda']
-                                })
-                    
-                    if grid_data:
-                        enet_df = pd.DataFrame(grid_data)
-                        enet_df.to_parquet(artifacts_dir / "enet_hyperparams_grid_eval.parquet", index=False)
-                
-                # Save adaptive lasso hyperparameters (use all_results)
-                if 'adaptive_lasso' in hp_results and 'all_results' in hp_results['adaptive_lasso']:
-                    ada_results = hp_results['adaptive_lasso']['all_results']
-                    if ada_results:
-                        ada_df = pd.DataFrame(ada_results)
-                        ada_df.to_parquet(artifacts_dir / "adalasso_hyperparams_grid_eval.parquet", index=False)
-                
-                # Save selected hyperparameters
-                selected_hp = {
-                    'elastic_net': {
-                        'best_alpha': hp_results['elastic_net']['best_alpha'],
-                        'best_lambda': hp_results['elastic_net']['best_lambda']
-                    },
-                    'adaptive_lasso': {
-                        'best_tau': hp_results['adaptive_lasso']['best_tau'],
-                        'best_lambda': hp_results['adaptive_lasso']['best_lambda']
-                    }
-                }
-                self._atomic_write_json(artifacts_dir / "hyperparams_selected.json", selected_hp)
-            
-            # Create a placeholder corridor plot (interface doesn't create visualization by default)
-            # This matches the expected artifact from the original placeholder
-            (artifacts_dir / "corridor_ada_lasso.png").touch()
-            
-            self.logger.info(f"Interface global update completed: {interface_result['n_selected']} variables selected from {interface_result['n_total_variables']}")
-            
+                     
             return {
                 "status": "completed",
                 "interface_result": interface_result,
@@ -776,14 +719,7 @@ class Orchestrator:
             
         except Exception as e:
             self.logger.error(f"Interface global update failed: {str(e)}")
-            # Create placeholder files if interface fails
-            artifacts_dir = bb_dir / "interface"
-            (artifacts_dir / "corridor_ada_lasso.png").touch()
-            (artifacts_dir / "hyperparams_selected.json").touch()
-            (artifacts_dir / "enet_hyperparams_grid_eval.parquet").touch()
-            (artifacts_dir / "adalasso_hyperparams_grid_eval.parquet").touch()
-            
-            return {"status": "failed", "error": str(e), "artifacts_created": 4}
+            raise RuntimeError(f"Interface global update failed: {str(e)}")
 
     def _run_adapter_global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path, interface_results: Dict) -> Dict[str, Any]:
         """Run adapter global update step."""

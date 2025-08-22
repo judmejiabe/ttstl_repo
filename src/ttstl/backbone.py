@@ -480,6 +480,8 @@ class Backbone():
 
             # Extract features using the trained model
             self.model.eval()
+            if hasattr(self.model, 'flatten_parameters'):
+                self.model.flatten_parameters()
             representations = []
             
             with torch.no_grad():
@@ -986,6 +988,7 @@ class Backbone():
             raise ValueError("No validation data available after partitioning")
         
         self.logger.info(f"Training with {len(train_data)} samples, validating with {len(validation_data)} samples")
+        self.logger.info(f"Backbone bar events interval: [{start_time:.2f}, {end_time:.2f}]")
         self.logger.info(f"Validation interval: [{validation_start:.2f}, {validation_end:.2f}]")
         self.logger.info(f"Buffer intervals: [{validation_buffer_start:.2f}, {validation_start:.2f}] and [{validation_end:.2f}, {validation_buffer_end:.2f}]")
 
@@ -1157,12 +1160,12 @@ class Backbone():
             # Save covariate list as JSON
             covariate_list_path = save_path / "final_covariate_list.json"
             with open(covariate_list_path, 'w') as f:
-                json.dump(self.full_covariate_list, f, indent=2)
+                json.dump({'final_covariate_list' : self.full_covariate_list}, f, indent=2)
             self.logger.info(f"Saved final covariate list ({len(self.full_covariate_list)} variables) to {covariate_list_path}")
 
         self.logger.info("="*80)
         self.logger.info("="*80)
-        self.logger.info("Global Update Completed")
+        self.logger.info("Backbone module global_update completed")
         self.logger.info("="*80)
         self.logger.info("="*80)
 

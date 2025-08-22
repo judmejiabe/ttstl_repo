@@ -107,6 +107,7 @@ def log_orchestrator_config(cfg: OrchestratorConfig):
     
     for key, value in config_dict.items():
         if isinstance(value, (list, tuple)) and len(value) > 10:
+            logger.info(f"{key}: {value}")
             # For long lists/tuples, show only first few and last few elements
             logger.info(f"{key}: [{value[0]}, {value[1]}, ..., {value[-2]}, {value[-1]}] (length: {len(value)})")
         else:

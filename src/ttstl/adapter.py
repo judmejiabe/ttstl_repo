@@ -1,3 +1,4 @@
+import logging
 from typing import Tuple, Optional
 import numpy as np
 import pandas as pd
@@ -30,6 +31,7 @@ class Adapter:
         self.archm = archm
         self.parameters = parameters
         self.spec = None  # To store GARCH specification
+        self.logger = logging.getLogger('ttstl.adapter')
 
     def _update_myopic(self, new_parameters: dict):
         self.parameters = new_parameters

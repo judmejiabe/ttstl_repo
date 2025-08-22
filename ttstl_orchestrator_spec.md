@@ -148,17 +148,17 @@ runs/
             stationarity_summary.parquet  # aggregated rates per variable (Check)
 
           correlation/
-            corr_matrix.npz               # np.savez_compressed: {corr, vars}
+            corr_matrix.npz               # np.savez_compressed: {corr, vars} (Check)
             corr_heatmap.png              # Correlation matrix heatmap (Check: There are three heatmas when running in full mode. Not only one)
 
-          extended_covariates.json        # full covariate set after pruning for stationarity
-          nn_weights.npz                  # layer weights snapshot 
+          extended_covariates.json        # full covariate set after pruning for stationarity (Check)
+          nn_weights.npz                  # layer weights snapshot (Check, moved to the architecture subdirectory)
 
-        interface/
+        interface/ (Added enet_coef_corridor.png, selected_variables.json, and variable_selection_info.json)
           corridor_ada_lasso.png        # Corridor plot of adaptive lasso using the selected hyperparameters
-          hyperparams_selected.json     # chosen α_enet, λ_enet, τ, λ_ada, thresholds
-          enet_hyperparams_grid_eval.parquet # grid search trace for enet hyperparameters (MSE path)
-          adalasso_hyperparams_grid_eval.parquet # grid search trace for adalasso hyperparameters (BIC path)
+          hyperparams_selected.json     # chosen α_enet, λ_enet, τ, λ_ada, thresholds (Check)
+          enet_hyperparams_grid_eval.parquet # grid search trace for enet hyperparameters (MSE path) (Check)
+          adalasso_hyperparams_grid_eval.parquet # grid search trace for adalasso hyperparameters (BIC path) (Check)
 
         adapter/
           armax_garch_corridor.png        # corridor plot of adapter bar specific estimated parameters
