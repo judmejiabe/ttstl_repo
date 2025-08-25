@@ -480,8 +480,6 @@ class Backbone():
 
             # Extract features using the trained model
             self.model.eval()
-            if hasattr(self.model, 'flatten_parameters'):
-                self.model.flatten_parameters()
             representations = []
             
             with torch.no_grad():

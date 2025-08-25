@@ -168,12 +168,13 @@ def main():
         n_lags=5,
 
         # Adapter kobs
-        update_method='simple_average',
+        update_method='power_law',
         arma_order=(1, 1),
         garch_order=(1, 1),
         dist='sstd',
         model='sGARCH',
         archm=False,
+        update_parameters={'alpha' : 3}
     )
 
     

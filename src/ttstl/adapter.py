@@ -1,11 +1,13 @@
 import logging
-from typing import Tuple, Optional
+import os
+from typing import Optional, Tuple
+
 import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import importr
-import os
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 # Activate pandas to R conversion
 pandas2ri.activate()
@@ -46,11 +48,24 @@ class Adapter:
                     self.parameters[key] = (ell - 1) / ell * self.parameters[key] + \
                         1 / ell * new_parameters[key]
     
-    def _update_power_law(self):
-        pass
+    def _update_power_law(self, new_parameters : dict, ell : int, alpha : float = 3):
+        if not self.parameters:
+            self.parameters = new_parameters
+        else:
+            for key in new_parameters:
+                ell_seq = np.arange(1, ell) ** alpha
+                sum_ell_seq = np.sum(ell_seq)
+                if key in self.parameters:
+                    self.parameters[key] = sum_ell_seq / (sum_ell_seq + ell ** alpha) * self.parameters[key] + \
+                                           ell ** alpha / (sum_ell_seq + ell ** alpha) * new_parameters[key]
 
-    def _update_exponential_smoothing(self):
-        pass
+    def _update_exponential_smoothing(self, new_parameters : dict, alpha : float = 0.1):
+        if not self.parameters:
+            self.parameters = new_parameters
+        else:
+            for key in new_parameters:
+                if key in self.parameters:
+                    self.parameters[key] = (1 - alpha) * self.parameters[key] + alpha * new_parameters[key]
 
     def _update_minimum_variance(self):
         pass
@@ -77,11 +92,11 @@ class Adapter:
         garch_results : dict
             Dictionary containing GARCH fitting results including standard errors and p-values
         """
-        print(f"\n{'='*60}")
-        print(f"ADAPTER BAR {adapter_bar_number} - GARCH MODEL PARAMETERS")
-        print(f"{'='*60}")
-        print(f"Update method: {self.update_method}")
-        
+        self.logger.info(f"=" * 80)
+        self.logger.info(f"ADAPTER BAR {adapter_bar_number} - GARCH MODEL PARAMETERS")
+        self.logger.info(f"=" * 80)
+        self.logger.info(f"Update method: {self.update_method}")
+
         # Get coefficient names, standard errors, and p-values from garch_results
         coef_names = garch_results['coefficient_names']
         coef_values = garch_results['coefficients']
@@ -103,25 +118,27 @@ class Adapter:
                 mxreg_mapping[name] = name
         
         # Print adapter bar-specific estimates (current fit)
-        print(f"\n📊 BAR-SPECIFIC ESTIMATES (Bar {adapter_bar_number}):")
-        print(f"{'Parameter':<20} {'Coefficient':>12} {'Std Error':>12} {'P-Value':>10}")
-        print("-" * 60)
-        
+        self.logger.info(f"BAR-SPECIFIC ESTIMATES (Bar {adapter_bar_number}):")
+        self.logger.info(f"{'Parameter':<20} {'Coefficient':>12} {'Std Error':>12} {'P-Value':>10}")
+        self.logger.info("=" * 80)
+
         for i, (name, coef, se, pval) in enumerate(zip(coef_names, coef_values, se_values, p_values)):
             display_name = mxreg_mapping[name]
-            print(f"{display_name:<20} {coef:>12.6f} {se:>12.6f} {pval:>10.4f}")
+            self.logger.info(f"{display_name:<20} {coef:>12.6f} {se:>12.6f} {pval:>10.4f}")
         
+        self.logger.info("=" * 80)
+
         # Print carried estimates (averaged parameters)
-        print(f"\n📈 CARRIED ESTIMATES (Bar {adapter_bar_number}):")
-        print(f"{'Parameter':<20} {'Coefficient':>12}")
-        print("-" * 35)
-        
+        self.logger.info(f"CARRIED ESTIMATES (Bar {adapter_bar_number}):")
+        self.logger.info(f"{'Parameter':<20} {'Coefficient':>12}")
+        self.logger.info("=" * 80)
+
         for name in coef_names:
             display_name = mxreg_mapping[name]
             carried_value = self.parameters.get(name, 0.0)
-            print(f"{display_name:<20} {carried_value:>12.6f}")
-        
-        print(f"{'='*60}")
+            self.logger.info(f"{display_name:<20} {carried_value:>12.6f}")
+
+        self.logger.info("=" * 80)
 
     def _fit_garch_model(self, y : np.ndarray, 
                          X : np.ndarray = None, 
@@ -262,8 +279,14 @@ class Adapter:
         if target_col_name not in physical_time_driven_adapter_time_bar_data.columns:
             raise ValueError(f"Target column '{target_col_name}' not found in physical time data")
         
+        self.logger.info('='*80)
+        self.logger.info('='*80)
+        self.logger.info("Running adapter module update")
+        self.logger.info('='*80)
+        self.logger.info('='*80)
+        
         # Use interface's _prepare_data method to augment data with neural covariates and lagged variables
-        print(f"Preparing data for adapter bar {adapter_bar_number}...")
+        self.logger.info(f"Preparing data for adapter bar {adapter_bar_number}")
         try:
             augmented_data = self.interface._prepare_data(
                 event_driven_backbone_time_bar_data=event_driven_adapter_time_bar_data,
@@ -272,6 +295,9 @@ class Adapter:
                 target_col_name=target_col_name,
                 n_lags=0  # No lags for adapter update
             )
+            self.logger.info(f"Dropping {augmented_data.isnull().any(axis=1).sum()} rows with NaNs to run GARCH model")
+            augmented_data.dropna(inplace=True)
+            
         except Exception as e:
             raise RuntimeError(f"Failed to prepare data for adapter bar {adapter_bar_number}: {str(e)}")
         
@@ -283,52 +309,51 @@ class Adapter:
                 # Use the first adapter bar if multiple exist
                 target_adapter_bar = unique_bars[0]
                 adapter_bar_data = augmented_data[augmented_data['adapter_bar'] == target_adapter_bar].copy()
-                print(f"Filtered to adapter bar {target_adapter_bar}, {len(adapter_bar_data)} observations")
+                self.logger.info(f"Filtered to adapter bar {target_adapter_bar}, {len(adapter_bar_data)} observations")
             else:
                 adapter_bar_data = augmented_data.copy()
-                print(f"Using all data: {len(adapter_bar_data)} observations")
+                self.logger.info(f"Using all data: {len(adapter_bar_data)} observations")
         else:
             adapter_bar_data = augmented_data.copy()
-            print(f"No adapter_bar column found, using all data: {len(adapter_bar_data)} observations")
-        
+            self.logger.info(f"No adapter_bar column found, using all data: {len(adapter_bar_data)} observations")
+
         # Extract target variable
         if target_col_name not in adapter_bar_data.columns:
+            self.logger.error(f"Target column '{target_col_name}' not found in augmented data")
             raise ValueError(f"Target column '{target_col_name}' not found in augmented data")
         
         y = adapter_bar_data[target_col_name]
-        
-        if len(y) < 10:  # Minimum data requirement for GARCH
-            raise ValueError(f"Insufficient data for GARCH fitting: {len(y)} observations. "
-                           "Need at least 10 observations.")
         
         # Get selected variables from interface
         selected_vars = self.interface.selected_variables
         lags_prefix = target_col_name + '_lag_'
         # Filter out lag variables from selected variables
         selected_vars = [var for var in selected_vars if not var.startswith(lags_prefix)]
-        print(f"Selected variables from interface: {selected_vars}")
-        
+        self.logger.info(f"Selected variables from interface: {selected_vars}")
+
         # Check which selected variables are available in the augmented data
         missing_vars = [var for var in selected_vars if var not in adapter_bar_data.columns]
         
         if missing_vars:
+            self.logger.error(f"Selected variables not found in augmented data: {missing_vars}")
             raise ValueError(f"Selected variables not found in augmented data: {missing_vars}")
         
         # Prepare external regressors
         X = adapter_bar_data[selected_vars]
         
         if X.isnull().any().any():
-            raise ValueError("External regressors contain NaN values. "
-                           "Please ensure all selected variables are present and clean.")
-                
+            self.logger.error("External regressors contain NaN values. Please ensure all selected variables are present and clean.")
+            raise ValueError("External regressors contain NaN values. Please ensure all selected variables are present and clean.")
+
         if len(y) < 10:
+            self.logger.error(f"After removing NaN values, insufficient data: {len(y)} observations")
             raise ValueError(f"After removing NaN values, insufficient data: {len(y)} observations")
         
         # Fit GARCH model
         try:
-            print(f"Fitting GARCH model with {len(y)} observations and {len(selected_vars)} covariates...")
-            print(y.head())
-            print(X.head())
+            self.logger.info(f"Fitting GARCH model with {len(y)} observations and {len(selected_vars)} covariates...")
+            #self.logger.info(f"Target variable (y) head:\n{y.head()}")
+            #self.logger.info(f"External regressors (X) head:\n{X.head()}")
             garch_results = self._fit_garch_model(
                 y=y.values,
                 X=X.values,
@@ -340,15 +365,22 @@ class Adapter:
             coef_names = garch_results['coefficient_names']
             coef_values = garch_results['coefficients']
             new_parameters = dict(zip(coef_names, coef_values))
-            
-            print(f"GARCH model fitted successfully. Coefficients: {list(new_parameters.keys())}")
-            
+
+            self.logger.info(f"GARCH model fitted successfully. Coefficients: {list(new_parameters.keys())}")
+
             # Update parameters based on update method
             if self.update_method == 'myopic':
                 self._update_myopic(new_parameters)
             elif self.update_method == 'simple_average':
                 self._update_simple_average(new_parameters, adapter_bar_number)
+            elif self.update_method == 'power_law':
+                alpha = update_parameters['alpha']
+                self._update_power_law(new_parameters, adapter_bar_number, alpha=alpha)
+            elif self.update_method == 'exponential_smoothing':
+                alpha = update_parameters['alpha']
+                self._update_exponential_smoothing(new_parameters, alpha=alpha)
             else:
+                self.logger.info(f"Update method '{self.update_method}' not implemented")
                 raise ValueError(f"Update method '{self.update_method}' not implemented")
             
             self.spec = garch_results['spec']  # Store GARCH specification
@@ -357,7 +389,7 @@ class Adapter:
             self._print_parameters_summary(adapter_bar_number, new_parameters, garch_results)
             
             # Prepare return dictionary
-            return self.parameters
+            return garch_results
 
         except Exception as e:
             raise RuntimeError(f"Failed to update adapter for bar {adapter_bar_number}: {str(e)}")
@@ -387,7 +419,31 @@ class Adapter:
                                                 n_roll = out_sample_target_variable_data.shape[0]-1,
                                                 out_sample = out_sample_target_variable_data.shape[0],
                                                 external = external_forecasts_r)
-        
-        print(rugarch.fitted(garch_forecast))
 
-        return rugarch.fitted(garch_forecast)
+        fore_mean = rugarch.fitted(garch_forecast)
+        fore_vol = rugarch.sigma(garch_forecast)
+
+        forecast_df = pd.DataFrame({
+            'mean': np.array(fore_mean).flatten(),
+            'vol': np.array(fore_vol).flatten()
+        })
+
+        return forecast_df
+    
+    def calculate_mae_mse(self, 
+                        in_sample_target_variable_data : pd.Series, 
+                        in_sample_external_regressors : pd.DataFrame,
+                        out_sample_target_variable_data : pd.Series,
+                        out_sample_external_regressors : pd.DataFrame):
+
+        fore = self.forecast(
+            in_sample_target_variable_data=in_sample_target_variable_data,
+            in_sample_external_regressors=in_sample_external_regressors,
+            out_sample_target_variable_data=out_sample_target_variable_data,
+            out_sample_external_regressors=out_sample_external_regressors
+        )
+
+        mae = mean_absolute_error(out_sample_target_variable_data, fore['mean'])
+        mse = mean_squared_error(out_sample_target_variable_data, fore['mean'])
+
+        return {'mae': mae, 'mse': mse}

@@ -164,7 +164,7 @@ class Interface:
         augmented_physical_data = augmented_physical_data[relevant_columns].copy()
         
         # Apply standard scaling to all variables (both covariates and target)
-        self.logger.info("Prewhitening variables to suit adaLASSO")
+        self.logger.info("Prewhitening variables")
         scaler = StandardScaler()
         
         # Scale all variables except timestamp and adapter_bar
@@ -1076,10 +1076,10 @@ class Interface:
                 continue
         
         # Step 4: Select variables based on selection threshold
-        print(f"\nStep 4: Selecting variables based on selection threshold...")
-        print(f"Successfully processed: {processed_bars} bars")
-        print(f"Failed to process: {failed_bars} bars")
-        
+        self.logger.info(f"Selecting variables based on selection threshold")
+        self.logger.info(f"Successfully processed: {processed_bars} bars")
+        self.logger.info(f"Failed to process: {failed_bars} bars")
+
         # Create and save corridor plots
         if processed_bars > 0:
             adalasso_coef_df = pd.DataFrame.from_dict(adalasso_coefs_dict, orient='index', columns=self.extended_covariate_list)

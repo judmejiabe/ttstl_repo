@@ -99,6 +99,8 @@ class CNNLSTM(nn.Module):
         x = x.permute(0, 2, 1, 3)
         x = x.squeeze(3)
 
+        self.lstm.flatten_parameters()
+
         x, _ = self.lstm(x)
         x = x[:, -1, :]
 
