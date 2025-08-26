@@ -174,7 +174,7 @@ def main():
         dist='sstd',
         model='sGARCH',
         archm=False,
-        update_parameters={'alpha' : 3}
+        update_parameters={'alpha' : 3.0}
     )
 
     

@@ -162,7 +162,7 @@ runs/
 
         adapter/
           armax_garch_corridor.png        # corridor plot of adapter bar specific estimated parameters
-          param_series.parquet            # Bar-specific and combined ARMAX-GARCH parameter time series overimposed. The x-axis corresponds to the adapter time bar
+          param_series.png            # Bar-specific and combined ARMAX-GARCH parameter time series overimposed. The x-axis corresponds to the adapter time bar
           performance_is.parquet          # in-sample RelMAE, RelMSE, and R^2.
 
       local_adapt/

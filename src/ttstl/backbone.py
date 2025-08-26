@@ -221,7 +221,7 @@ class Backbone():
             return {'ADF': 0, 'PP': 0, 'KPSS': 0, 'NA': 1}
 
     def _run_multiple_stationarity_tests(self,
-                           data : pd.DataFrame) -> None:
+                           data : pd.DataFrame) -> pd.DataFrame:
 
         """Perform multiple stationarity tests on the provided data. 
         The testing frequency is determined by the delta_adapter attribute.
@@ -238,12 +238,12 @@ class Backbone():
 
         try:
             data['adapter_bar'] = (
-            np.floor((data['timestamp'] + 1e-3) / self.delta_adapter)
+            np.floor((data['timestamp'] + 1e-6) / self.delta_adapter)
             .astype(int)
             )
         except KeyError:
             data['adapter_bar'] = (
-            np.floor((data.index.to_series() + 1e-3) / self.delta_adapter)
+            np.floor((data.index.to_series() + 1e-6) / self.delta_adapter)
             .astype(int)
             )
 
@@ -251,6 +251,8 @@ class Backbone():
 
         for ell, group in data.groupby('adapter_bar'):
             for column in columns:
+                if column in {'adapter_bar', 'backbone_bar'}:
+                    continue
                 series = group[column]
                 if isinstance(series, pd.DataFrame):
                     series = series.iloc[:, 0]

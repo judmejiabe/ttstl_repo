@@ -394,32 +394,182 @@ class Adapter:
         except Exception as e:
             raise RuntimeError(f"Failed to update adapter for bar {adapter_bar_number}: {str(e)}")
 
-    def forecast(self, 
-                 in_sample_target_variable_data : pd.Series, 
-                 in_sample_external_regressors : pd.DataFrame,
-                 out_sample_target_variable_data : pd.Series,
-                 out_sample_external_regressors : pd.DataFrame):
+    # def forecast(self, 
+    #              in_sample_target_variable_data : pd.Series, 
+    #              in_sample_external_regressors : pd.DataFrame,
+    #              out_sample_target_variable_data : pd.Series,
+    #              out_sample_external_regressors : pd.DataFrame):
+    #     r_script_path = os.path.join(os.path.dirname(__file__), 'r_scripts', 'run_garch.R')
+    #     ro.r(f'source("{r_script_path}")')
+    #     set_fixed_parameters = ro.globalenv['set_fixed_parameters']
+
+    #     spec_with_fixed_pars = set_fixed_parameters(self.spec, ro.ListVector(self.parameters))
+
+    #     combined_target_variable_data = pd.concat([in_sample_target_variable_data, out_sample_target_variable_data])
+    #     combined_external_regressors = pd.concat([in_sample_external_regressors, out_sample_external_regressors])
+
+    #     external_forecasts_r = ro.ListVector({'mregfor' : ro.r['matrix'](
+    #                                                     combined_external_regressors.values,
+    #                                                     nrow=combined_external_regressors.shape[0],
+    #                                                     ncol=combined_external_regressors.shape[1])})
+
+    #     garch_forecast = rugarch.ugarchforecast(fitORspec = spec_with_fixed_pars, 
+    #                                             data = combined_target_variable_data.values,
+    #                                             n_ahead = 1,
+    #                                             n_roll = out_sample_target_variable_data.shape[0]-1,
+    #                                             out_sample = out_sample_target_variable_data.shape[0],
+    #                                             external = external_forecasts_r)
+
+    #     fore_mean = rugarch.fitted(garch_forecast)
+    #     fore_vol = rugarch.sigma(garch_forecast)
+
+    #     forecast_df = pd.DataFrame({
+    #         'mean': np.array(fore_mean).flatten(),
+    #         'vol': np.array(fore_vol).flatten()
+    #     })
+
+    #     return forecast_df
+    
+    def forecast(self,
+                 in_sample_event_df: pd.DataFrame,
+                 in_sample_phys_df: pd.DataFrame,
+                 out_of_sample_event_df: pd.DataFrame,
+                 out_of_sample_phys_df: pd.DataFrame,
+                 target_col_name: str = 'micro_return',
+                 quantile: float = 0.005):
+        """
+        Generates a forecast using a previously fitted GARCH model specification.
+
+        This method prepares the combined in-sample and out-of-sample data by
+        augmenting it with neural covariates, then uses the stored GARCH
+        specification and parameters to perform a rolling forecast on the
+        out-of-sample data.
+
+        Args:
+            in_sample_event_df (pd.DataFrame): In-sample event-driven data.
+            in_sample_phys_df (pd.DataFrame): In-sample physical time data.
+            out_of_sample_event_df (pd.DataFrame): Out-of-sample event-driven data.
+            out_of_sample_phys_df (pd.DataFrame): Out-of-sample physical time data.
+            target_col_name (str): The name of the target variable column.
+            quantile (float): The winsorization quantile for neural covariate extraction.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the mean and volatility forecasts.
+        """
+        self.logger.info("Starting forecast generation with full data preparation.")
+
+        # Validate prerequisites
+        if self.spec is None:
+            self.logger.error("GARCH specification (self.spec) is not available. Fit a model first.")
+            raise ValueError("GARCH specification (self.spec) is not available. Fit a model first.")
+        if not hasattr(self.interface, 'selected_variables') or not self.interface.selected_variables:
+            self.logger.error("Interface 'selected_variables' not available. Run global_update first.")
+            raise ValueError("Interface 'selected_variables' not available. Run global_update first.")
+
+        n_in_sample = in_sample_phys_df.shape[0]
+
+        combined_events_df = pd.concat([in_sample_event_df, out_of_sample_event_df])
+        combined_phys_df = pd.concat([in_sample_phys_df, out_of_sample_phys_df])
+
+        self.logger.info("Preparing combined data for forecasting")
+        try:
+            # Use the interface's prepare_data to get neural covariates and scale the data
+            self.logger.info(f"Augmenting combined adapter bar data for forecasting")
+            augmented_df = self.interface._prepare_data(
+                event_driven_backbone_time_bar_data=combined_events_df,
+                physical_time_driven_backbone_time_bar_data=combined_phys_df,
+                quantile=quantile,
+                target_col_name=target_col_name,
+                n_lags=0  # No lags needed for this operation
+            )
+
+            # Critical. At the start of backbone bars, a NaN might arise in the first row. We drop it for simplicity
+            if augmented_df.isnull().any(axis = 1).sum() == 1:
+                augmented_df = augmented_df[1:]
+                n_in_sample -= 1
+
+            elif augmented_df.isnull().any(axis=1).sum() > 1:
+                self.logger.error("More than one NaN found in augmented data. Please check data integrity.")
+                raise ValueError("More than one NaN found in augmented data. Please check data integrity.")
+
+            self.logger.info(f"Augmented combined data shape: {augmented_df.shape}")
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to prepare data for forecasting: {e}")
+
+        in_sample_augmented = augmented_df[:n_in_sample]
+        out_of_sample_augmented = augmented_df[n_in_sample:]
+
+        # self.logger.info(f"In-sample augmented data columns: {in_sample_augmented.columns.tolist()}")
+        # self.logger.info(f"In-sample augmented data shape: {in_sample_augmented.shape}")
+        # self.logger.info(f"In-sample augmented data head:\n{in_sample_augmented.head().to_string()}")
+
+        # self.logger.info(f"Out-of-sample augmented data columns: {out_of_sample_augmented.columns.tolist()}")
+        # self.logger.info(f"Out-of-sample augmented data shape: {out_of_sample_augmented.shape}")
+        # self.logger.info(f"Out-of-sample augmented data head:\n{out_of_sample_augmented.head().to_string()}")
+
+        # Get selected variables from interface
+        selected_vars = self.interface.selected_variables
+        lags_prefix = target_col_name + '_lag_'
+        # Filter out lag variables from selected variables
+        selected_vars = [var for var in selected_vars if not var.startswith(lags_prefix)]
+
+        self.logger.info(f"Selected variables for forecasting: {selected_vars}")
+        
+        # In-sample data
+        in_sample_y = in_sample_augmented[target_col_name]
+        in_sample_X = in_sample_augmented[selected_vars]
+        
+        # Out-of-sample data
+        out_of_sample_y = out_of_sample_augmented[target_col_name]
+        out_of_sample_X = out_of_sample_augmented[selected_vars]
+
+        # # Log the shapes and heads of the dataframes for debugging
+        # self.logger.info(f"In-sample y shape: {in_sample_y.shape}")
+        # self.logger.info(f"In-sample y head:\n{in_sample_y.head().to_string()}")
+        # self.logger.info(f"In-sample X columns: {in_sample_X.columns.tolist()}")
+        # self.logger.info(f"In-sample X shape: {in_sample_X.shape}")
+        # self.logger.info(f"In-sample X head:\n{in_sample_X.head().to_string()}")
+
+        # self.logger.info(f"Out-of-sample y shape: {out_of_sample_y.shape}")
+        # self.logger.info(f"Out-of-sample y head:\n{out_of_sample_y.head().to_string()}")
+        # self.logger.info(f"Out-of-sample X columns: {out_of_sample_X.columns.tolist()}")
+        # self.logger.info(f"Out-of-sample X shape: {out_of_sample_X.shape}")
+        # self.logger.info(f"Out-of-sample X head:\n{out_of_sample_X.head().to_string()}")
+
+        # Combine again for the R function call format
+        combined_y = pd.concat([in_sample_y, out_of_sample_y])
+        combined_X = pd.concat([in_sample_X, out_of_sample_X])
+
+        # Perform forecast using R
+        self.logger.info(f"Performing rolling forecast on {len(out_of_sample_y)} observations.")
         r_script_path = os.path.join(os.path.dirname(__file__), 'r_scripts', 'run_garch.R')
         ro.r(f'source("{r_script_path}")')
         set_fixed_parameters = ro.globalenv['set_fixed_parameters']
 
+        # Set the GARCH spec with the fixed parameters from the last update
         spec_with_fixed_pars = set_fixed_parameters(self.spec, ro.ListVector(self.parameters))
 
-        combined_target_variable_data = pd.concat([in_sample_target_variable_data, out_sample_target_variable_data])
-        combined_external_regressors = pd.concat([in_sample_external_regressors, out_sample_external_regressors])
+        # Prepare external regressors for the forecast period
+        external_forecasts_r = ro.ListVector({
+            'mregfor': ro.r['matrix'](
+                combined_X.values,
+                nrow=combined_X.shape[0],
+                ncol=combined_X.shape[1]
+            )
+        })
 
-        external_forecasts_r = ro.ListVector({'mregfor' : ro.r['matrix'](
-                                                        combined_external_regressors.values,
-                                                        nrow=combined_external_regressors.shape[0],
-                                                        ncol=combined_external_regressors.shape[1])})
+        # Call the ugarchforecast function
+        garch_forecast = rugarch.ugarchforecast(
+            fitORspec=spec_with_fixed_pars,
+            data=combined_y.values,
+            n_ahead=1,
+            n_roll=len(out_of_sample_y) - 1,
+            out_sample=len(out_of_sample_y),
+            external_forecasts=external_forecasts_r
+        )
 
-        garch_forecast = rugarch.ugarchforecast(fitORspec = spec_with_fixed_pars, 
-                                                data = combined_target_variable_data.values,
-                                                n_ahead = 1,
-                                                n_roll = out_sample_target_variable_data.shape[0]-1,
-                                                out_sample = out_sample_target_variable_data.shape[0],
-                                                external = external_forecasts_r)
-
+        # Process and return results
         fore_mean = rugarch.fitted(garch_forecast)
         fore_vol = rugarch.sigma(garch_forecast)
 
@@ -427,23 +577,60 @@ class Adapter:
             'mean': np.array(fore_mean).flatten(),
             'vol': np.array(fore_vol).flatten()
         })
-
+        
+        self.logger.info("Forecast generation complete.")
         return forecast_df
     
-    def calculate_mae_mse(self, 
-                        in_sample_target_variable_data : pd.Series, 
-                        in_sample_external_regressors : pd.DataFrame,
-                        out_sample_target_variable_data : pd.Series,
-                        out_sample_external_regressors : pd.DataFrame):
+    def calculate_performance_metrics(self,
+                          in_sample_event_df: pd.DataFrame,
+                          in_sample_phys_df: pd.DataFrame,
+                          out_of_sample_event_df: pd.DataFrame,
+                          out_of_sample_phys_df: pd.DataFrame,
+                          target_col_name: str = 'micro_return',
+                          quantile: float = 0.005):
+        """
+        Calculates Mean Absolute Error (MAE) and Mean Squared Error (MSE)
+        by leveraging the new forecast method.
 
-        fore = self.forecast(
-            in_sample_target_variable_data=in_sample_target_variable_data,
-            in_sample_external_regressors=in_sample_external_regressors,
-            out_sample_target_variable_data=out_sample_target_variable_data,
-            out_sample_external_regressors=out_sample_external_regressors
+        Args:
+            in_sample_event_df (pd.DataFrame): In-sample event-driven data.
+            in_sample_phys_df (pd.DataFrame): In-sample physical time data.
+            out_of_sample_event_df (pd.DataFrame): Out-of-sample event-driven data.
+            out_of_sample_phys_df (pd.DataFrame): Out-of-sample physical time data.
+            target_col_name (str): The name of the target variable column.
+            quantile (float): The winsorization quantile for neural covariate extraction.
+
+        Returns:
+            dict: A dictionary containing the calculated 'mae' and 'mse'.
+        """
+        self.logger.info("Calculating MAE and MSE using the new forecast structure.")
+
+        # Call the new forecast method to get predictions
+        forecast_df = self.forecast(
+            in_sample_event_df=in_sample_event_df,
+            in_sample_phys_df=in_sample_phys_df,
+            out_of_sample_event_df=out_of_sample_event_df,
+            out_of_sample_phys_df=out_of_sample_phys_df,
+            target_col_name=target_col_name,
+            quantile=quantile
         )
 
-        mae = mean_absolute_error(out_sample_target_variable_data, fore['mean'])
-        mse = mean_squared_error(out_sample_target_variable_data, fore['mean'])
+        # Compute a benchmark forecast for comparison
+        benchmark_forecast = out_of_sample_phys_df[target_col_name].mean()
 
-        return {'mae': mae, 'mse': mse}
+        # The actual values are the target column from the out-of-sample physical data
+        actual_values = out_of_sample_phys_df[target_col_name]
+        
+        # The predicted values are in the 'mean' column of the forecast result
+        predicted_values = forecast_df['mean']
+
+        # Calculate metrics
+        mae = mean_absolute_error(actual_values, predicted_values)
+        mse = mean_squared_error(actual_values, predicted_values)
+
+        relmae = mae / np.mean(np.abs(actual_values - benchmark_forecast)) if np.mean(np.abs(actual_values - benchmark_forecast)) != 0 else None
+        relmse = mse / np.mean((actual_values - benchmark_forecast) ** 2) if np.mean((actual_values - benchmark_forecast) ** 2) != 0 else None
+
+        self.logger.info(f"Calculated Metrics - MAE: {mae:.6f}, MSE: {mse:.6f}")
+
+        return {'mae': mae, 'mse': mse, 'relmae': relmae, 'relmse': relmse}
