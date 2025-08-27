@@ -112,12 +112,10 @@ class Interface:
         self.logger.info(f'Augmenting physical time data with neural covariates')
 
         # Augment physical_time_data with neural covariates from backbone
-        neural_covariates = self.backbone._extract_neural_covariates(
+        neural_covariates = self.backbone.extract_neural_covariates(
             event_driven_data=event_driven_backbone_time_bar_data,
             physical_time_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile,
-            parsimonious_mode=self.backbone.parsimonious_mode
-        )
+            quantile=quantile)
 
         # Ensure timestamp columns are float type for proper merging
         neural_covariates['timestamp'] = neural_covariates['timestamp'].astype(float)

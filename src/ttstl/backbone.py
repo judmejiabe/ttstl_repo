@@ -440,12 +440,11 @@ class Backbone():
 
         return corr_matrix
     
-    def _extract_neural_covariates(self,
+    def extract_neural_covariates(self,
                                    event_driven_data: pd.DataFrame,
                                    physical_time_data: pd.DataFrame,
                                    quantile: Optional[float] = 0.005,
-                                   parsimonious_mode: bool = False,
-                                   batch_size: int = 512) -> dict:
+                                   batch_size: int = 512) -> pd.DataFrame:
         """Extract neural network covariates from event-driven data for physical time-driven data.
         
         For each timestamp in the physical time-driven data, find the last row in the event-driven
@@ -456,13 +455,12 @@ class Backbone():
             event_driven_data (pd.DataFrame): Event-driven data with timestamps.
             physical_time_data (pd.DataFrame): Physical time-driven data with timestamps.
             quantile (Optional[float]): Winsorization quantile.
-            parsimonious_mode (bool): If True, use forward pass output; if False, use hidden activations.
             
         Returns:
-            dict: Dictionary with covariate names as keys and pandas Series as values.
+            dict: DataFrame containing the extracted neural covariates.
         """
         try:
-            self.logger.info(f"Extracting neural covariates in {'parsimonious' if parsimonious_mode else 'full'} mode")
+            self.logger.info(f"Extracting neural covariates in {'parsimonious' if self.parsimonious_mode else 'full'} mode")
             
             # Create dataset from event-driven data (using train=False to keep all data)
             event_dataset = get_dataset_cnn_lstm(
@@ -489,7 +487,7 @@ class Backbone():
                     inputs = inputs.to(self.device, dtype=torch.float32)
                     
                     # Extract features based on mode
-                    if parsimonious_mode:
+                    if self.parsimonious_mode:
                         # Use forward pass output (1-dimensional)
                         # Shape: (batch_size, 1)
                         rep = self.model(inputs)  
@@ -521,12 +519,8 @@ class Backbone():
             valid_mask = indices > 0
             indices = np.maximum(indices - 1, 0)
             # Vectorized representation extraction
-            if representations.ndim == 1:
-                reps = representations[indices]
-                reps[~valid_mask] = np.nan
-            else:
-                reps = representations[indices]
-                reps[~valid_mask] = np.nan
+            reps = representations[indices]
+            reps[~valid_mask] = np.nan
 
             # Create a DataFrame with timestamps and representations,
             # set the representations as columns. Name the columns
@@ -537,18 +531,15 @@ class Backbone():
             )
 
             # Name the columns according to the model's output layer
-            if parsimonious_mode:
+            if self.parsimonious_mode:
                 covariates_df.columns = ['timestamp'] + \
                     [f'forward_pass_{i}' for i in range(reps.shape[1])]
             else:
                 covariates_df.columns = ['timestamp'] + \
                     [f'hidden_activations_{i}' for i in range(reps.shape[1])]
 
-            self.logger.info(f'Created {covariates_df.shape[1] - 1:,} new neural covariates. These will appear with {"forward_pass_" if parsimonious_mode else "hidden_activations_"} prefix.')
+            self.logger.info(f'Created {covariates_df.shape[1] - 1:,} new neural covariates. These will appear with {"forward_pass_" if self.parsimonious_mode else "hidden_activations_"} prefix.')
 
-
-            #print(covariates_df.info()) # Debugging output
-            #print(covariates_df.head()) # Debugging output
 
             return covariates_df
 
@@ -1077,11 +1068,10 @@ class Backbone():
         if physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
             
             # Extract features from event-driven data using the trained model
-            neural_covariates = self._extract_neural_covariates(
+            neural_covariates = self.extract_neural_covariates(
                 event_driven_data=data,
                 physical_time_data=physical_time_driven_backbone_time_bar_data,
-                quantile=quantile,
-                parsimonious_mode=self.parsimonious_mode
+                quantile=quantile
             )
 
             # Add neural covariate columns to the full covariate set

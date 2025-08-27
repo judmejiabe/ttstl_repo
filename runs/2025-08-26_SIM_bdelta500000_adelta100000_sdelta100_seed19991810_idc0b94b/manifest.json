@@ -1,5 +1,5 @@
 {
-  "run_slug": "2025-08-25_SIM_bdelta500000_adelta100000_sdelta100_seed19991810_id2c1500",
+  "run_slug": "2025-08-26_SIM_bdelta500000_adelta100000_sdelta100_seed19991810_idc0b94b",
   "ticker": "SIM",
   "bdelta": 500000.0,
   "adelta": 100000.0,
@@ -7,7 +7,7 @@
   "seed": 19991810,
   "session_start": 0.0,
   "session_finish": 1000000.0,
-  "created_at": "2025-08-25T21:31:13.757656",
+  "created_at": "2025-08-26T15:51:54.721096",
   "code_provenance": {
     "git_commit": "placeholder",
     "git_branch": "main",
@@ -23,7 +23,7 @@
     {
       "backbone_bar": 0,
       "mode": "global_update",
-      "timestamp": "2025-08-25T21:37:32.857832",
+      "timestamp": "2025-08-26T15:58:15.633495",
       "artifact_paths": {
         "backbone": [
           "bb_000/global_update/backbone/final_covariate_list.json",
@@ -67,7 +67,7 @@
     {
       "backbone_bar": 1,
       "mode": "global_update",
-      "timestamp": "2025-08-25T21:43:53.284928",
+      "timestamp": "2025-08-26T16:04:41.331908",
       "artifact_paths": {
         "backbone": [
           "bb_001/global_update/backbone/final_covariate_list.json",

@@ -30,6 +30,7 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.preprocessing import StandardScaler
 
 # Local imports
 from ttstl.backbone import Backbone
@@ -143,6 +144,7 @@ class Orchestrator:
         
         # Initialize components
         self._initialize_components()
+        self._initialize_scalers()
         
         self.logger.info(f"Orchestrator initialized with run: {self.run_slug}")
 
@@ -219,6 +221,27 @@ class Orchestrator:
         
         manifest_path = self.run_dir / "manifest.json"
         self._atomic_write_json(manifest_path, manifest)
+
+    def _initialize_scalers(self) -> None:
+        """Initialize scalers for the physical time data."""
+        # Calculate session length and number of backbone bars
+        session_length = self.cfg.session_finish - self.cfg.session_start
+        num_backbone_bars = int(np.rint(session_length / self.cfg.bdelta))
+        residual_length = session_length - (num_backbone_bars * self.cfg.bdelta)
+        
+        # Check if we need to add one more bar or warn about dropped interval
+        if residual_length > 0:
+            residual_percentage = residual_length / self.cfg.bdelta
+            if residual_percentage > 0.01:  # More than 1%
+                num_backbone_bars += 1
+        
+        self.logger.info(f"Creating {num_backbone_bars} scaler placeholders")
+        
+        # Initialize stacks dictionary
+        keys = [f"backbone_{i}" for i in range(num_backbone_bars)]
+        self.scalers = {key : None for key in keys}
+
+        self.logger.info(f"Successfully initialized {len(self.scalers)} scaler placeholders")
 
     def _initialize_components(self) -> None:
         """Initialize multiple Backbone-Interface-Adapter stacks for the trading session."""
@@ -558,194 +581,6 @@ class Orchestrator:
         except Exception as e:
             self.logger.error(f"Interface global update failed: {str(e)}")
             raise RuntimeError(f"Interface global update failed: {str(e)}")
-        
-    # def _run_adapter_global_update(self,
-    #                                event_df: pd.DataFrame,
-    #                                phys_df: pd.DataFrame,
-    #                                bb_dir: Path) -> Dict[str, Any]:
-    #     """
-    #     Run adapter global update step with walk-forward validation.
-
-    #     This method iterates through adapter bars within the current backbone bar.
-    #     For each adapter bar `i`, it updates the ARMA-GARCH model.
-    #     Then, it uses the updated model to forecast on adapter bar `i+1` and
-    #     calculates out-of-sample performance metrics (MAE, MSE).
-    #     It preserves the critical lookback logic for event data to prevent NaN hidden activations.
-    #     """
-    #     try:
-    #         self.logger.info(f"Running adapter bar updates for backbone bar {self._bb_idx} with walk-forward validation")
-    #         # Create adapter bars using adapter delta
-    #         phys_df = phys_df.copy()
-    #         event_df = event_df.copy()
-
-    #         # Create adapter bar assignments if they don't exist
-    #         if 'adapter_bar' not in phys_df.columns:
-    #             phys_df['adapter_bar'] = (np.floor((phys_df['timestamp'] + 1e-6) / self.cfg.adelta).astype(int))
-    #         if 'adapter_bar' not in event_df.columns:
-    #             event_df['adapter_bar'] = (np.floor((event_df['timestamp'] + 1e-6) / self.cfg.adelta).astype(int))
-
-    #         # Get unique adapter bars
-    #         adapter_bars = sorted(phys_df['adapter_bar'].unique())
-    #         self.logger.info(f"Found {len(adapter_bars)} adapter bars for processing")
-
-    #         # Get the adapter from the current stack
-    #         current_adapter = self.stacks[f"backbone_{self._bb_idx}"]
-    #         if current_adapter is None:
-    #             self.logger.error("No adapter available for global update")
-    #             raise RuntimeError("No adapter available for global update")
-
-    #         # Initialize results tracking
-    #         all_parameters = {}
-    #         all_adapter_bar_specific_parameters = {}
-    #         all_adapter_bar_specific_p_values = {}
-    #         performance_metrics = []
-    #         processing_stats = {}
-
-    #         # Process each adapter bar in a walk-forward manner
-    #         # Loop up to the second-to-last bar to have a subsequent bar for OOS evaluation
-    #         for i in range(len(adapter_bars) - 1):
-    #             current_adapter_bar = adapter_bars[i]
-    #             next_adapter_bar = adapter_bars[i+1]
-    #             bar_logger_prefix = f"adapter_bar_{current_adapter_bar:03d}"
-
-    #             try:
-    #                 # --- 1. GATHER IN-SAMPLE DATA (current_adapter_bar) ---
-    #                 in_sample_phys_df = phys_df[phys_df['adapter_bar'] == current_adapter_bar].copy()
-
-    #                 # Apply critical lookback fix for event data to prevent NaN hidden activations
-    #                 if i > 0:
-    #                     prev_adapter_bar = adapter_bars[i-1]
-    #                     prev_event_data = event_df[event_df['adapter_bar'] == prev_adapter_bar]
-    #                     if not prev_event_data.empty and 'sampling_time_bar' in prev_event_data.columns:
-    #                         last_sampling_bar = prev_event_data['sampling_time_bar'].max()
-    #                         prev_lookback = prev_event_data[prev_event_data['sampling_time_bar'] == last_sampling_bar].copy()
-    #                         current_event_data = event_df[event_df['adapter_bar'] == current_adapter_bar].copy()
-    #                         in_sample_event_df = pd.concat([prev_lookback, current_event_data], ignore_index=True).sort_values('timestamp')
-    #                     else:
-    #                         in_sample_event_df = event_df[event_df['adapter_bar'] == current_adapter_bar].copy()
-    #                 else: # First adapter bar
-    #                     in_sample_event_df = event_df[event_df['adapter_bar'] == current_adapter_bar].copy()
-
-    #                 self.logger.info(f"Processing {bar_logger_prefix}: "
-    #                                  f"{len(in_sample_phys_df)} physical samples, "
-    #                                  f"{len(in_sample_event_df)} event samples (including lookback)")
-
-    #                 # Skip if insufficient data for model update
-    #                 if len(in_sample_phys_df) < 10:
-    #                     self.logger.warning(f"Skipping update for {bar_logger_prefix}: insufficient data.")
-    #                     processing_stats[current_adapter_bar] = {'status': 'skipped', 'reason': 'insufficient_data'}
-    #                     continue
-
-    #                 # --- 2. UPDATE ADAPTER ---
-    #                 adapter_result = current_adapter.update_adapter(
-    #                     event_driven_adapter_time_bar_data=in_sample_event_df,
-    #                     physical_time_driven_adapter_time_bar_data=in_sample_phys_df,
-    #                     adapter_bar_number=i + 1,  # 1-indexed for update schemes
-    #                     target_col_name=self.cfg.target_col_name,
-    #                     update_parameters=self.cfg.update_parameters
-    #                 )
-
-    #                 # Store results from the update
-    #                 all_parameters[current_adapter_bar] = copy.deepcopy(current_adapter.parameters)
-    #                 coef_names = adapter_result['coefficient_names']
-    #                 all_adapter_bar_specific_parameters[current_adapter_bar] = dict(zip(coef_names, adapter_result['coefficients']))
-    #                 all_adapter_bar_specific_p_values[current_adapter_bar] = dict(zip(coef_names, adapter_result['p_values']))
-    #                 processing_stats[current_adapter_bar] = {'status': 'completed_update'}
-
-    #                 # --- 3. GATHER OUT-OF-SAMPLE DATA (next_adapter_bar) ---
-    #                 out_of_sample_phys_df = phys_df[phys_df['adapter_bar'] == next_adapter_bar].copy()
-    #                 out_of_sample_event_df = event_df[event_df['adapter_bar'] == next_adapter_bar].copy()
-
-    #                 if out_of_sample_phys_df.empty or out_of_sample_event_df.empty:
-    #                     self.logger.warning(f"Skipping forecast evaluation for {bar_logger_prefix}: next bar {next_adapter_bar} is empty.")
-    #                     continue
-
-    #                 # --- 4. CALCULATE PERFORMANCE METRICS ---
-    #                 self.logger.info(f"Calculating forecast performance for {bar_logger_prefix} on bar {next_adapter_bar}")
-    #                 metrics = current_adapter.calculate_mae_mse(
-    #                     in_sample_event_df=in_sample_event_df,
-    #                     in_sample_phys_df=in_sample_phys_df,
-    #                     out_of_sample_event_df=out_of_sample_event_df,
-    #                     out_of_sample_phys_df=out_of_sample_phys_df,
-    #                     target_col_name=self.cfg.target_col_name,
-    #                     quantile=self.cfg.quantile
-    #                 )
-    #                 metrics['adapter_bar'] = next_adapter_bar  # Log metrics against the bar they were tested on
-    #                 performance_metrics.append(metrics)
-    #                 self.logger.info(f"Performance on bar {next_adapter_bar}: MAE={metrics['mae']:.6f}, MSE={metrics['mse']:.6f}")
-
-    #             except Exception as e:
-    #                 error_msg = f"Failed to process {bar_logger_prefix}: {e}"
-    #                 self.logger.error(error_msg, exc_info=True)
-    #                 processing_stats[current_adapter_bar] = {'status': 'failed', 'error': str(e)}
-    #                 continue
-
-    #         # --- 5. CONSOLIDATE AND SAVE ARTIFACTS ---
-    #         if not all_parameters:
-    #             self.logger.warning("No adapter parameters were successfully computed. Skipping artifact generation.")
-    #             return {"status": "failed", "reason": "no_valid_adapter_updates"}
-
-    #         artifacts_dir = bb_dir / "adapter"
-    #         artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-    #         # Convert results to DataFrames
-    #         all_parameters_df = pd.DataFrame.from_dict(all_parameters, orient='index')
-    #         all_adapter_bar_specific_parameters_df = pd.DataFrame.from_dict(all_adapter_bar_specific_parameters, orient='index')
-    #         all_adapter_bar_specific_p_values_df = pd.DataFrame.from_dict(all_adapter_bar_specific_p_values, orient='index')
-            
-    #         # Rename columns from mxreg to actual variable names
-    #         selected_vars = current_adapter.interface.selected_variables
-    #         lags_prefix = self.cfg.target_col_name + '_lag_'
-    #         # Filter out lag variables from selected variables
-    #         selected_vars = [var for var in selected_vars if not var.startswith(lags_prefix)]
-    #         mxreg_mapping = {f'mxreg{i+1}': var for i, var in enumerate(selected_vars)}
-    #         all_parameters_df.rename(columns=mxreg_mapping, inplace=True)
-    #         all_adapter_bar_specific_parameters_df.rename(columns=mxreg_mapping, inplace=True)
-    #         all_adapter_bar_specific_p_values_df.rename(columns=mxreg_mapping, inplace=True)
-
-    #         # Save parameter series to parquet
-    #         params_path = artifacts_dir / "param_series.parquet"
-    #         all_parameters_df.to_parquet(params_path)
-    #         all_adapter_bar_specific_parameters_df.to_parquet(artifacts_dir / "param_series_bar_specific.parquet")
-    #         all_adapter_bar_specific_p_values_df.to_parquet(artifacts_dir / "p_values_series.parquet")
-    #         self.logger.info(f"Saved adapter parameter series to {artifacts_dir}")
-
-    #         # Save performance metrics
-    #         performance_df = pd.DataFrame(performance_metrics)
-    #         if not performance_df.empty:
-    #             performance_df.set_index('adapter_bar', inplace=True)
-    #             performance_file = artifacts_dir / "performance.parquet"
-    #             performance_df.to_parquet(performance_file)
-    #             self.logger.info(f"Saved OOS performance metrics to {performance_file}")
-
-    #         # Generate and save plots
-    #         self._plot_parameter_series(
-    #             all_parameters_df=all_parameters_df,
-    #             all_adapter_bar_specific_parameters_df=all_adapter_bar_specific_parameters_df,
-    #             save_path=artifacts_dir / 'param_series.png'
-    #         )
-    #         self._plot_parameter_significance_corridor(
-    #             parameters_df=all_adapter_bar_specific_parameters_df,
-    #             p_values_df=all_adapter_bar_specific_p_values_df,
-    #             title='ARMAX-GARCH Corridor (Global Update)',
-    #             save_path=artifacts_dir / 'armax_garch_corridor.png'
-    #         )
-
-    #         adapter_global_results = {
-    #             'status': 'completed',
-    #             'successful_updates': len(all_parameters),
-    #             'artifacts_created': 5 + (1 if not performance_df.empty else 0)
-    #         }
-    #         self.logger.info(f"Adapter global update completed for backbone bar {self._bb_idx}")
-    #         return adapter_global_results
-
-    #     except Exception as e:
-    #         self.logger.error(f"Adapter global update failed catastrophically: {e}", exc_info=True)
-    #         artifacts_dir = bb_dir / "adapter"
-    #         artifacts_dir.mkdir(parents=True, exist_ok=True)
-    #         (artifacts_dir / "error.txt").write_text(str(e))
-    #         return {'status': 'failed', 'error': str(e)}
-
 
     def _run_adapter_global_update(self, 
                                    event_df: pd.DataFrame, 
@@ -759,7 +594,7 @@ class Orchestrator:
             # Create adapter bars using adapter delta
             phys_df = phys_df.copy()
             event_df = event_df.copy()
-            
+
             # Create adapter bar assignments
             phys_df['adapter_bar'] = (np.floor((phys_df['timestamp'] + 1e-6) / self.cfg.adelta).astype(int))
             event_df['adapter_bar'] = (np.floor((event_df['timestamp'] + 1e-6) / self.cfg.adelta).astype(int))
@@ -773,6 +608,16 @@ class Orchestrator:
             if current_adapter is None:
                 self.logger.error("No adapter available for global update")
                 raise RuntimeError("No adapter available for global update")
+        
+            # Create scaler
+            scaler = StandardScaler()
+            augmented_df = current_adapter.augment_data(event_df, 
+                                                        phys_df.drop(columns=['backbone_bar', 
+                                                                              'adapter_bar']),
+                                                        target_col_name = self.cfg.target_col_name, 
+                                                        quantile = self.cfg.quantile)
+            scaler.fit(augmented_df.drop(columns=['timestamp', self.cfg.target_col_name]))
+            self.scalers[f"backbone_{self._bb_idx}"] = scaler
             
             # Initialize results tracking
             successful_updates = 0
@@ -863,6 +708,7 @@ class Orchestrator:
                     adapter_result = current_adapter.update_adapter(
                         event_driven_adapter_time_bar_data=bar_edlob,
                         physical_time_driven_adapter_time_bar_data=bar_ptdata,
+                        scaler=scaler,
                         adapter_bar_number=successful_updates + 1,  # 1-indexed
                         target_col_name=self.cfg.target_col_name,
                         update_parameters=self.cfg.update_parameters
@@ -874,12 +720,18 @@ class Orchestrator:
                         out_of_sample_phys_df = phys_df[phys_df['adapter_bar'] == next_adapter_bar].copy()
                         out_of_sample_event_df = event_df[event_df['adapter_bar'] == next_adapter_bar].copy()
 
+                        if out_of_sample_phys_df.empty or out_of_sample_event_df.empty:
+                            self.logger.warning(f"Skipping forecast evaluation for {bar_logger_prefix}: next bar {next_adapter_bar} is empty.")
+                            continue
+
                         self.logger.info(f"Calculating forecast performance for {bar_logger_prefix} on bar {next_adapter_bar}")
                         metrics = current_adapter.calculate_performance_metrics(
                             in_sample_event_df=bar_edlob,
                             in_sample_phys_df=bar_ptdata,
                             out_of_sample_event_df=out_of_sample_event_df,
                             out_of_sample_phys_df=out_of_sample_phys_df,
+                            benchmark_forecast=phys_df[self.cfg.target_col_name].mean(),
+                            scaler=scaler,
                             target_col_name=self.cfg.target_col_name,
                             quantile=self.cfg.quantile
                         )
@@ -887,11 +739,7 @@ class Orchestrator:
                         metrics['adapter_bar'] = next_adapter_bar  # Log metrics against the bar they were tested on
                         performance_metrics.append(metrics)
 
-                        if out_of_sample_phys_df.empty or out_of_sample_event_df.empty:
-                            self.logger.warning(f"Skipping forecast evaluation for {bar_logger_prefix}: next bar {next_adapter_bar} is empty.")
-                            continue
-
-
+                        
                     
                     # Store results
                     all_parameters[adapter_bar] = copy.deepcopy(current_adapter.parameters)
@@ -1268,7 +1116,7 @@ class Orchestrator:
         for j in range(i + 1, len(axes)):
             axes[j].set_visible(False)
             
-        fig.suptitle('Adapter Parameter Evolution', fontsize=18, y=1.02)
+        fig.suptitle('Adapter Estimates Evolution', fontsize=18, y=1.02)
         fig.text(0.5, 0.01, 'Adapter Bar', ha='center', va='center', fontsize=14)
         
         plt.tight_layout(rect=[0, 0.03, 1, 0.98])
@@ -1343,7 +1191,7 @@ class Orchestrator:
 
         plt.title(title)
         plt.xlabel('Adapter Bar')
-        plt.ylabel('Parameter')
+        plt.ylabel('Covariate')
         plt.tight_layout(rect=[0, 0, 0.9, 1]) # Adjust layout to make space for annotations
         
         try:

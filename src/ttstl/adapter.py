@@ -1,6 +1,7 @@
+import copy
 import logging
 import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -8,6 +9,7 @@ import rpy2.robjects as ro
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import importr
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
 
 # Activate pandas to R conversion
 pandas2ri.activate()
@@ -238,9 +240,51 @@ class Adapter:
         # except Exception as e:
         #     raise RuntimeError(f"Failed to fit GARCH model: {str(e)}")
 
+    def augment_data(self,
+                     event_driven_adapter_time_bar_data : pd.DataFrame,
+                     physical_time_driven_adapter_time_bar_data : pd.DataFrame,
+                     scaler : Optional[StandardScaler] = None,
+                     target_col_name : str = 'micro_return',
+                     quantile : float = 0.005):
+        """Augments the physical_time_driven_adapter_time_bar_data with neural covariates."""
+
+        self.logger.info("Augmenting physical time data with neural covariates")
+
+        neural_covariates = self.interface.backbone.extract_neural_covariates(event_driven_adapter_time_bar_data,
+                                                                              physical_time_driven_adapter_time_bar_data,
+                                                                              quantile=quantile)
+        
+        neural_covariates['timestamp'] = neural_covariates['timestamp'].astype(float)
+        physical_time_driven_adapter_time_bar_data['timestamp'] = \
+            physical_time_driven_adapter_time_bar_data['timestamp'].astype(float)
+
+        # Merge neural covariates with physical time data
+        augmented_physical_data = pd.merge_asof(
+            physical_time_driven_adapter_time_bar_data,
+            neural_covariates,
+            on='timestamp',
+            direction='nearest',
+            tolerance=1e-6
+        )
+
+        covariate_names = [var for var in augmented_physical_data.columns if var not in ['timestamp', 
+                                                                                         'adapter_bar', 
+                                                                                         'backbone_bar', 
+                                                                                         target_col_name]]
+
+        
+        if scaler is not None:
+            self.logger.info(f"Scaling covariates: {covariate_names}")
+            augmented_physical_data[covariate_names] = scaler.transform(augmented_physical_data[covariate_names])
+
+        self.logger.info(f"Merged neural covariates, resulting data shape: {augmented_physical_data.shape}")
+
+        return augmented_physical_data
+
     def update_adapter(self, 
                        event_driven_adapter_time_bar_data: pd.DataFrame,
                        physical_time_driven_adapter_time_bar_data: pd.DataFrame,
+                       scaler : StandardScaler,
                        adapter_bar_number: int,
                        target_col_name: str = 'micro_return',
                        quantile: float = 0.005,
@@ -288,17 +332,24 @@ class Adapter:
         # Use interface's _prepare_data method to augment data with neural covariates and lagged variables
         self.logger.info(f"Preparing data for adapter bar {adapter_bar_number}")
         try:
-            augmented_data = self.interface._prepare_data(
-                event_driven_backbone_time_bar_data=event_driven_adapter_time_bar_data,
-                physical_time_driven_backbone_time_bar_data=physical_time_driven_adapter_time_bar_data,
-                quantile=quantile,
+            augmented_data = self.augment_data(
+                event_driven_adapter_time_bar_data=event_driven_adapter_time_bar_data,
+                physical_time_driven_adapter_time_bar_data=physical_time_driven_adapter_time_bar_data,
+                scaler=scaler,
                 target_col_name=target_col_name,
-                n_lags=0  # No lags for adapter update
+                quantile=quantile
             )
-            self.logger.info(f"Dropping {augmented_data.isnull().any(axis=1).sum()} rows with NaNs to run GARCH model")
-            augmented_data.dropna(inplace=True)
+            if augmented_data.isnull().any(axis = 1).sum() == 1:
+                self.logger.info(f"Dropping the first sampling time bar due to NaNs")
+                augmented_data = augmented_data.iloc[1:]
+            elif augmented_data.isnull().any(axis=1).sum() > 1:
+                augmented_data = augmented_data.iloc[1:]
+                self.logger.warning(f"Remaining data contains {augmented_data.isnull().any(axis=1).sum()} NaNs.")
+            else:
+                self.logger.info(f"All remaining data contains no NaNs")
             
         except Exception as e:
+            self.logger.error(f"Failed to prepare data for adapter bar {adapter_bar_number}: {str(e)}")
             raise RuntimeError(f"Failed to prepare data for adapter bar {adapter_bar_number}: {str(e)}")
         
         # Filter data to only the specific adapter bar if needed
@@ -306,8 +357,9 @@ class Adapter:
             # Find the adapter bar that corresponds to our data
             unique_bars = augmented_data['adapter_bar'].unique()
             if len(unique_bars) > 1:
-                # Use the first adapter bar if multiple exist
-                target_adapter_bar = unique_bars[0]
+                # Use the last adapter bar if multiple exist
+                self.logger.warning(f"Multiple adapter bars found in data: {unique_bars}. Using the last one.")
+                target_adapter_bar = unique_bars[-1]
                 adapter_bar_data = augmented_data[augmented_data['adapter_bar'] == target_adapter_bar].copy()
                 self.logger.info(f"Filtered to adapter bar {target_adapter_bar}, {len(adapter_bar_data)} observations")
             else:
@@ -362,8 +414,8 @@ class Adapter:
             )
             
             # Extract fitted parameters
-            coef_names = garch_results['coefficient_names']
-            coef_values = garch_results['coefficients']
+            coef_names = copy.deepcopy(garch_results['coefficient_names'])
+            coef_values = copy.deepcopy(garch_results['coefficients'])
             new_parameters = dict(zip(coef_names, coef_values))
 
             self.logger.info(f"GARCH model fitted successfully. Coefficients: {list(new_parameters.keys())}")
@@ -394,47 +446,12 @@ class Adapter:
         except Exception as e:
             raise RuntimeError(f"Failed to update adapter for bar {adapter_bar_number}: {str(e)}")
 
-    # def forecast(self, 
-    #              in_sample_target_variable_data : pd.Series, 
-    #              in_sample_external_regressors : pd.DataFrame,
-    #              out_sample_target_variable_data : pd.Series,
-    #              out_sample_external_regressors : pd.DataFrame):
-    #     r_script_path = os.path.join(os.path.dirname(__file__), 'r_scripts', 'run_garch.R')
-    #     ro.r(f'source("{r_script_path}")')
-    #     set_fixed_parameters = ro.globalenv['set_fixed_parameters']
-
-    #     spec_with_fixed_pars = set_fixed_parameters(self.spec, ro.ListVector(self.parameters))
-
-    #     combined_target_variable_data = pd.concat([in_sample_target_variable_data, out_sample_target_variable_data])
-    #     combined_external_regressors = pd.concat([in_sample_external_regressors, out_sample_external_regressors])
-
-    #     external_forecasts_r = ro.ListVector({'mregfor' : ro.r['matrix'](
-    #                                                     combined_external_regressors.values,
-    #                                                     nrow=combined_external_regressors.shape[0],
-    #                                                     ncol=combined_external_regressors.shape[1])})
-
-    #     garch_forecast = rugarch.ugarchforecast(fitORspec = spec_with_fixed_pars, 
-    #                                             data = combined_target_variable_data.values,
-    #                                             n_ahead = 1,
-    #                                             n_roll = out_sample_target_variable_data.shape[0]-1,
-    #                                             out_sample = out_sample_target_variable_data.shape[0],
-    #                                             external = external_forecasts_r)
-
-    #     fore_mean = rugarch.fitted(garch_forecast)
-    #     fore_vol = rugarch.sigma(garch_forecast)
-
-    #     forecast_df = pd.DataFrame({
-    #         'mean': np.array(fore_mean).flatten(),
-    #         'vol': np.array(fore_vol).flatten()
-    #     })
-
-    #     return forecast_df
-    
     def forecast(self,
                  in_sample_event_df: pd.DataFrame,
                  in_sample_phys_df: pd.DataFrame,
                  out_of_sample_event_df: pd.DataFrame,
                  out_of_sample_phys_df: pd.DataFrame,
+                 scaler : StandardScaler,
                  target_col_name: str = 'micro_return',
                  quantile: float = 0.005):
         """
@@ -473,19 +490,19 @@ class Adapter:
 
         self.logger.info("Preparing combined data for forecasting")
         try:
-            # Use the interface's prepare_data to get neural covariates and scale the data
+            # Use the adapter's augment_data method (consistent with update_adapter)
             self.logger.info(f"Augmenting combined adapter bar data for forecasting")
-            augmented_df = self.interface._prepare_data(
-                event_driven_backbone_time_bar_data=combined_events_df,
-                physical_time_driven_backbone_time_bar_data=combined_phys_df,
-                quantile=quantile,
+            augmented_df = self.augment_data(
+                event_driven_adapter_time_bar_data=combined_events_df,
+                physical_time_driven_adapter_time_bar_data=combined_phys_df,
+                scaler=scaler,
                 target_col_name=target_col_name,
-                n_lags=0  # No lags needed for this operation
+                quantile=quantile
             )
 
             # Critical. At the start of backbone bars, a NaN might arise in the first row. We drop it for simplicity
             if augmented_df.isnull().any(axis = 1).sum() == 1:
-                augmented_df = augmented_df[1:]
+                augmented_df = augmented_df.iloc[1:]
                 n_in_sample -= 1
 
             elif augmented_df.isnull().any(axis=1).sum() > 1:
@@ -499,14 +516,6 @@ class Adapter:
 
         in_sample_augmented = augmented_df[:n_in_sample]
         out_of_sample_augmented = augmented_df[n_in_sample:]
-
-        # self.logger.info(f"In-sample augmented data columns: {in_sample_augmented.columns.tolist()}")
-        # self.logger.info(f"In-sample augmented data shape: {in_sample_augmented.shape}")
-        # self.logger.info(f"In-sample augmented data head:\n{in_sample_augmented.head().to_string()}")
-
-        # self.logger.info(f"Out-of-sample augmented data columns: {out_of_sample_augmented.columns.tolist()}")
-        # self.logger.info(f"Out-of-sample augmented data shape: {out_of_sample_augmented.shape}")
-        # self.logger.info(f"Out-of-sample augmented data head:\n{out_of_sample_augmented.head().to_string()}")
 
         # Get selected variables from interface
         selected_vars = self.interface.selected_variables
@@ -523,19 +532,6 @@ class Adapter:
         # Out-of-sample data
         out_of_sample_y = out_of_sample_augmented[target_col_name]
         out_of_sample_X = out_of_sample_augmented[selected_vars]
-
-        # # Log the shapes and heads of the dataframes for debugging
-        # self.logger.info(f"In-sample y shape: {in_sample_y.shape}")
-        # self.logger.info(f"In-sample y head:\n{in_sample_y.head().to_string()}")
-        # self.logger.info(f"In-sample X columns: {in_sample_X.columns.tolist()}")
-        # self.logger.info(f"In-sample X shape: {in_sample_X.shape}")
-        # self.logger.info(f"In-sample X head:\n{in_sample_X.head().to_string()}")
-
-        # self.logger.info(f"Out-of-sample y shape: {out_of_sample_y.shape}")
-        # self.logger.info(f"Out-of-sample y head:\n{out_of_sample_y.head().to_string()}")
-        # self.logger.info(f"Out-of-sample X columns: {out_of_sample_X.columns.tolist()}")
-        # self.logger.info(f"Out-of-sample X shape: {out_of_sample_X.shape}")
-        # self.logger.info(f"Out-of-sample X head:\n{out_of_sample_X.head().to_string()}")
 
         # Combine again for the R function call format
         combined_y = pd.concat([in_sample_y, out_of_sample_y])
@@ -574,6 +570,7 @@ class Adapter:
         fore_vol = rugarch.sigma(garch_forecast)
 
         forecast_df = pd.DataFrame({
+            'timestamp': out_of_sample_augmented['timestamp'],
             'mean': np.array(fore_mean).flatten(),
             'vol': np.array(fore_vol).flatten()
         })
@@ -586,6 +583,8 @@ class Adapter:
                           in_sample_phys_df: pd.DataFrame,
                           out_of_sample_event_df: pd.DataFrame,
                           out_of_sample_phys_df: pd.DataFrame,
+                          benchmark_forecast: Union[float, pd.Series],
+                          scaler : StandardScaler,
                           target_col_name: str = 'micro_return',
                           quantile: float = 0.005):
         """
@@ -611,26 +610,55 @@ class Adapter:
             in_sample_phys_df=in_sample_phys_df,
             out_of_sample_event_df=out_of_sample_event_df,
             out_of_sample_phys_df=out_of_sample_phys_df,
+            scaler=scaler,
             target_col_name=target_col_name,
             quantile=quantile
         )
 
-        # Compute a benchmark forecast for comparison
-        benchmark_forecast = out_of_sample_phys_df[target_col_name].mean()
-
-        # The actual values are the target column from the out-of-sample physical data
-        actual_values = out_of_sample_phys_df[target_col_name]
+        # Ensure alignment between actual and predicted values
+        # The forecast_df contains timestamps that we can use for alignment
+        # Merge on timestamp to ensure alignment
+        forecast_with_actual = pd.merge(
+            forecast_df[['timestamp', 'mean']],
+            out_of_sample_phys_df[['timestamp', target_col_name]],
+            on='timestamp',
+            how='inner'
+        )
         
-        # The predicted values are in the 'mean' column of the forecast result
-        predicted_values = forecast_df['mean']
+        actual_values = forecast_with_actual[target_col_name]
+        predicted_values = forecast_with_actual['mean']
+        
+        self.logger.info(f"Aligned data: {len(actual_values)} observations (forecast: {len(forecast_df)}, original: {len(out_of_sample_phys_df)})")
 
         # Calculate metrics
         mae = mean_absolute_error(actual_values, predicted_values)
         mse = mean_squared_error(actual_values, predicted_values)
 
-        relmae = mae / np.mean(np.abs(actual_values - benchmark_forecast)) if np.mean(np.abs(actual_values - benchmark_forecast)) != 0 else None
-        relmse = mse / np.mean((actual_values - benchmark_forecast) ** 2) if np.mean((actual_values - benchmark_forecast) ** 2) != 0 else None
+        # Handle benchmark computation with proper type checking and alignment
+        try:
+            if isinstance(benchmark_forecast, (pd.Series, np.ndarray)):
+                # If benchmark is a series, ensure it aligns with actual_values
+                if len(benchmark_forecast) != len(actual_values):
+                    self.logger.error(f"Benchmark length ({len(benchmark_forecast)}) != actual values length ({len(actual_values)}). Using benchmark mean.")
+                    raise ValueError(f"Benchmark length ({len(benchmark_forecast)}) != actual values length ({len(actual_values)}). Using benchmark mean.")
+                else:
+                    benchmark_value = benchmark_forecast
+            else:
+                # Scalar benchmark - will broadcast correctly
+                benchmark_value = benchmark_forecast
+            
+            benchmark_errors = np.abs(actual_values - benchmark_value)
+            benchmark_mse = np.mean((actual_values - benchmark_value) ** 2)
+            
+            relmae = mae / np.mean(benchmark_errors) if np.mean(benchmark_errors) != 0 else None
+            relmse = mse / benchmark_mse if benchmark_mse != 0 else None
+            
+        except Exception as e:
+            self.logger.warning(f"Benchmark computation failed: {e}. Setting relative metrics to None.")
+            relmae = None
+            relmse = None
+        r2 = 1 - relmse if relmse is not None else None
 
-        self.logger.info(f"Calculated Metrics - MAE: {mae:.6f}, MSE: {mse:.6f}")
+        self.logger.info(f"Calculated Metrics - MAE: {mae:.6f}, MSE: {mse:.6f}, RelMAE: {relmae:.6f}, RelMSE: {relmse:.6f}, R2: {r2:.6f}")
 
-        return {'mae': mae, 'mse': mse, 'relmae': relmae, 'relmse': relmse}
+        return {'mae': mae, 'mse': mse, 'relmae': relmae, 'relmse': relmse, 'r2': r2}
