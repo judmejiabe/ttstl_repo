@@ -131,7 +131,7 @@ class Backbone():
         Returns:
             float: Best validation loss achieved.
         """
-        print("Starting training...")
+        self.logger.info("Starting training...")
         validation_loader = validation_loader or train_loader
         train_losses = []
         validation_losses = []
@@ -813,7 +813,7 @@ class Backbone():
         test_path = save_path / "test_os.json"
         with open(test_path, 'w') as f:
             json.dump(test_results, f, indent=2)
-        print(f"Saved test results to {test_path}")
+        self.logger.info(f"Saved test results to {test_path}")
     
     def evaluate_out_of_sample(self, 
                                event_driven_data: pd.DataFrame,
@@ -836,12 +836,13 @@ class Backbone():
         if self.model is None:
             raise ValueError("No model available for evaluation. Run global_update first.")
         
-        print("Starting out-of-sample evaluation...")
+        self.logger.info("Starting neural network evaluation in local adapt mode")
         
         # Create dataset using the CNN-LSTM preprocessor
+        # Use train=True to filter out NaN targets for proper loss evaluation
         test_dataset = get_dataset_cnn_lstm(
             event_driven_data, delta=self.delta_sample, quantile=quantile, 
-            train=False)  # Use test mode
+            train=True)  # Filter NaN targets for evaluation
         
         # Create data loader
         if self.device != torch.device('cpu'):
@@ -854,12 +855,12 @@ class Backbone():
                 test_dataset, batch_size=batch_size, shuffle=False
             )
         
-        print(f"Evaluating on {len(test_dataset)} samples")
+        self.logger.info(f"Evaluating on {len(test_dataset)} events")
         
         # Evaluate using existing _one_epoch method (without optimizer for evaluation)
         test_loss = self._one_epoch(test_loader, criterion, optimizer=None)
         
-        print(f"Out-of-sample evaluation complete. Test loss: {test_loss:.4f}")
+        self.logger.info(f"Out-of-sample evaluation complete. Test loss: {test_loss:.6f}")
         
         # Save test results if save_dir provided
         if save_dir:

@@ -100,3 +100,4 @@ update_parameters:
   alpha: 3.0
 validation_proportion_backbone: 0.1
 validation_proportion_interface: 0.2
+wald_significance_level: 0.05

@@ -860,11 +860,9 @@ class Interface:
         
         This method implements the complete global variable selection workflow:
         1. Run hyperparameter tuning to find optimal Elastic Net and Adaptive Lasso parameters
-        2. Apply Flexible Adaptive Lasso to each adapter time bar using optimal hyperparameters
-        3. Extract coefficients above tolerance threshold from each adapter bar
-        4. Apply OLS with heteroskedasticity-robust tests to significant coefficients
-        5. Select variables that appear as significant across multiple adapter bars
-        
+        2. Apply Flexible Adaptive Lasso and OLS with heteroskedasticity correction to each adapter time bar using optimal hyperparameters
+        3. Select variables that appear as statistically significant beyond a threshold number of adapter bars
+
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
@@ -875,7 +873,8 @@ class Interface:
             selection_threshold: Minimum proportion of adapter bars where variable must be significant
             tolerance_threshold: Minimum absolute coefficient value to consider in Adaptive Lasso
             ols_significance_level: Significance level for OLS heteroskedasticity-robust tests
-            
+            save_dir: Directory to save results and plots
+
         Returns:
             Dictionary with selected variables and global update results
         """
@@ -956,7 +955,7 @@ class Interface:
         processed_bars = 0
         failed_bars = 0
         
-        # Step 3: Process each adapter time bar
+        # Step 2: Process each adapter time bar
         self.logger.info("Running variable selection on each adapter time bar with optimal hyperparameters")
 
         for i, adapter_bar in enumerate(unique_adapter_bars):
@@ -978,7 +977,7 @@ class Interface:
                 X_bar = bar_data[self.extended_covariate_list].values
                 y_bar = bar_data[target_col_name].values
                 
-                # Step 3a: Apply Flexible Adaptive Lasso with optimal hyperparameters
+                # Step 2a: Apply Flexible Adaptive Lasso with optimal hyperparameters
                 ada_result = self._fit_flexible_adalasso(
                     X=X_bar,
                     y=y_bar,
@@ -989,7 +988,7 @@ class Interface:
                     distribution_model=distribution_model
                 )
                 
-                # Step 3b: Extract coefficients above tolerance threshold
+                # Step 2b: Extract coefficients above tolerance threshold
                 ada_coefficients = ada_result['ada_coefficients']
                 enet_coefficients = ada_result['enet_coefficients']
                 
@@ -1027,7 +1026,7 @@ class Interface:
 
                 self.logger.info(f"{len(significant_var_indices)} variables above tolerance threshold")
 
-                # Step 3c: Apply OLS with heteroskedasticity-robust tests
+                # Step 2c: Apply OLS with heteroskedasticity-robust tests
                 # Select only the variables with significant coefficients
                 X_selected = X_bar[:, significant_var_indices]
                 
@@ -1073,12 +1072,12 @@ class Interface:
                 failed_bars += 1
                 continue
         
-        # Step 4: Select variables based on selection threshold
+        # Step 3: Select variables based on selection threshold
         self.logger.info(f"Selecting variables based on selection threshold")
         self.logger.info(f"Successfully processed: {processed_bars} bars")
         self.logger.info(f"Failed to process: {failed_bars} bars")
 
-        # Create and save corridor plots
+        # Step 3a: Create and save corridor plots
         if processed_bars > 0:
             adalasso_coef_df = pd.DataFrame.from_dict(adalasso_coefs_dict, orient='index', columns=self.extended_covariate_list)
             
@@ -1102,12 +1101,12 @@ class Interface:
 
         if processed_bars == 0:
             raise RuntimeError("No adapter bars were successfully processed")
-        
-        # Calculate minimum number of bars for selection
+
+        # Step 3b: Calculate minimum number of bars for selection
         min_bars_for_selection = max(1, int(np.floor(selection_threshold * processed_bars)) + 1)
         self.logger.info(f"Selection threshold: {selection_threshold:.2%} = minimum {min_bars_for_selection} bars")
-        
-        # Select variables that appear in at least the minimum number of bars
+
+        # Step 3c: Select variables that appear in at least the minimum number of bars
         selected_variables = []
         variable_selection_info = {}
         
@@ -1188,160 +1187,333 @@ class Interface:
         
         return global_update_results
 
-    def local_adaptation(self, 
-                         adapter_bar_data: pd.DataFrame,
-                         target_col_name: str = 'micro_return',
-                         significance_level: float = 0.05) -> Dict:
+    def local_adapt(self, 
+                    event_driven_backbone_time_bar_data: pd.DataFrame,
+                    physical_time_driven_backbone_time_bar_data: pd.DataFrame,
+                    quantile: float = 0.005,
+                    target_col_name: str = 'micro_return',
+                    distribution_model: str = 'sstd',
+                    n_lags: int = 5,
+                    tolerance_threshold: float = 1e-6,
+                    ols_significance_level: float = 0.05,
+                    wald_significance_level: float = 0.05,
+                    save_dir: str = None) -> Dict:
         """
-        Perform local adaptation for a specific adapter time bar using Wald test.
+        Perform local adaptation for the TTSTL Interface module.
         
-        This method implements the local adaptation procedure from section 7.3.2:
-        1. Start with globally selected variables from global_update
-        2. Run Flexible Adaptive Lasso on the adapter bar to get new variable selection
-        3. Identify newly selected variables (set difference)
-        4. Use Wald test to check if the newly selected variables are jointly significant
-        5. Return results with Wald test statistics
+        This method implements the local adaptation workflow:
+        1. Use the same data preparation as global_update
+        2. For each adapter time bar, apply Flexible Adaptive Lasso with globally optimal hyperparameters (no hyperparameter tuning)
+        3. Apply OLS with heteroskedasticity-robust tests for statistical significance
+        4. Perform Wald test on each adapter bar to test for structural breaks
+        5. Generate corridor plots for both Elastic Net and Adaptive Lasso coefficients
+        6. Save structural break results
         
         Args:
-            adapter_bar_data: Data for specific adapter time bar (already filtered)
+            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
+            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
+            quantile: Winsorization quantile for neural covariate extraction
             target_col_name: Name of target variable column
-            significance_level: Significance level for Wald test
+            distribution_model: Distribution model for GARCH ('sstd', 'norm', etc.)
+            n_lags: Number of lagged values of target variable to include
+            tolerance_threshold: Minimum absolute coefficient value to consider in Adaptive Lasso
+            ols_significance_level: Significance level for OLS heteroskedasticity-robust tests
+            wald_significance_level: Significance level for Wald tests
+            save_dir: Directory to save results and plots
             
         Returns:
-            Dictionary with local adaptation results including Wald test statistics
+            Dictionary with local adaptation results including structural break test results
         """
+        
+        if save_dir is None:
+            self.logger.error('save_dir must be specified for local_adapt')
+            raise ValueError('save_dir must be specified for local_adapt')
+            
+        # Check that global_update has been run first
         if not hasattr(self, 'selected_variables') or self.selected_variables is None:
             raise ValueError("Global update must be run first to establish global variable selection")
         
-        if not hasattr(self, 'extended_covariate_list') or self.extended_covariate_list is None:
-            raise ValueError("Extended covariate list not available. Run global_update first.")
-        
-        print("\n" + "="*60)
-        print("STARTING LOCAL ADAPTATION")
-        print("="*60)
-        print(f"Adapter bar data shape: {adapter_bar_data.shape}")
-        print(f"Global variables: {len(self.selected_variables)}")
-        
         # Check required attributes from global update
-        required_attrs = ['best_alpha_enet', 'best_lambda_enet', 'best_tau_adalasso', 'best_lambda_adalasso']
+        required_attrs = ['best_alpha_enet', 'best_lambda_enet', 'best_tau_adalasso', 'best_lambda_adalasso', 'extended_covariate_list']
         for attr in required_attrs:
             if not hasattr(self, attr):
                 raise ValueError(f"Missing required attribute {attr}. Run global_update first.")
+
+        self.logger.info("="*80)
+        self.logger.info("="*80)
+        self.logger.info("Running Interface module local_adapt")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
         
-        try:
-            # Step 1: Extract features and target for this adapter bar
-            X_full = adapter_bar_data[self.extended_covariate_list].values
-            y = adapter_bar_data[target_col_name].values
+        self.logger.info(f"Using globally optimal hyperparameters:")
+        self.logger.info(f"  Elastic Net: α={self.best_alpha_enet:.3f}, λ={self.best_lambda_enet:.6f}")
+        self.logger.info(f"  Adaptive Lasso: τ={self.best_tau_adalasso:.3f}, λ={self.best_lambda_adalasso:.6f}")
+        self.logger.info(f"  Global selected variables: {len(self.selected_variables)}")
+
+        # Step 1: Prepare data (same as global_update)
+        augmented_data = self._prepare_data(
+            event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
+            physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
+            quantile=quantile,
+            target_col_name=target_col_name,
+            n_lags=n_lags
+        )
+        
+        # Get unique adapter bars
+        unique_adapter_bars = augmented_data['adapter_bar'].unique()
+        n_adapter_bars = len(unique_adapter_bars)
+        self.logger.info(f"Processing {n_adapter_bars} adapter time bars for local adaptation")
+        
+        # Initialize tracking for local adaptation
+        enet_coefs_dict = {}
+        adalasso_coefs_dict = {}
+        ols_significance_dict = {}
+        wald_test_results = {}
+        structural_breaks_data = []
+        
+        processed_bars = 0
+        failed_bars = 0
+        
+        # Step 2: Process each adapter time bar (no hyperparameter tuning)
+        self.logger.info("Running local adaptation on each adapter time bar with global hyperparameters")
+
+        for i, adapter_bar in enumerate(unique_adapter_bars):
+            self.logger.info(f"Processing adapter bar {adapter_bar} ({i+1}/{n_adapter_bars})...")
+
+            # Extract data for this adapter bar
+            bar_data = augmented_data[
+                augmented_data['adapter_bar'] == adapter_bar
+            ].copy()
             
-            print(f"Full feature matrix shape: {X_full.shape}")
-            print(f"Target vector shape: {y.shape}")
+            # Skip bars with insufficient data
+            if len(bar_data) < 10:
+                self.logger.warning(f"Skipping adapter bar {adapter_bar}: insufficient data ({len(bar_data)} samples)")
+                failed_bars += 1
+                continue
             
-            # Step 2: Apply Flexible Adaptive Lasso with globally optimal hyperparameters
-            print("Step 1: Running Flexible Adaptive Lasso for local variable selection...")
-            ada_result = self._fit_flexible_adalasso(
-                X=X_full,
-                y=y,
-                alpha_enet=self.best_alpha_enet,
-                lambda_enet=self.best_lambda_enet,
-                tau_adalasso=self.best_tau_adalasso,
-                lambda_adalasso=self.best_lambda_adalasso
-            )
-            
-            # Step 3: Extract locally selected variables
-            ada_coefficients = ada_result['ada_coefficients']
-            
-            # Handle coefficient indexing (with or without intercept)
-            if len(ada_coefficients) == len(self.extended_covariate_list) + 1:
-                # Coefficients include intercept
-                coef_without_intercept = ada_coefficients[1:]
-            elif len(ada_coefficients) == len(self.extended_covariate_list):
-                # Coefficients don't include intercept
-                coef_without_intercept = ada_coefficients
-            else:
-                raise ValueError(f"Coefficient dimension mismatch: expected {len(self.extended_covariate_list)} or {len(self.extended_covariate_list)+1}, got {len(ada_coefficients)}")
-            
-            # Find locally selected variables (non-zero coefficients)
-            tolerance_threshold = getattr(self, 'tolerance_threshold', 1e-6)
-            local_selection_mask = np.abs(coef_without_intercept) > tolerance_threshold
-            local_selected_indices = np.where(local_selection_mask)[0]
-            local_selected_variables = [self.extended_covariate_list[i] for i in local_selected_indices]
-            
-            print(f"Local Adaptive Lasso selected: {len(local_selected_variables)} variables")
-            
-            # Step 4: Identify newly selected variables (set difference)
-            global_var_set = set(self.selected_variables)
-            local_var_set = set(local_selected_variables)
-            newly_selected_variables = list(local_var_set - global_var_set)
-            
-            print(f"Global variables: {len(self.selected_variables)}")
-            print(f"Newly selected variables: {len(newly_selected_variables)}")
-            
-            if len(newly_selected_variables) == 0:
-                print("No new variables selected locally. Using global selection.")
-                final_variables = self.selected_variables.copy()
-                wald_test_result = None
-            else:
-                print(f"Testing {len(newly_selected_variables)} newly selected variables:")
-                for var in newly_selected_variables:
-                    print(f"  - {var}")
+            try:
+                # Get features and target for this adapter bar
+                X_bar = bar_data[self.extended_covariate_list].values
+                y_bar = bar_data[target_col_name].values
                 
-                # Step 5: Perform Wald test
-                print("Step 2: Performing Wald test for newly selected variables...")
-                wald_test_result = self._wald_test_new_variables(
-                    X_full=X_full,
-                    y=y,
-                    global_variables=self.selected_variables,
-                    newly_selected_variables=newly_selected_variables,
-                    significance_level=significance_level
+                # Step 2a: Apply Flexible Adaptive Lasso with global hyperparameters (no tuning)
+                ada_result = self._fit_flexible_adalasso(
+                    X=X_bar,
+                    y=y_bar,
+                    alpha_enet=self.best_alpha_enet,
+                    lambda_enet=self.best_lambda_enet,
+                    tau_adalasso=self.best_tau_adalasso,
+                    lambda_adalasso=self.best_lambda_adalasso,
+                    distribution_model=distribution_model
                 )
                 
-                # Step 6: Determine final variable set based on Wald test
-                if wald_test_result['is_significant']:
-                    final_variables = self.selected_variables + newly_selected_variables
-                    print(f"✓ Wald test significant (p={wald_test_result['p_value']:.6f})")
-                    print(f"  Including {len(newly_selected_variables)} new variables in final model")
+                # Step 2b: Extract coefficients
+                ada_coefficients = ada_result['ada_coefficients']
+                enet_coefficients = ada_result['enet_coefficients']
+                
+                # Handle coefficients (with or without intercept)
+                if len(ada_coefficients) == len(self.extended_covariate_list) + 1:
+                    # Coefficients include intercept
+                    ada_coef_without_intercept = ada_coefficients[1:]
+                    intercept = ada_coefficients[0]
+                elif len(ada_coefficients) == len(self.extended_covariate_list):
+                    # Coefficients don't include intercept
+                    ada_coef_without_intercept = ada_coefficients
+                    intercept = 0.0
                 else:
-                    final_variables = self.selected_variables.copy()
-                    print(f"✗ Wald test not significant (p={wald_test_result['p_value']:.6f})")
-                    print(f"  Using only global variables in final model")
-            
-            # Compile results
-            local_adaptation_results = {
-                'adapter_bar_data_shape': adapter_bar_data.shape,
-                'global_variables': self.selected_variables,
-                'local_selected_variables': local_selected_variables,
-                'newly_selected_variables': newly_selected_variables,
-                'final_variables': final_variables,
-                'n_global': len(self.selected_variables),
-                'n_local': len(local_selected_variables),
-                'n_newly_selected': len(newly_selected_variables),
-                'n_final': len(final_variables),
-                'wald_test_result': wald_test_result,
-                'adaptive_lasso_result': ada_result,
-                'hyperparameters': {
-                    'alpha_enet': self.best_alpha_enet,
-                    'lambda_enet': self.best_lambda_enet,
-                    'tau_adalasso': self.best_tau_adalasso,
-                    'lambda_adalasso': self.best_lambda_adalasso
-                }
-            }
-            
-            print(f"\n" + "="*50)
-            print(f"LOCAL ADAPTATION RESULTS")
-            print(f"="*50)
-            print(f"Global variables: {len(self.selected_variables)}")
-            print(f"Local adaptive lasso selected: {len(local_selected_variables)}")
-            print(f"Newly selected: {len(newly_selected_variables)}")
-            print(f"Final model variables: {len(final_variables)}")
-            if wald_test_result:
-                print(f"Wald test p-value: {wald_test_result['p_value']:.6f}")
-                print(f"Wald test significant: {wald_test_result['is_significant']}")
-            print("="*50)
-            
-            return local_adaptation_results
-            
-        except Exception as e:
-            raise RuntimeError(f"Error in local adaptation: {e}")
+                    self.logger.error(f"Coefficient dimension mismatch for adapter bar {adapter_bar}: expected {len(self.extended_covariate_list)} or {len(self.extended_covariate_list)+1}, got {len(ada_coefficients)}")
+                    raise ValueError(f"Coefficient dimension mismatch: expected {len(self.extended_covariate_list)} or {len(self.extended_covariate_list)+1}, got {len(ada_coefficients)}")            
+
+                # Handle elastic net coefficients similarly
+                if len(enet_coefficients) == len(self.extended_covariate_list) + 1:
+                    enet_coef_without_intercept = enet_coefficients[1:]
+                else:
+                    enet_coef_without_intercept = enet_coefficients
+
+                # Store coefficients for plotting
+                adalasso_coefs_dict[adapter_bar] = ada_coef_without_intercept
+                enet_coefs_dict[adapter_bar] = enet_coef_without_intercept
+
+                # Step 2c: Find variables with significant adaptive lasso coefficients
+                significant_coef_mask = np.abs(ada_coef_without_intercept) > tolerance_threshold
+                significant_var_indices = np.where(significant_coef_mask)[0]
+                
+                if len(significant_var_indices) == 0:
+                    self.logger.info(f"No variables above tolerance threshold for adapter bar {adapter_bar}")
+                    # Store an all-False mask if no significant variables
+                    ols_significance_dict[adapter_bar] = np.zeros(len(self.extended_covariate_list), dtype=bool)
+                    newly_selected_variables = []
+                else:
+                    self.logger.info(f"{len(significant_var_indices)} variables above tolerance threshold")
+
+                    # Step 2d: Apply OLS with heteroskedasticity-robust tests
+                    # Select only the variables with significant coefficients
+                    X_selected = X_bar[:, significant_var_indices]
+                    
+                    # Add constant for OLS
+                    X_selected_with_const = sm.add_constant(X_selected)
+                    
+                    # Fit OLS with heteroskedasticity-robust standard errors
+                    ols_model = self._fit_ols_HC(
+                        X=X_selected_with_const, 
+                        y=y_bar
+                    )
+                    
+                    if ols_model is not None:
+                        # Get p-values (skip intercept)
+                        p_values = ols_model.pvalues[1:]
+                        
+                        # Find significant variables
+                        ols_significant_mask = p_values < ols_significance_level
+                        
+                        # Map back to original variable indices
+                        ols_significant_indices = significant_var_indices[ols_significant_mask]
+                        
+                        # Store full significance mask for this bar
+                        full_ols_mask = np.zeros(len(self.extended_covariate_list), dtype=bool)
+                        full_ols_mask[ols_significant_indices] = True
+                        ols_significance_dict[adapter_bar] = full_ols_mask
+
+                        self.logger.info(f"{len(ols_significant_indices)} variables significant in OLS test")
+                        
+                        # Get locally selected variables for Wald test (OLS-significant variables)
+                        local_selected_variables = [self.extended_covariate_list[idx] for idx in ols_significant_indices]
+                    else:
+                        self.logger.info(f"OLS test failed for adapter bar {adapter_bar}")
+                        # Store an all-False mask if OLS fails
+                        ols_significance_dict[adapter_bar] = np.zeros(len(self.extended_covariate_list), dtype=bool)
+                        local_selected_variables = []
+
+                    # Step 2e: Identify newly selected variables (set difference from global variables)
+                    global_var_set = set(self.selected_variables)
+                    local_var_set = set(local_selected_variables)
+                    newly_selected_variables = list(local_var_set - global_var_set)
+                
+                # Step 2f: Perform Wald test for structural breaks
+                if len(newly_selected_variables) == 0:
+                    self.logger.info(f"No new variables selected locally for adapter bar {adapter_bar}")
+                    wald_test_result = {
+                        'wald_statistic': 0.0,
+                        'p_value': 1.0,
+                        'is_significant': False,
+                        'degrees_of_freedom': 0,
+                        'newly_selected_variables': [],
+                        'test_performed': False
+                    }
+                else:
+                    self.logger.info(f"Testing {len(newly_selected_variables)} newly selected variables for structural break")
+                    wald_test_result = self._wald_test_new_variables(
+                        X_full=X_bar,
+                        y=y_bar,
+                        global_variables=self.selected_variables,
+                        newly_selected_variables=newly_selected_variables,
+                        significance_level=wald_significance_level
+                    )
+                    wald_test_result['test_performed'] = True
+                
+                # Store Wald test results for this adapter bar
+                wald_test_results[adapter_bar] = wald_test_result
+                
+                # Collect structural breaks data for saving
+                structural_breaks_data.append({
+                    'adapter_bar': adapter_bar,
+                    'wald_statistic': wald_test_result['wald_statistic'],
+                    'p_value': wald_test_result['p_value'],
+                    'is_significant': wald_test_result['is_significant'],
+                    'degrees_of_freedom': wald_test_result['degrees_of_freedom'],
+                    'n_newly_selected': len(newly_selected_variables),
+                    'newly_selected_variables': newly_selected_variables
+                })
+                
+                processed_bars += 1
+                
+            except Exception as e:
+                self.logger.error(f"Error processing adapter bar {adapter_bar}: {e}")
+                failed_bars += 1
+                continue
+        
+        # Step 3: Generate visualizations and save results
+        self.logger.info(f"Generating local adaptation results and visualizations")
+        self.logger.info(f"Successfully processed: {processed_bars} bars")
+        self.logger.info(f"Failed to process: {failed_bars} bars")
+
+        if processed_bars == 0:
+            raise RuntimeError("No adapter bars were successfully processed")
+
+        # Step 3a: Create and save corridor plots for both Elastic Net and Adaptive Lasso
+        adalasso_coef_df = pd.DataFrame.from_dict(adalasso_coefs_dict, orient='index', columns=self.extended_covariate_list)
+        enet_coef_df = pd.DataFrame.from_dict(enet_coefs_dict, orient='index', columns=self.extended_covariate_list)
+        
+        # Create Elastic Net corridor plot
+        self._corridor_plot_enet(
+            enet_coef_df=enet_coef_df,
+            adalasso_coef_df=adalasso_coef_df,
+            title='Local Adaptation: Elastic Net Coefficient Estimates Corridor\n(Tile color: ENET Estimates, Annotation: adaLASSO Sign)',
+            save_path=Path(save_dir) / 'enet_coef_corridor.png'
+        )
+        
+        # Create significance DataFrame for adaptive lasso corridor plot
+        ols_sig_df = pd.DataFrame.from_dict(ols_significance_dict, orient='index', columns=self.extended_covariate_list)
+        
+        # Create Adaptive Lasso corridor plot
+        self._corridor_plot_adalasso(
+            ada_coef_df=adalasso_coef_df,
+            sig_coefs_df=ols_sig_df,
+            title='Local Adaptation: Adaptive LASSO Coefficient Estimates Corridor\n(Tile color: adaLASSO Estimates, Annotation: OLS Statistical Significance)',
+            save_path=Path(save_dir) / 'corridor_ada_lasso.png'
+        )
+
+        # Step 3b: Save structural breaks results
+        structural_breaks_df = pd.DataFrame(structural_breaks_data)
+        structural_breaks_path = Path(save_dir) / 'structural_breaks.parquet'
+        structural_breaks_df.to_parquet(structural_breaks_path, index=False)
+        self.logger.info(f"Saved structural breaks results to {structural_breaks_path}")
+        
+        # Step 3c: Calculate summary statistics
+        significant_breaks = sum(1 for result in wald_test_results.values() if result['is_significant'])
+        break_rate = significant_breaks / processed_bars if processed_bars > 0 else 0
+        
+        # Compile results
+        local_adaptation_results = {
+            'global_variables': self.selected_variables,
+            'n_global': len(self.selected_variables),
+            'n_total_variables': len(self.extended_covariate_list),
+            'tolerance_threshold': tolerance_threshold,
+            'ols_significance_level': ols_significance_level,
+            'hyperparameters': {
+                'alpha_enet': self.best_alpha_enet,
+                'lambda_enet': self.best_lambda_enet,
+                'tau_adalasso': self.best_tau_adalasso,
+                'lambda_adalasso': self.best_lambda_adalasso
+            },
+            'processing_stats': {
+                'total_adapter_bars': n_adapter_bars,
+                'processed_bars': processed_bars,
+                'failed_bars': failed_bars
+            },
+            'structural_breaks': {
+                'significant_breaks': significant_breaks,
+                'break_rate': break_rate,
+                'significance_level': wald_significance_level
+            },
+            'wald_test_results': wald_test_results,
+            'structural_breaks_data': structural_breaks_data,
+            'extended_covariate_list': self.extended_covariate_list
+        }
+        
+        self.logger.info("="*80)
+        self.logger.info(f"LOCAL ADAPTATION RESULTS")
+        self.logger.info("="*80)
+        self.logger.info(f"Global variables: {len(self.selected_variables)}")
+        self.logger.info(f"Processed adapter bars: {processed_bars}")
+        self.logger.info(f"Wald tests rejected: {significant_breaks}/{processed_bars} ({break_rate:.1%})")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
+        self.logger.info("Interface module local_adapt completed")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
+        
+        return local_adaptation_results
 
     def _wald_test_new_variables(self, 
                                  X_full: np.ndarray, 

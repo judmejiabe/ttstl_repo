@@ -128,6 +128,7 @@ def main():
     logger.info("Starting synthetic study")
 
     ed_df_0, ptd_df_0 = load_synthetic_data(0)
+    ed_df_1, ptd_df_1 = load_synthetic_data(1)
 
     logger.info("Setting up orchestrator class")
 
@@ -165,6 +166,7 @@ def main():
         selection_threshold=0.40,
         tolerance_threshold=1e-6,
         ols_significance_level=0.05,
+        wald_significance_level=0.05,
         n_lags=5,
 
         # Adapter kobs
@@ -192,6 +194,13 @@ def main():
         bb_num = result['backbone_bar']
         status = result['backbone_results']['status']
         print(f"Backbone bar {bb_num}: {status}")
+
+    all_local_results = orchestrator.local_adapt(ed_df_1, ptd_df_1)
+
+    for result in all_local_results:
+        bb_num = result['backbone_bar']
+        status = result['adapter_results']['status']
+        print(f"Backbone bar {bb_num} adaptation: {status}")
 
     print("🛬 Finishing synthetic study...")
 

@@ -76,6 +76,7 @@ class OrchestratorConfig:
     selection_threshold: float = 0.40
     tolerance_threshold: float = 1e-6
     ols_significance_level: float = 0.05
+    wald_significance_level: float = 0.05
     n_lags: int = 5
 
     # Adapter knobs
@@ -145,6 +146,7 @@ class Orchestrator:
         # Initialize components
         self._initialize_components()
         self._initialize_scalers()
+        self._initialize_target_scales()
         
         self.logger.info(f"Orchestrator initialized with run: {self.run_slug}")
 
@@ -243,6 +245,26 @@ class Orchestrator:
 
         self.logger.info(f"Successfully initialized {len(self.scalers)} scaler placeholders")
 
+    def _initialize_target_scales(self) -> None:
+        """Initialize scales for the target variable. These metrics are to be transferred in local adapt mode"""
+        session_length = self.cfg.session_finish - self.cfg.session_start
+        num_backbone_bars = int(np.rint(session_length / self.cfg.bdelta))
+        residual_length = session_length - (num_backbone_bars * self.cfg.bdelta)
+        
+        # Check if we need to add one more bar or warn about dropped interval
+        if residual_length > 0:
+            residual_percentage = residual_length / self.cfg.bdelta
+            if residual_percentage > 0.01:  # More than 1%
+                num_backbone_bars += 1
+        
+        self.logger.info(f"Creating {num_backbone_bars} target variable scales placeholders")
+        
+        # Initialize stacks dictionary
+        keys = [f"backbone_{i}" for i in range(num_backbone_bars)]
+        self.target_scales = {key : None for key in keys}
+
+        self.logger.info(f"Successfully initialized {len(self.target_scales)} target variable scales placeholders")
+
     def _initialize_components(self) -> None:
         """Initialize multiple Backbone-Interface-Adapter stacks for the trading session."""
         # Calculate session length and number of backbone bars
@@ -329,14 +351,25 @@ class Orchestrator:
         """Create directory structure for a backbone bar."""
         bb_dir = self.run_dir / f"bb_{self._bb_idx:03d}" / mode
         
-        # Create all required subdirectories
-        subdirs = [
-            "backbone/architecture/checkpoints",
-            "backbone/stationarity", 
-            "backbone/correlation",
-            "interface",
-            "adapter"
-        ]
+        # Create subdirectories based on mode
+        if mode == "global_update":
+            # Global update needs full subdirectory structure for training artifacts
+            subdirs = [
+                "backbone/architecture/checkpoints",
+                "backbone/stationarity", 
+                "backbone/correlation",
+                "interface",
+                "adapter"
+            ]
+        elif mode == "local_adapt":
+            # Local adapt only needs basic backbone directory for evaluation results
+            subdirs = [
+                "backbone",
+                "interface",
+                "adapter"
+            ]
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
         
         for subdir in subdirs:
             (bb_dir / subdir).mkdir(parents=True, exist_ok=True)
@@ -618,7 +651,13 @@ class Orchestrator:
                                                         quantile = self.cfg.quantile)
             scaler.fit(augmented_df.drop(columns=['timestamp', self.cfg.target_col_name]))
             self.scalers[f"backbone_{self._bb_idx}"] = scaler
-            
+
+            # Compute mean and variance for target variable
+            self.target_scales[f"backbone_{self._bb_idx}"] = {
+                "mean": augmented_df[self.cfg.target_col_name].mean(),
+                "std": augmented_df[self.cfg.target_col_name].std()
+            }
+
             # Initialize results tracking
             successful_updates = 0
             failed_updates = 0
@@ -730,7 +769,7 @@ class Orchestrator:
                             in_sample_phys_df=bar_ptdata,
                             out_of_sample_event_df=out_of_sample_event_df,
                             out_of_sample_phys_df=out_of_sample_phys_df,
-                            benchmark_forecast=phys_df[self.cfg.target_col_name].mean(),
+                            benchmark_forecast=self.target_scales[f"backbone_{self._bb_idx}"]['mean'],
                             scaler=scaler,
                             target_col_name=self.cfg.target_col_name,
                             quantile=self.cfg.quantile
@@ -804,9 +843,9 @@ class Orchestrator:
 
 
             # Save processing statistics
-            stats_df = pd.DataFrame.from_dict(processing_stats, orient='index')
-            stats_file = artifacts_dir / "processing_stats.parquet"
-            stats_df.to_parquet(stats_file)
+            # stats_df = pd.DataFrame.from_dict(processing_stats, orient='index')
+            # stats_file = artifacts_dir / "processing_stats.parquet"
+            # stats_df.to_parquet(stats_file)
             
             # Create performance summary (placeholder for now)
             performance_data = {
@@ -815,9 +854,6 @@ class Orchestrator:
                 'failed_updates': failed_updates,
                 'success_rate': successful_updates / len(adapter_bars) if adapter_bars else 0.0
             }
-            performance_df = pd.DataFrame([performance_data])
-            performance_file = artifacts_dir / "performance_is.parquet"
-            performance_df.to_parquet(performance_file)
             
             
             # Compile final results
@@ -975,9 +1011,7 @@ class Orchestrator:
         Returns:
             Dict containing OOS metrics, adapter bar specific coeffs, and break decisions
         """
-        if self._bb_idx < 0:
-            raise RuntimeError("Cannot run local_adapt before global_update")
-            
+        self._bb_idx += 1
         bb_dir = self._create_backbone_directories("local_adapt")
         
         self.logger.info(f"Starting local_adapt for backbone bar {self._bb_idx:03d}")
@@ -1030,26 +1064,137 @@ class Orchestrator:
         """
         self.logger.info("Running backbone local adaptation (backbone frozen - evaluating out-of-sample)...")
         
-        # Placeholder for backbone local adaptation
-        # TODO: Implement actual backbone OOS testing
-        
-        artifacts_dir = bb_dir / "backbone"
-        (artifacts_dir / "test_os.json").touch()
-        
-        return {"status": "completed", "artifacts_created": 1}
+        try:
+            # Get the current backbone for this backbone bar
+            current_backbone = self.stacks[f"backbone_{self._bb_idx}"].interface.backbone
+            
+            # Filter data for the current backbone bar
+            current_bb_event_df = event_df[event_df['backbone_bar'] == self._bb_idx].copy()
+            current_bb_phys_df = phys_df[phys_df['backbone_bar'] == self._bb_idx].copy()
+            
+            self.logger.info(f"Backbone bar {self._bb_idx}: {len(current_bb_event_df)} event samples for OOS evaluation")
+            
+            # Log the full covariate list for verification
+            if hasattr(current_backbone, 'full_covariate_list') and current_backbone.full_covariate_list:
+                self.logger.info(f"Backbone bar {self._bb_idx} - Full covariate list ({len(current_backbone.full_covariate_list)} variables):")
+                for i, covariate in enumerate(current_backbone.full_covariate_list):
+                    self.logger.info(f"  {i+1}. {covariate}")
+            else:
+                self.logger.warning(f"Backbone bar {self._bb_idx} - No full_covariate_list found or empty")
+            
+            # Check if we have sufficient data
+            if len(current_bb_event_df) < 10:
+                self.logger.warning(f"Insufficient event data for backbone bar {self._bb_idx}: {len(current_bb_event_df)} samples")
+                
+                # Create minimal test results for insufficient data
+                artifacts_dir = bb_dir / "backbone"
+                test_results = {
+                    'model_class': current_backbone.model.__class__.__name__,
+                    'parsimonious_mode': current_backbone.parsimonious_mode,
+                    'test_loss': None,
+                    'status': 'insufficient_data',
+                    'event_samples': len(current_bb_event_df)
+                }
+                
+                test_path = artifacts_dir / "test_os.json"
+                with open(test_path, 'w') as f:
+                    json.dump(test_results, f, indent=2)
+                
+                return {
+                    "status": "insufficient_data", 
+                    "event_samples": len(current_bb_event_df),
+                    "test_loss": None,
+                    "artifacts_created": 1
+                }
+            
+            # Use MSE loss for evaluation (consistent with backbone training)
+            criterion = nn.MSELoss(reduction='sum')
+            
+            # Evaluate the frozen backbone model on out-of-sample event data
+            test_loss = current_backbone.evaluate_out_of_sample(
+                event_driven_data=current_bb_event_df,
+                criterion=criterion,
+                batch_size=self.cfg.batch_size,
+                quantile=self.cfg.quantile,
+                save_dir=str(bb_dir / "backbone")
+            )
+            
+            self.logger.info(f"Backbone bar {self._bb_idx} - Out-of-sample test loss: {test_loss:.6f}")
+            
+            return {
+                "status": "completed",
+                "test_loss": test_loss,
+                "event_samples": len(current_bb_event_df),
+                "model_class": current_backbone.model.__class__.__name__,
+                "parsimonious_mode": current_backbone.parsimonious_mode,
+                "artifacts_created": 1
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Backbone local adaptation failed: {str(e)}")
+            
+            # Create error artifact
+            artifacts_dir = bb_dir / "backbone"
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            (artifacts_dir / "error.txt").write_text(str(e))
+            
+            return {
+                "status": "failed",
+                "error": str(e),
+                "event_samples": len(current_bb_event_df) if 'current_bb_event_df' in locals() else 0,
+                "test_loss": None,
+                "artifacts_created": 1
+            }
 
     def _run_interface_local_adapt(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
         """Run interface local adaptation step."""
         self.logger.info("Running interface local adaptation...")
         
-        # Placeholder for interface local adaptation
-        # TODO: Implement actual interface local selection
-        
-        artifacts_dir = bb_dir / "interface"
-        (artifacts_dir / "corridor_ada_lasso.png").touch()
-        (artifacts_dir / "structural_breaks.parquet").touch()
-        
-        return {"status": "completed", "artifacts_created": 2}
+        try:
+            # Get the current interface for this backbone bar
+            current_interface = self.stacks[f"backbone_{self._bb_idx}"].interface
+            
+            # Filter data for current backbone bar
+            current_bb = self._bb_idx
+            current_event_df = event_df[event_df['backbone_bar'] == current_bb].copy()
+            current_phys_df = phys_df[phys_df['backbone_bar'] == current_bb].copy()
+            
+            self.logger.info(f"Interface local adaptation for backbone bar {current_bb}: {len(current_event_df)} event samples, {len(current_phys_df)} physical samples")
+            
+            # Run interface local_adapt with the same configuration parameters as global_update
+            interface_result = current_interface.local_adapt(
+                event_driven_backbone_time_bar_data=current_event_df,
+                physical_time_driven_backbone_time_bar_data=current_phys_df,
+                quantile=self.cfg.quantile,
+                target_col_name=self.cfg.target_col_name,
+                distribution_model='sstd',  # Could be added to config if needed
+                n_lags=self.cfg.n_lags,
+                tolerance_threshold=self.cfg.tolerance_threshold,
+                ols_significance_level=self.cfg.ols_significance_level,
+                wald_significance_level=self.cfg.wald_significance_level,  # Use same level for Wald tests
+                save_dir=str(bb_dir / "interface")
+            )
+            
+            return {
+                "status": "completed",
+                "interface_result": interface_result,
+                "structural_breaks": interface_result['structural_breaks'],
+                "artifacts_created": 3  # corridor_ada_lasso.png, enet_coef_corridor.png, structural_breaks.parquet
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Interface local adaptation failed: {str(e)}")
+            
+            # Create minimal artifacts for failed run
+            artifacts_dir = bb_dir / "interface"
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            (artifacts_dir / "error.txt").write_text(str(e))
+            
+            return {
+                "status": "failed",
+                "error": str(e),
+                "artifacts_created": 1
+            }
 
     def _run_adapter_local_adapt(self, 
                                  event_df: pd.DataFrame, 

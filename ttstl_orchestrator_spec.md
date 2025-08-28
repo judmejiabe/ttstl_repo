@@ -155,29 +155,29 @@ runs/
           nn_weights.npz                  # layer weights snapshot (Check, moved to the architecture subdirectory)
 
         interface/ (Added enet_coef_corridor.png, selected_variables.json, and variable_selection_info.json)
-          corridor_ada_lasso.png        # Corridor plot of adaptive lasso using the selected hyperparameters
+          corridor_ada_lasso.png        # Corridor plot of adaptive lasso using the selected hyperparameters (Check)
           hyperparams_selected.json     # chosen α_enet, λ_enet, τ, λ_ada, thresholds (Check)
           enet_hyperparams_grid_eval.parquet # grid search trace for enet hyperparameters (MSE path) (Check)
           adalasso_hyperparams_grid_eval.parquet # grid search trace for adalasso hyperparameters (BIC path) (Check)
 
         adapter/
-          armax_garch_corridor.png        # corridor plot of adapter bar specific estimated parameters
-          param_series.png            # Bar-specific and combined ARMAX-GARCH parameter time series overimposed. The x-axis corresponds to the adapter time bar
-          performance_is.parquet          # in-sample RelMAE, RelMSE, and R^2.
+          armax_garch_corridor.png        # corridor plot of adapter bar specific estimated parameters (Check)
+          param_series.png            # Bar-specific and combined ARMAX-GARCH parameter time series overimposed. The x-axis corresponds to the adapter time bar (Check)
+          performance_is.parquet          # in-sample RelMAE, RelMSE, and R^2. (Check)
 
       local_adapt/
         backbone/
           architecture/
-            test_os.json                    # test MSE of the trained architecture (Pending verification)
+            test_os.json                    # test MSE of the trained architecture (Pending verification) (Check)
 
         interface/
-          corridor_ada_lasso.png          # adaptive lasso corridor plot with selected hyperparameters
-          structural_breaks.parquet       # table indicating statistic and p-value of structural break test per adapter bar
+          corridor_ada_lasso.png          # adaptive lasso corridor plot with selected hyperparameters (Check)
+          structural_breaks.parquet       # table indicating statistic and p-value of structural break test per adapter bar (Check)
 
         adapter/
           armax_garch_corridor.png        # corridor plot of adapter bar specific estimated parameters.
           param_series.parquet            # Bar-specific and combined ARMAX-GARCH parameter time series overimposed. The x-axis corresponds to the adapter time bar
-          performance_os.parquet          # Out-of-sample RelMAE, RelMSE, and R^2.
+          performance_os.parquet          # Out-of-sample RelMAE, RelMSE, and R^2. 
 
     bb_001/
       ...
