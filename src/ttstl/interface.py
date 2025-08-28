@@ -83,17 +83,17 @@ class Interface:
 
         self.logger = logging.getLogger('ttstl.interface')
 
-        
-
-    def _prepare_data(self, 
-                      event_driven_backbone_time_bar_data: pd.DataFrame,
-                      physical_time_driven_backbone_time_bar_data: pd.DataFrame, 
-                      quantile: float = 0.005,
-                      target_col_name: str = 'micro_return',
-                      n_lags: int = 5) -> pd.DataFrame:
+    def _create_and_fit_scaler(self,
+                               event_driven_backbone_time_bar_data: pd.DataFrame,
+                               physical_time_driven_backbone_time_bar_data: pd.DataFrame,
+                               quantile: float = 0.005,
+                               target_col_name: str = 'micro_return',
+                               n_lags: int = 5) -> StandardScaler:
         """
-        Prepare data by augmenting with neural covariates, adding adapter bars, 
-        including lagged target values, and applying standard scaling.
+        Create and fit a scaler on the training data to avoid look-ahead bias.
+        
+        This method should be called during global_update to fit the scaler,
+        and the fitted scaler should be reused during local_adapt.
         
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
@@ -103,7 +103,61 @@ class Interface:
             n_lags: Number of lagged values of target variable to include
             
         Returns:
-            DataFrame with neural covariates, adapter bars, lagged targets, and standardized variables
+            Fitted StandardScaler object
+        """
+        self.logger.info("Creating and fitting scaler on training data to avoid look-ahead bias")
+        
+        # Prepare data without scaling to get the structure
+        unscaled_data = self._prepare_data_unscaled(
+            event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
+            physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
+            quantile=quantile,
+            target_col_name=target_col_name,
+            n_lags=n_lags
+        )
+        
+        # Prepare extended covariate list including lagged target variables
+        lag_columns = [f"{target_col_name}_lag_{lag}" for lag in range(1, n_lags + 1)]
+        extended_covariate_list = self.backbone.full_covariate_list + lag_columns
+        
+        # Variables to scale (both covariates and target)
+        variables_to_scale = extended_covariate_list + [target_col_name]
+        
+        # Create and fit scaler
+        scaler = StandardScaler()
+        scaler.fit(unscaled_data[variables_to_scale])
+        
+        # Store scaler and related information
+        self.data_scaler = scaler
+        self.scaled_variables = variables_to_scale
+        self.extended_covariate_list = extended_covariate_list
+        
+        self.logger.info(f"Fitted scaler on {len(variables_to_scale)} variables: {len(extended_covariate_list)} covariates + target")
+        
+        return scaler
+
+    def _prepare_data_unscaled(self, 
+                               event_driven_backbone_time_bar_data: pd.DataFrame,
+                               physical_time_driven_backbone_time_bar_data: pd.DataFrame, 
+                               quantile: float = 0.005,
+                               target_col_name: str = 'micro_return',
+                               n_lags: int = 5) -> pd.DataFrame:
+        """
+        Prepare data by augmenting with neural covariates, adding adapter bars, 
+        and including lagged target values WITHOUT scaling.
+        
+        This method is used to prepare data structure for scaler fitting and
+        for data preparation when a pre-fitted scaler is available.
+        
+        Args:
+            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
+            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
+            quantile: Winsorization quantile for neural covariate extraction
+            target_col_name: Name of target variable column
+            n_lags: Number of lagged values of target variable to include
+            
+        Returns:
+            DataFrame with neural covariates, adapter bars, and lagged targets (unscaled)
         """
         if self.backbone.full_covariate_list is None:
             self.logger.info("Backbone module must have full_covariate_list defined before preparing data.")
@@ -121,7 +175,6 @@ class Interface:
         neural_covariates['timestamp'] = neural_covariates['timestamp'].astype(float)
         physical_time_driven_backbone_time_bar_data['timestamp'] = \
             physical_time_driven_backbone_time_bar_data['timestamp'].astype(float)
-
 
         number_of_neural_covariates = len(neural_covariates.columns) - 1
 
@@ -161,23 +214,67 @@ class Interface:
         relevant_columns = ['timestamp', 'adapter_bar'] + extended_covariate_list + [target_col_name]
         augmented_physical_data = augmented_physical_data[relevant_columns].copy()
         
-        # Apply standard scaling to all variables (both covariates and target)
-        self.logger.info("Prewhitening variables")
-        scaler = StandardScaler()
+        self.logger.info(f"Prepared unscaled data shape: {augmented_physical_data.shape}")
+        self.logger.info(f"Columns include the target variable {target_col_name}, {n_lags} lags of the target variable, {len(self.backbone.full_covariate_list)} neural covariates, a 'timestamp', and 'adapter_bar' columns")
+
+        return augmented_physical_data
+
+    def _prepare_data(self, 
+                      event_driven_backbone_time_bar_data: pd.DataFrame,
+                      physical_time_driven_backbone_time_bar_data: pd.DataFrame, 
+                      quantile: float = 0.005,
+                      target_col_name: str = 'micro_return',
+                      n_lags: int = 5,
+                      scaler: StandardScaler = None) -> pd.DataFrame:
+        """
+        Prepare data by augmenting with neural covariates, adding adapter bars, 
+        including lagged target values, and applying standard scaling using a pre-fitted scaler.
+        
+        Args:
+            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
+            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
+            quantile: Winsorization quantile for neural covariate extraction
+            target_col_name: Name of target variable column
+            n_lags: Number of lagged values of target variable to include
+            scaler: Pre-fitted StandardScaler object. If None, will use self.data_scaler
+            
+        Returns:
+            DataFrame with neural covariates, adapter bars, lagged targets, and standardized variables
+        """
+        # Get unscaled data first
+        augmented_physical_data = self._prepare_data_unscaled(
+            event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
+            physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
+            quantile=quantile,
+            target_col_name=target_col_name,
+            n_lags=n_lags
+        )
+        
+        # Use provided scaler or stored scaler
+        if scaler is None:
+            if not hasattr(self, 'data_scaler') or self.data_scaler is None:
+                raise ValueError("No scaler provided and no fitted scaler available. "
+                               "Run _create_and_fit_scaler first or provide a fitted scaler.")
+            scaler = self.data_scaler
+        
+        # Apply scaling using pre-fitted scaler
+        self.logger.info("Applying pre-fitted scaler to variables (avoiding look-ahead bias)")
+        
+        # Prepare extended covariate list including lagged target variables
+        lag_columns = [f"{target_col_name}_lag_{lag}" for lag in range(1, n_lags + 1)]
+        extended_covariate_list = self.backbone.full_covariate_list + lag_columns
         
         # Scale all variables except timestamp and adapter_bar
         variables_to_scale = extended_covariate_list + [target_col_name]
-        augmented_physical_data[variables_to_scale] = scaler.fit_transform(
+        augmented_physical_data[variables_to_scale] = scaler.transform(
             augmented_physical_data[variables_to_scale]
         )
         
-        # Store the scaler for potential future use
-        self.data_scaler = scaler
-        self.scaled_variables = variables_to_scale
+        # Store the extended covariate list if not already stored
         self.extended_covariate_list = extended_covariate_list
         
-        self.logger.info(f"Prepared data shape: {augmented_physical_data.shape}.")
-        self.logger.info(f"Columns include the target variable {target_col_name}, {n_lags} lags of the target variable, {len(self.backbone.full_covariate_list)} neural covariates, a 'timestamp', and 'adapter_bar' columns")
+        self.logger.info(f"Applied scaling to {len(variables_to_scale)} variables using pre-fitted scaler")
+        self.logger.info(f"Final prepared data shape: {augmented_physical_data.shape}")
 
         return augmented_physical_data
 
@@ -610,8 +707,8 @@ class Interface:
         """
         self.logger.info("Starting full hyperparameter tuning")
         
-        # Step 1: Prepare data with neural covariates, adapter bars, lagged targets, and scaling
-        augmented_data = self._prepare_data(
+        # Step 1: Create and fit scaler to avoid look-ahead bias
+        scaler = self._create_and_fit_scaler(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
             quantile=quantile,
@@ -619,14 +716,24 @@ class Interface:
             n_lags=n_lags
         )
         
-        # Step 2: Split data into training and validation sets by adapter bars
+        # Step 2: Prepare data with neural covariates, adapter bars, lagged targets, and scaling using fitted scaler
+        augmented_data = self._prepare_data(
+            event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
+            physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
+            quantile=quantile,
+            target_col_name=target_col_name,
+            n_lags=n_lags,
+            scaler=scaler
+        )
+        
+        # Step 3: Split data into training and validation sets by adapter bars
         train_data, validation_data, validation_bars = self._split_data(
             augmented_data=augmented_data,
             validation_proportion=validation_proportion,
             target_col_name=target_col_name
         )
         
-        # Step 3: Tune Elastic Net hyperparameters using MSE on validation set
+        # Step 4: Tune Elastic Net hyperparameters using MSE on validation set
         if self.alpha_enet_grid is None or self.lambda_enet_grid is None:
             raise ValueError("alpha_enet_grid and lambda_enet_grid must be defined for hyperparameter tuning")
         
@@ -637,7 +744,7 @@ class Interface:
             save_dir=save_dir
         )
         
-        # Step 4: Tune Adaptive Lasso hyperparameters using BIC, keeping Elastic Net parameters fixed
+        # Step 5: Tune Adaptive Lasso hyperparameters using BIC, keeping Elastic Net parameters fixed
         print("Tuning Adaptive Lasso hyperparameters with fixed Elastic Net parameters...")
         ada_lasso_results = self._update_ada_lasso_hyperparameters(
             physical_time_driven_backbone_time_bar_data=augmented_data,
@@ -1233,6 +1340,10 @@ class Interface:
         if not hasattr(self, 'selected_variables') or self.selected_variables is None:
             raise ValueError("Global update must be run first to establish global variable selection")
         
+        # Check that pre-fitted scaler is available
+        if not hasattr(self, 'data_scaler') or self.data_scaler is None:
+            raise ValueError("No pre-fitted scaler available. Global update must be run first to fit the scaler.")
+        
         # Check required attributes from global update
         required_attrs = ['best_alpha_enet', 'best_lambda_enet', 'best_tau_adalasso', 'best_lambda_adalasso', 'extended_covariate_list']
         for attr in required_attrs:
@@ -1249,14 +1360,16 @@ class Interface:
         self.logger.info(f"  Elastic Net: α={self.best_alpha_enet:.3f}, λ={self.best_lambda_enet:.6f}")
         self.logger.info(f"  Adaptive Lasso: τ={self.best_tau_adalasso:.3f}, λ={self.best_lambda_adalasso:.6f}")
         self.logger.info(f"  Global selected variables: {len(self.selected_variables)}")
+        self.logger.info(f"  Using pre-fitted scaler from global_update to avoid look-ahead bias")
 
-        # Step 1: Prepare data (same as global_update)
+        # Step 1: Prepare data using pre-fitted scaler (same as global_update but with fitted scaler)
         augmented_data = self._prepare_data(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
             quantile=quantile,
             target_col_name=target_col_name,
-            n_lags=n_lags
+            n_lags=n_lags,
+            scaler=self.data_scaler  # Use pre-fitted scaler from global_update
         )
         
         # Get unique adapter bars

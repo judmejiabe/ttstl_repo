@@ -482,6 +482,9 @@ class Orchestrator:
                 event_df_processed, phys_df_processed, bb_dir, backbone_results
             )
             
+            # Step 2.5: Fit scalers and target scales for use in local adaptation
+            self._fit_scalers_and_target_scales(event_df_processed, phys_df_processed)
+            
             # Step 3: Adapter fitting
             adapter_results = self._run_adapter_global_update(
                 event_df_processed, phys_df_processed, bb_dir
@@ -504,6 +507,50 @@ class Orchestrator:
         except Exception as e:
             self.logger.error(f"Global update failed for backbone bar {self._bb_idx:03d}: {str(e)}")
             raise RuntimeError(f"Cannot proceed without global update artifacts: {str(e)}")
+
+    def _fit_scalers_and_target_scales(self, event_df: pd.DataFrame, phys_df: pd.DataFrame) -> None:
+        """
+        Fit scalers and compute target variable scales for use in local adaptation.
+        
+        This method extracts the scaler fitting logic from _run_adapter_global_update
+        so it can be reused in local adaptation without recomputing the scalers.
+        
+        Args:
+            event_df: Event-driven data for the current backbone bar
+            phys_df: Physical-time data for the current backbone bar
+        """
+        self.logger.info(f"Fitting scalers and target scales for backbone bar {self._bb_idx}")
+        
+        # Get the current adapter from the stack
+        current_adapter = self.stacks[f"backbone_{self._bb_idx}"]
+        if current_adapter is None:
+            self.logger.error("No adapter available for fitting scalers")
+            raise RuntimeError("No adapter available for fitting scalers")
+        
+        # Create and fit scaler
+        scaler = StandardScaler()
+        augmented_df = current_adapter.augment_data(
+            event_df, 
+            phys_df.drop(columns=['backbone_bar', 'adapter_bar']),
+            target_col_name=self.cfg.target_col_name, 
+            quantile=self.cfg.quantile
+        )
+        
+        # Fit scaler on all covariates except timestamp and target
+        covariate_columns = [col for col in augmented_df.columns 
+                           if col not in ['timestamp', self.cfg.target_col_name]]
+        scaler.fit(augmented_df[covariate_columns])
+        self.scalers[f"backbone_{self._bb_idx}"] = scaler
+
+        # Compute and store target variable statistics
+        self.target_scales[f"backbone_{self._bb_idx}"] = {
+            "mean": augmented_df[self.cfg.target_col_name].mean(),
+            "std": augmented_df[self.cfg.target_col_name].std()
+        }
+        
+        self.logger.info(f"Fitted scaler for {len(covariate_columns)} covariates and computed target scales "
+                        f"(mean: {self.target_scales[f'backbone_{self._bb_idx}']['mean']:.6f}, "
+                        f"std: {self.target_scales[f'backbone_{self._bb_idx}']['std']:.6f})")
 
     def _run_backbone_global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
         """Run backbone global update step."""
@@ -642,21 +689,11 @@ class Orchestrator:
                 self.logger.error("No adapter available for global update")
                 raise RuntimeError("No adapter available for global update")
         
-            # Create scaler
-            scaler = StandardScaler()
-            augmented_df = current_adapter.augment_data(event_df, 
-                                                        phys_df.drop(columns=['backbone_bar', 
-                                                                              'adapter_bar']),
-                                                        target_col_name = self.cfg.target_col_name, 
-                                                        quantile = self.cfg.quantile)
-            scaler.fit(augmented_df.drop(columns=['timestamp', self.cfg.target_col_name]))
-            self.scalers[f"backbone_{self._bb_idx}"] = scaler
-
-            # Compute mean and variance for target variable
-            self.target_scales[f"backbone_{self._bb_idx}"] = {
-                "mean": augmented_df[self.cfg.target_col_name].mean(),
-                "std": augmented_df[self.cfg.target_col_name].std()
-            }
+            # Use pre-fitted scaler from global update
+            scaler = self.scalers[f"backbone_{self._bb_idx}"]
+            if scaler is None:
+                self.logger.error("No scaler available - global update must be run first")
+                raise RuntimeError("No scaler available - global update must be run first")
 
             # Initialize results tracking
             successful_updates = 0
@@ -895,7 +932,7 @@ class Orchestrator:
             self._plot_parameter_significance_corridor(
                 parameters_df=plot_params_df,
                 p_values_df=plot_pvalues_df,
-                title='ARMAX-GARCH Corridor (Global Update)',
+                title='ARMAX-GARCH Corridor',
                 save_path=plot_save_path
             )
 
@@ -1201,18 +1238,19 @@ class Orchestrator:
                                  phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
         """
         Run adapter local adaptation step.
-        
-        Updates adapter parameters in the same fashion as global_update method,
-        iterating over adapter bars and updating ARMA-GARCH parameters.
+
+        This method has exactly the same logic as _run_adapter_global_update. Notice that the covariate 
+        scalers and target variable scales are not computed but used from the global update phase.
+
+        Args:
+            event_df: Event-driven data for the current backbone bar
+            phys_df: Physical-time data for the current backbone bar 
+            bb_dir: Directory for saving artifacts
+            
+        Returns:
+            Dict containing adapter local adaptation results
         """
-        self.logger.info("Running adapter local adaptation...")
-        
-        artifacts_dir = bb_dir / "adapter"
-        (artifacts_dir / "armax_garch_corridor.png").touch()
-        (artifacts_dir / "param_series.parquet").touch()
-        (artifacts_dir / "performance_os.parquet").touch()
-        
-        return {"status": "completed", "artifacts_created": 3}
+        return self._run_adapter_global_update(event_df, phys_df, bb_dir)
 
     def _plot_parameter_series(self, 
                                all_parameters_df: pd.DataFrame, 
