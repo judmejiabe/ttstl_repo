@@ -175,9 +175,9 @@ runs/
           structural_breaks.parquet       # table indicating statistic and p-value of structural break test per adapter bar (Check)
 
         adapter/
-          armax_garch_corridor.png        # corridor plot of adapter bar specific estimated parameters.
-          param_series.parquet            # Bar-specific and combined ARMAX-GARCH parameter time series overimposed. The x-axis corresponds to the adapter time bar
-          performance_os.parquet          # Out-of-sample RelMAE, RelMSE, and R^2. 
+          armax_garch_corridor.png        # corridor plot of adapter bar specific estimated parameters. (Check)
+          param_series.parquet            # Bar-specific and combined ARMAX-GARCH parameter time series overimposed. The x-axis corresponds to the adapter time bar (Check)
+          performance_os.parquet          # Out-of-sample RelMAE, RelMSE, and R^2. (Check)
 
     bb_001/
       ...

@@ -927,7 +927,7 @@ class Backbone():
         train_proportion = 1.0 - validation_proportion
 
         if optimizer is None:
-            optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=0.0001)
 
         # Ensure we have timestamp column for partitioning
         if 'timestamp' not in event_driven_backbone_time_bar_data.columns:

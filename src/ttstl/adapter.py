@@ -22,7 +22,7 @@ class Adapter:
                  update_method: str = 'myopic',
                  arma_order : Tuple[int, int] = (1, 1),
                  garch_order: Tuple[int, int] = (1, 1),
-                 dist: str = 'norm',
+                 dist: str = 'norm', # If called should fail 
                  model : str = 'sGARCH',
                  archm: bool = False,
                  parameters : dict = {}):

@@ -955,7 +955,7 @@ class Interface:
                       physical_time_driven_backbone_time_bar_data: pd.DataFrame,
                       quantile: float = 0.005,
                       target_col_name: str = 'micro_return',
-                      distribution_model : str = 'sstd',
+                      distribution_model : str = 'norm', # If used should fail
                       n_lags: int = 5,
                       validation_proportion: float = 0.2,
                       selection_threshold: float = 0.5,

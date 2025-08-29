@@ -64,6 +64,8 @@ class OrchestratorConfig:
     adf_rejection_rate_threshold : float = 0.8
     kpss_verification_threshold : float = 0.2
     na_verification_threshold : float = 0.1
+    learning_rate: float = 0.0001  # Learning rate for backbone optimizer
+    correlation_threshold: float = 0.95  # Correlation threshold for feature filtering
 
     # Interface knobs
     # Hyperparameter grids (using default factory approach)
@@ -570,9 +572,9 @@ class Orchestrator:
         current_backbone = self.stacks[f"backbone_{self._bb_idx}"].interface.backbone
         
         # Create criterion and optimizer
-        # Consider modifying to use the configuration parameters
+        # Use configurable learning rate from orchestrator configuration
         criterion = nn.MSELoss(reduction='sum')
-        optimizer = optim.Adam(current_backbone.model.parameters(), lr=0.0001)
+        optimizer = optim.Adam(current_backbone.model.parameters(), lr=self.cfg.learning_rate)
         
         try:
             # Run actual backbone global update with configuration parameters
@@ -590,7 +592,7 @@ class Orchestrator:
                 kpss_verification_threshold=self.cfg.kpss_verification_threshold,
                 na_verification_threshold=self.cfg.na_verification_threshold,
                 kpss_drop=True,
-                correlation_threshold=0.95,  # Could be added to config if needed
+                correlation_threshold=self.cfg.correlation_threshold,
                 target_col_name=self.cfg.target_col_name,
                 save_dir=str(bb_dir / "backbone")  # Enable checkpoints and nn_weights saving
             )
@@ -641,6 +643,7 @@ class Orchestrator:
                 physical_time_driven_backbone_time_bar_data=current_phys_df,
                 quantile=self.cfg.quantile,
                 target_col_name=self.cfg.target_col_name,
+                distribution_model=self.cfg.dist,
                 n_lags=self.cfg.n_lags,
                 validation_proportion=self.cfg.validation_proportion_interface,
                 selection_threshold=self.cfg.selection_threshold,
@@ -1204,7 +1207,7 @@ class Orchestrator:
                 physical_time_driven_backbone_time_bar_data=current_phys_df,
                 quantile=self.cfg.quantile,
                 target_col_name=self.cfg.target_col_name,
-                distribution_model='sstd',  # Could be added to config if needed
+                distribution_model=self.cfg.dist,
                 n_lags=self.cfg.n_lags,
                 tolerance_threshold=self.cfg.tolerance_threshold,
                 ols_significance_level=self.cfg.ols_significance_level,

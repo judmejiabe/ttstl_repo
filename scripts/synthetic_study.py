@@ -56,7 +56,7 @@ def load_synthetic_data(id : int = 0):
                                  bucket_name=bucket_name)
     
     # Filter for testing purposes
-    ed_df = ed_df[ed_df['timestamp'] < 1_000_000]
+    #ed_df = ed_df[ed_df['timestamp'] < 1_000_000]
 
     logger.info(
         "Loaded event driven synthetic data with shape %s from %s in bucket %s",
@@ -82,7 +82,7 @@ def load_synthetic_data(id : int = 0):
     ptd_df['micro_return'] = ptd_df['micro_return'].shift(-1)
     ptd_df = ptd_df.iloc[:-1]
 
-    ptd_df = ptd_df[ptd_df['timestamp'] < 1_000_000]  # Filter for testing purposes
+    #ptd_df = ptd_df[ptd_df['timestamp'] < 1_000_000]  # Filter for testing purposes
     
 
     logger.info(
@@ -135,20 +135,20 @@ def main():
     cfg = OrchestratorConfig(
         # General settings
         ticker='SIM',
-        #bdelta=5_000_000.0,
-        bdelta=500_000.0,  # For testing purposes
+        bdelta=5_000_000.0,
+        #bdelta=500_000.0,  # For testing purposes
         adelta=100_000.0,
         sdelta=100.0,
         seed=19991810,
         session_start=0.0,
-        #session_finish=10_000_000.0,
-        session_finish=1_000_000.0,  # For testing purposes
+        session_finish=10_000_000.0,
+        #session_finish=1_000_000.0,  # For testing purposes
         target_col_name='micro_return',
         
         # Backbone knobs
         parsimonious_mode=False,  # Use parsimonious mode for testing
-        #epochs=5,
-        epochs=2,  # For testing purposes 
+        epochs=5,
+        #epochs=2,  # For testing purposes 
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
@@ -156,6 +156,8 @@ def main():
         adf_rejection_rate_threshold=0.8,
         kpss_verification_threshold=0.2,
         na_verification_threshold=0.1,
+        learning_rate=0.0001,
+        correlation_threshold=0.95,
 
         # Interface knobs
         alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
@@ -173,7 +175,7 @@ def main():
         update_method='power_law',
         arma_order=(1, 1),
         garch_order=(1, 1),
-        dist='sstd',
+        dist='std',
         model='sGARCH',
         archm=False,
         update_parameters={'alpha' : 3.0}
