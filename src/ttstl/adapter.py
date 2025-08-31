@@ -40,6 +40,7 @@ class Adapter:
     def _update_myopic(self, new_parameters: dict):
         self.parameters = new_parameters
 
+    # Combining update rules
     def _update_simple_average(self, new_parameters: dict, ell : int):
         if not self.parameters:
             self.parameters = new_parameters
@@ -72,15 +73,118 @@ class Adapter:
     def _update_minimum_variance(self):
         pass
 
-    def _update_newton_raphson(self):
-        pass
+    # Recursive update rules
+    def _update_newton_raphson(self, new_parameters: dict, 
+                               gradient: np.ndarray = None, 
+                                hessian: np.ndarray = None, 
+                                regularization: float = 0.0):
+        """
+        Newton-Raphson parameter update: θ_new = θ_old - (H + λ I)^(-1) * ∇f
+        
+        Parameters:
+        -----------
+        new_parameters : dict - Current fitted parameters (θ_old)
+        gradient : np.ndarray - Gradient vector from numderiv_garch
+        hessian : np.ndarray - Hessian matrix from numderiv_garch  
+        param_names : list - Parameter names ensuring consistent ordering
+        regularization : float - Diagonal regularization for numerical stability (λ)
+        """
+        
+        if not self.parameters:
+            self.parameters = new_parameters
+        else:
+            self.logger.info(gradient)
+            self.logger.info(hessian)
+            # 1. Validate inputs and convert to arrays
+            current_params_array = np.array([self.parameters[name] for name in list(new_parameters.keys())])
 
-    def _update_fischer_scoring(self):
-        pass
+            # 2. Regularize hessian for numerical stability
+            regularized_hessian = hessian + regularization * np.eye(len(hessian))
+            
+            # 3. Compute Newton step using stable linear solver
+            try:
+                newton_step = np.linalg.solve(regularized_hessian, gradient)
+            except np.linalg.LinAlgError as e:
+                self.logger.error(f"Failed to compute Newton step due to singular matrix: {e}. Falling back to zero step.")
+                # Fallback to a zero step to prevent update failure
+                newton_step = np.zeros_like(gradient)
+                
+            # 4. Apply update with step size control
+            updated_params_array = current_params_array - newton_step
+            
+            # 5. Convert back to dictionary maintaining order
+            self.parameters = dict(zip(list(new_parameters.keys()), updated_params_array))
 
-    def _update_gradient_descent(self):
-        pass
-    
+
+    def _update_fischer_scoring(self, new_parameters: dict, 
+                                gradient: np.ndarray = None, 
+                                info_mat: np.ndarray = None, 
+                                regularization: float = 0.0):
+        """
+        Fisher scoring parameter update: θ_new = θ_old + (I_FS + λ I)^(-1) * ∇f
+
+        Parameters:
+        -----------
+        new_parameters : dict - Current fitted parameters (θ_old)
+        gradient : np.ndarray - Gradient vector from numderiv_garch
+        hessian : np.ndarray - Hessian matrix from numderiv_garch  
+        param_names : list - Parameter names ensuring consistent ordering
+        regularization : float - Diagonal regularization for numerical stability (λ)
+        """
+
+        if not self.parameters:
+            self.parameters = new_parameters
+        else:
+            # 1. Validate inputs and convert to arrays
+            current_params_array = np.array([self.parameters[name] for name in new_parameters.keys()])
+
+            # 2. Regularize information matrix for numerical stability
+            regularized_info_mat = info_mat + regularization * np.eye(len(info_mat))
+
+            # 3. Compute Fisher scoring step using stable linear solver
+            try:
+                fs_step = np.linalg.solve(regularized_info_mat, gradient)
+            except np.linalg.LinAlgError as e:
+                self.logger.error(f"Failed to compute Fisher scoring step due to singular matrix: {e}. Falling back to zero step.")
+                # Fallback to a zero step to prevent update failure
+                fs_step = np.zeros_like(gradient)
+
+            # 4. Apply update with step size control
+            updated_params_array = current_params_array + fs_step
+
+            # 5. Convert back to dictionary maintaining order
+            self.parameters = dict(zip(list(new_parameters.keys()), updated_params_array))
+
+    def _update_gradient_ascent(self, 
+                                new_parameters: dict, 
+                                gradient: np.ndarray = None, 
+                                alpha: float = 0.01):
+        """
+        Gradient ascent parameter update: θ_new = θ_old + α ∇f
+
+        Parameters:
+        -----------
+        new_parameters : dict - Current fitted parameters (θ_old)
+        gradient : np.ndarray - Gradient vector from numderiv_garch
+        param_names : list - Parameter names ensuring consistent ordering
+        alpha : float - Step size for gradient descent
+        """
+
+        if not self.parameters:
+            self.parameters = new_parameters
+        else:
+            # 1. Validate inputs and convert to arrays
+            current_params_array = np.array([self.parameters[name] for name in new_parameters.keys()])
+
+            # 2. Compute gradient ascent step
+            ga_step = alpha * gradient
+
+            # 3. Apply update with step size control
+            updated_params_array = current_params_array + ga_step
+
+            # 4. Convert back to dictionary maintaining order
+            self.parameters = dict(zip(list(new_parameters.keys()), updated_params_array))
+
     def _print_parameters_summary(self, adapter_bar_number: int, new_parameters: dict, garch_results: dict):
         """
         Print a Python summary of the GARCH model parameters.
@@ -95,7 +199,7 @@ class Adapter:
             Dictionary containing GARCH fitting results including standard errors and p-values
         """
         self.logger.info(f"=" * 80)
-        self.logger.info(f"ADAPTER BAR {adapter_bar_number} - GARCH MODEL PARAMETERS")
+        self.logger.info(f"GARCH Model Parameters")
         self.logger.info(f"=" * 80)
         self.logger.info(f"Update method: {self.update_method}")
 
@@ -120,7 +224,7 @@ class Adapter:
                 mxreg_mapping[name] = name
         
         # Print adapter bar-specific estimates (current fit)
-        self.logger.info(f"BAR-SPECIFIC ESTIMATES (Bar {adapter_bar_number}):")
+        self.logger.info(f"Bar Specific Estimates")
         self.logger.info(f"{'Parameter':<20} {'Coefficient':>12} {'Std Error':>12} {'P-Value':>10}")
         self.logger.info("=" * 80)
 
@@ -131,7 +235,7 @@ class Adapter:
         self.logger.info("=" * 80)
 
         # Print carried estimates (averaged parameters)
-        self.logger.info(f"CARRIED ESTIMATES (Bar {adapter_bar_number}):")
+        self.logger.info(f"Carried Estimates:")
         self.logger.info(f"{'Parameter':<20} {'Coefficient':>12}")
         self.logger.info("=" * 80)
 
@@ -274,10 +378,10 @@ class Adapter:
 
         
         if scaler is not None:
-            self.logger.info(f"Scaling covariates: {covariate_names}")
+            self.logger.info(f"Scaling covariates")
             augmented_physical_data[covariate_names] = scaler.transform(augmented_physical_data[covariate_names])
 
-        self.logger.info(f"Merged neural covariates, resulting data shape: {augmented_physical_data.shape}")
+        self.logger.info(f"Merged neural covariates")
 
         return augmented_physical_data
 
@@ -418,7 +522,41 @@ class Adapter:
             coef_values = copy.deepcopy(garch_results['coefficients'])
             new_parameters = dict(zip(coef_names, coef_values))
 
-            self.logger.info(f"GARCH model fitted successfully. Coefficients: {list(new_parameters.keys())}")
+            self.logger.info(f"GARCH model fitted successfully")
+
+            self.spec = garch_results['spec']  # Store GARCH specification
+
+            if self.parameters:
+                # Check if the new parameters have the same keys as the existing ones
+                if set(new_parameters.keys()) != set(self.parameters.keys()):
+                    self.logger.warning("Parameter mismatch between new and existing parameters.")
+                    self.logger.warning(f"Existing keys: {sorted(list(self.parameters.keys()))}")
+                    self.logger.warning(f"New keys: {sorted(list(new_parameters.keys()))}")
+                    # This might indicate a change in model structure, which could be problematic
+                    # for some update rules. For now, we'll log a warning.
+
+                # Load the R script with numderiv_garch function
+                r_script_path = os.path.join(os.path.dirname(__file__), 'r_scripts', 'numderiv_garch.R')
+                ro.r(f'source("{r_script_path}")')
+                numderiv_garch = ro.globalenv['numderiv_garch']
+                theta = copy.deepcopy(self.parameters)
+                # Call the numderiv_garch function
+                numderiv_results = numderiv_garch(
+                    spec=self.spec,
+                    y=y.values,
+                    theta=ro.ListVector(theta)
+                )
+
+                grad = np.array(numderiv_results.rx2('grad'))
+                hessian = np.array(numderiv_results.rx2('hessian'))
+                info_mat = np.array(numderiv_results.rx2('I'))
+
+
+            else:
+                grad = None
+                hessian = None
+                info_mat = None
+
 
             # Update parameters based on update method
             if self.update_method == 'myopic':
@@ -431,14 +569,41 @@ class Adapter:
             elif self.update_method == 'exponential_smoothing':
                 alpha = update_parameters['alpha']
                 self._update_exponential_smoothing(new_parameters, alpha=alpha)
+            elif self.update_method == 'newton_raphson':
+                regularization = 0.0
+                if update_parameters:
+                    regularization = update_parameters['regularization'] \
+                        if 'regularization' in update_parameters else 0.0
+                self._update_newton_raphson(new_parameters,
+                                            gradient=grad,
+                                            hessian=hessian,
+                                            regularization=regularization)
+            elif self.update_method == 'fischer_scoring':
+                regularization = 0.0
+                if update_parameters:
+                    regularization = update_parameters['regularization'] \
+                        if 'regularization' in update_parameters else 0.0
+                self._update_fischer_scoring(new_parameters,
+                                              gradient=grad,
+                                              info_mat=info_mat,
+                                              regularization=regularization)
+            elif self.update_method == 'gradient_ascent':
+                self._update_gradient_ascent(new_parameters,
+                                              gradient=grad,
+                                              alpha=update_parameters['alpha'])
             else:
                 self.logger.info(f"Update method '{self.update_method}' not implemented")
                 raise ValueError(f"Update method '{self.update_method}' not implemented")
             
-            self.spec = garch_results['spec']  # Store GARCH specification
             
             # Print updated parameters summary
             self._print_parameters_summary(adapter_bar_number, new_parameters, garch_results)
+
+            self.logger.info('='*80)
+            self.logger.info('='*80)
+            self.logger.info("Finished running adapter module update")
+            self.logger.info('='*80)
+            self.logger.info('='*80)
             
             # Prepare return dictionary
             return garch_results
@@ -479,7 +644,7 @@ class Adapter:
         if self.spec is None:
             self.logger.error("GARCH specification (self.spec) is not available. Fit a model first.")
             raise ValueError("GARCH specification (self.spec) is not available. Fit a model first.")
-        if not hasattr(self.interface, 'selected_variables') or not self.interface.selected_variables:
+        if not hasattr(self.interface, 'selected_variables'):
             self.logger.error("Interface 'selected_variables' not available. Run global_update first.")
             raise ValueError("Interface 'selected_variables' not available. Run global_update first.")
 
@@ -509,7 +674,7 @@ class Adapter:
                 self.logger.error("More than one NaN found in augmented data. Please check data integrity.")
                 raise ValueError("More than one NaN found in augmented data. Please check data integrity.")
 
-            self.logger.info(f"Augmented combined data shape: {augmented_df.shape}")
+            #self.logger.info(f"Augmented combined data shape: {augmented_df.shape}")
 
         except Exception as e:
             raise RuntimeError(f"Failed to prepare data for forecasting: {e}")

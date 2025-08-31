@@ -321,7 +321,9 @@ class Interface:
         validation_bars = np.random.choice(unique_bars, size=n_validation_bars, replace=False)
         train_bars = np.setdiff1d(unique_bars, validation_bars)
 
+        train_bars.sort()
         self.logger.info(f"The elastic net, used for the initial estimate, will be trained on the adapter time bars: {train_bars}")
+        validation_bars.sort()
         self.logger.info(f"The elastic net mean squared error will be computed on the adapter time bars: {validation_bars}")
 
         # Split data
@@ -823,7 +825,6 @@ class Interface:
             title (str): The title for the plot.
             save_path (Path): The full path (including filename) to save the plot.
         """
-        self.logger.info(f"Generating corridor plot: '{title}'")
 
         if ada_coef_df.empty:
             self.logger.error("Coefficient dataframe is empty. Skipping plot generation.")
@@ -879,7 +880,7 @@ class Interface:
         plt.tight_layout(rect=[0, 0, 0.9, 1]) # Adjust layout to make space for annotations
         plt.savefig(save_path, dpi=300)
         plt.close(fig)
-        self.logger.info(f"Saved adaLASSO corridor plot to {save_path}")
+        self.logger.info(f"Saved adaptive LASSO corridor plot to {save_path}")
 
     def _corridor_plot_enet(self,
                             enet_coef_df: pd.DataFrame,
@@ -898,7 +899,6 @@ class Interface:
             save_path (Path): The full path (including filename) to save the plot.
             tolerance (float): The tolerance to determine if a coefficient is non-zero.
         """
-        self.logger.info(f"Generating Elastic Net corridor plot: '{title}'")
 
         if enet_coef_df.empty or adalasso_coef_df.empty:
             self.logger.warning("Coefficient dataframe is empty. Skipping plot generation.")
@@ -908,8 +908,8 @@ class Interface:
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Calculate counts of positive and negative coefficients for annotation
-        pos_counts = (enet_coef_df > 0).sum()
-        neg_counts = (enet_coef_df < 0).sum()
+        pos_counts = (adalasso_coef_df > 0).sum()
+        neg_counts = (adalasso_coef_df < 0).sum()
 
         # Determine the color map limit from the elastic net coefficients
         max_abs_value = np.nanmax(np.abs(enet_coef_df.values))
@@ -925,7 +925,7 @@ class Interface:
         ax.set_xticks(np.arange(len(enet_coef_df.index)) + 0.5)
         ax.set_xticklabels(enet_coef_df.index, rotation=90, fontsize=5)
 
-        # Annotate the counts of positive and negative initial estimates on the right margin
+        # Annotate the counts of positive and negative final estimates on the right margin
         # Use a blended transform for consistent annotation placement
         trans = transforms.blended_transform_factory(ax.transAxes, ax.transData)
         for idx, coef_name in enumerate(enet_coef_df.columns):
@@ -992,7 +992,7 @@ class Interface:
 
         self.logger.info("="*80)
         self.logger.info("="*80)
-        self.logger.info("Running Interface module global_update")
+        self.logger.info("Running Interface module global update")
         self.logger.info("="*80)
         self.logger.info("="*80)
 
@@ -1288,7 +1288,7 @@ class Interface:
         
         self.logger.info("="*80)
         self.logger.info("="*80)
-        self.logger.info("Interface module global_update completed")
+        self.logger.info("Interface module global update completed")
         self.logger.info("="*80)
         self.logger.info("="*80)
         

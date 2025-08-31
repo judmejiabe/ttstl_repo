@@ -135,20 +135,20 @@ def main():
     cfg = OrchestratorConfig(
         # General settings
         ticker='SIM',
-        bdelta=5_000_000.0,
-        #bdelta=500_000.0,  # For testing purposes
+        #bdelta=5_000_000.0,
+        bdelta=500_000.0,  # For testing purposes
         adelta=100_000.0,
         sdelta=100.0,
         seed=19991810,
         session_start=0.0,
-        session_finish=10_000_000.0,
-        #session_finish=1_000_000.0,  # For testing purposes
+        #session_finish=10_000_000.0,
+        session_finish=1_000_000.0,  # For testing purposes
         target_col_name='micro_return',
         
         # Backbone knobs
-        parsimonious_mode=False,  # Use parsimonious mode for testing
-        epochs=5,
-        #epochs=2,  # For testing purposes 
+        parsimonious_mode=True,
+        #epochs=5,
+        epochs=1,  # For testing purposes 
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
@@ -160,19 +160,23 @@ def main():
         correlation_threshold=0.95,
 
         # Interface knobs
-        alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
-        lambda_enet_grid=np.logspace(-4, 2, 25).tolist(),
-        tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
-        lambda_adalasso_grid=np.logspace(-4, 2, 25).tolist(),
+        #alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
+        alpha_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+        #lambda_enet_grid=np.logspace(-4, 2, 25).tolist(),
+        lambda_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+        #tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
+        tau_adalasso_grid=[0.25, 0.5, 1.0], # For testing purposes
+        #lambda_adalasso_grid=np.logspace(-4, 2, 25).tolist(),
+        lambda_adalasso_grid=[5, 5.5],  # For testing purposes
         validation_proportion_interface=0.2,
-        selection_threshold=0.40,
+        selection_threshold=0.95,
         tolerance_threshold=1e-6,
         ols_significance_level=0.05,
         wald_significance_level=0.05,
         n_lags=5,
 
-        # Adapter kobs
-        update_method='power_law',
+        # Adapter knobs
+        update_method='newton_raphson',
         arma_order=(1, 1),
         garch_order=(1, 1),
         dist='std',

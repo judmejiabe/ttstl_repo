@@ -415,8 +415,22 @@ class Orchestrator:
         Returns:
             List of results for each backbone bar processed
         """
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
         self.logger.info("Starting a global update for the full trading session")
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+
         
+        # Continue Here: event_df_processed and phys_df_processed should be filtered before getting processed. 
+
+        event_df = event_df[(event_df['timestamp'] >= self.cfg.session_start) & 
+                           (event_df['timestamp'] <= self.cfg.session_finish)].copy()
+        phys_df = phys_df[(phys_df['timestamp'] >= self.cfg.session_start) & 
+                         (phys_df['timestamp'] <= self.cfg.session_finish)].copy()
+
         # Add time bar columns if not present
         event_df_processed = self._add_time_bar_columns(event_df.copy())
         phys_df_processed = self._add_time_bar_columns(phys_df.copy())
@@ -431,7 +445,11 @@ class Orchestrator:
         all_results = []
         
         for i, bb in enumerate(backbone_bars):
+            self.logger.info("="*80)
+            self.logger.info("="*80)
             self.logger.info(f"Processing backbone bar {bb} ({i+1}/{total_backbone_bars})")
+            self.logger.info("="*80)
+            self.logger.info("="*80)
             
             # Filter data for this specific backbone bar
             event_bb_data = event_df_processed[event_df_processed['backbone_bar'] == bb].copy()
@@ -441,12 +459,22 @@ class Orchestrator:
             try:
                 results = self._global_update_single_bar(event_bb_data, phys_bb_data)
                 all_results.append(results)
+                self.logger.info("="*80)
+                self.logger.info("="*80)
                 self.logger.info(f"Backbone bar {bb} completed successfully")
+                self.logger.info("="*80)
+                self.logger.info("="*80)
             except Exception as e:
                 self.logger.error(f"Backbone bar {bb} failed: {str(e)}")
                 raise RuntimeError(f"Global update failed for backbone bar {bb}: {str(e)}")
-        
+            
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
         self.logger.info(f"Global update session completed successfully for {total_backbone_bars} backbone bars")
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
         return all_results
 
     def _global_update_single_bar(self, 
@@ -502,8 +530,12 @@ class Orchestrator:
             }
             
             self._update_manifest("global_update", results)
-            
+
+            self.logger.info("="*80)
+            self.logger.info("="*80)
             self.logger.info(f"Global update completed for backbone bar {self._bb_idx:03d}")
+            self.logger.info("="*80)
+            self.logger.info("="*80)
             return results
             
         except Exception as e:
@@ -550,9 +582,7 @@ class Orchestrator:
             "std": augmented_df[self.cfg.target_col_name].std()
         }
         
-        self.logger.info(f"Fitted scaler for {len(covariate_columns)} covariates and computed target scales "
-                        f"(mean: {self.target_scales[f'backbone_{self._bb_idx}']['mean']:.6f}, "
-                        f"std: {self.target_scales[f'backbone_{self._bb_idx}']['std']:.6f})")
+        self.logger.info(f"Fitted scaler for {len(covariate_columns)} covariates and computed target scales ")
 
     def _run_backbone_global_update(self, event_df: pd.DataFrame, phys_df: pd.DataFrame, bb_dir: Path) -> Dict[str, Any]:
         """Run backbone global update step."""
@@ -765,7 +795,7 @@ class Orchestrator:
 
                     self.logger.info(f"Processing {bar_logger_prefix}: "
                                     f"{len(bar_ptdata)} physical samples, "
-                                    f"{len(bar_edlob)} event samples (including lookback)")
+                                    f"{len(bar_edlob)} event samples (the latter including lookback)")
                     
                     # Skip bars with insufficient data
                     min_samples = 10  # Minimum samples required for fitting
@@ -803,7 +833,7 @@ class Orchestrator:
                             self.logger.warning(f"Skipping forecast evaluation for {bar_logger_prefix}: next bar {next_adapter_bar} is empty.")
                             continue
 
-                        self.logger.info(f"Calculating forecast performance for {bar_logger_prefix} on bar {next_adapter_bar}")
+                        self.logger.info(f"Calculating forecast performance using the carried estimates from {bar_logger_prefix} on adapter time bar {next_adapter_bar}")
                         metrics = current_adapter.calculate_performance_metrics(
                             in_sample_event_df=bar_edlob,
                             in_sample_phys_df=bar_ptdata,
@@ -989,8 +1019,19 @@ class Orchestrator:
         if self._bb_idx < 0:
             self.logger.error("Cannot run local_adapt before global_update")
             raise RuntimeError("Cannot run local_adapt before global_update")
-            
+        
+        event_df = event_df[(event_df['timestamp'] >= self.cfg.session_start) & 
+                           (event_df['timestamp'] <= self.cfg.session_finish)].copy()
+        phys_df = phys_df[(phys_df['timestamp'] >= self.cfg.session_start) & 
+                         (phys_df['timestamp'] <= self.cfg.session_finish)].copy()
+
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
         self.logger.info("Starting local adaptation for full trading session")
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
         
         # Add time bar columns if not present
         event_df_processed = self._add_time_bar_columns(event_df.copy())
@@ -1026,15 +1067,21 @@ class Orchestrator:
             try:
                 results = self._local_adapt_single_bar(event_bb_data, phys_bb_data)
                 all_results.append(results)
-                self.logger.info(f"✅ Local adaptation for backbone bar {bb} completed successfully")
+                self.logger.info(f"Local adaptation for backbone bar {bb} completed successfully")
             except Exception as e:
-                self.logger.error(f"❌ Local adaptation for backbone bar {bb} failed: {str(e)}")
+                self.logger.error(f"Local adaptation for backbone bar {bb} failed: {str(e)}")
                 raise RuntimeError(f"Local adaptation failed for backbone bar {bb}: {str(e)}")
         
         # Restore original backbone index
         self._bb_idx = original_bb_idx
         
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
         self.logger.info(f"Local adaptation session completed successfully for {total_backbone_bars} backbone bars")
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
         return all_results
 
     def _local_adapt_single_bar(self, event_df: pd.DataFrame, phys_df: pd.DataFrame) -> Dict[str, Any]:
@@ -1102,7 +1149,11 @@ class Orchestrator:
         In local adaptation, the backbone model is not retrained or updated.
         We use the frozen model for out-of-sample evaluation and save test results.
         """
-        self.logger.info("Running backbone local adaptation (backbone frozen - evaluating out-of-sample)...")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
+        self.logger.info("Running backbone local adaptation (backbone frozen - evaluating out-of-sample)")
+        self.logger.info("="*80)
+        self.logger.info("="*80)
         
         try:
             # Get the current backbone for this backbone bar
@@ -1116,9 +1167,12 @@ class Orchestrator:
             
             # Log the full covariate list for verification
             if hasattr(current_backbone, 'full_covariate_list') and current_backbone.full_covariate_list:
+                self.logger.info("="*80)
                 self.logger.info(f"Backbone bar {self._bb_idx} - Full covariate list ({len(current_backbone.full_covariate_list)} variables):")
+                self.logger.info("="*80)
                 for i, covariate in enumerate(current_backbone.full_covariate_list):
                     self.logger.info(f"  {i+1}. {covariate}")
+                self.logger.info("="*80)
             else:
                 self.logger.warning(f"Backbone bar {self._bb_idx} - No full_covariate_list found or empty")
             
@@ -1160,6 +1214,12 @@ class Orchestrator:
             )
             
             self.logger.info(f"Backbone bar {self._bb_idx} - Out-of-sample test loss: {test_loss:.6f}")
+
+            self.logger.info("="*80)
+            self.logger.info("="*80)
+            self.logger.info("Finished running backbone local adaptation")
+            self.logger.info("="*80)
+            self.logger.info("="*80)
             
             return {
                 "status": "completed",
@@ -1332,8 +1392,6 @@ class Orchestrator:
             significance_level (float): The p-value threshold for significance.
         """
 
-        self.logger.info(f"Generating parameter significance corridor plot: '{title}'")
-
         if parameters_df.empty:
             self.logger.warning("Parameters DataFrame is empty. Skipping plot generation.")
             return
@@ -1382,7 +1440,7 @@ class Orchestrator:
         
         try:
             plt.savefig(save_path, dpi=300)
-            self.logger.info(f"Successfully saved parameter significance plot to {save_path}")
+            self.logger.info(f"Successfully saved adapter bar-specific corridor plot to {save_path}")
         except Exception as e:
             self.logger.error(f"Failed to save plot to {save_path}: {e}")
         finally:

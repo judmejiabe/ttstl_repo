@@ -346,7 +346,7 @@ class Backbone():
                                     if var not in {'timestamp', target_col_name}]
 
         self.logger.info("=" * 80)
-        self.logger.info("STATIONARY COVARIATES FOUND")
+        self.logger.info("Stationary covariates found")
         self.logger.info("=" * 80)
 
         for i, var in enumerate(self.full_covariate_list):
@@ -403,7 +403,7 @@ class Backbone():
                                           index[highly_correlated_pairs[var]]\
                                             .tolist()) - {var}
         self.logger.info(f"="*80)
-        self.logger.info("HIGHLY CORRELATED VARIABLES")
+        self.logger.info("Highly correlated variables")
         self.logger.info("="*80)
 
         for var, neighbors in adjacency_dict.items():
@@ -431,7 +431,7 @@ class Backbone():
         self.full_covariate_list = [var for var in self.full_covariate_list if var not in dropped_vars]
 
         self.logger.info("=" * 80)
-        self.logger.info("RETAINED VARIABLES")
+        self.logger.info("Retained Variables")
         self.logger.info("=" * 80)
         for i, var in enumerate(self.full_covariate_list):
             self.logger.info(f"{i + 1}. {var}")
