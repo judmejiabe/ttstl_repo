@@ -136,6 +136,9 @@ class Orchestrator:
 
         # Placeholder for the number of backbone bars
         self.total_backbone_bars = None
+
+        # Flag for skipping the backbone training
+        self.skip_backbone_training = False
         
         # Seed RNGs for reproducibility
         self._seed_rngs()
@@ -348,6 +351,113 @@ class Orchestrator:
             self.logger.debug(f"Initialized stack {stack_key}")
         
         self.logger.info(f"Successfully initialized {len(self.stacks)} backbone-interface-adapter stacks")
+    
+    def import_backbone_modules_from_orchestrator(self, source_orchestrator: 'Orchestrator') -> None:
+        """
+        Import backbone modules from another orchestrator instance.
+        
+        This method copies the trained backbone modules from a source orchestrator
+        and integrates them into the current orchestrator's stacks, effectively
+        enabling transfer learning by reusing pre-trained backbone models.
+        
+        Args:
+            source_orchestrator: Another Orchestrator instance with trained backbone modules
+            
+        Raises:
+            ValueError: If source orchestrator doesn't have trained backbones
+            RuntimeError: If there's a mismatch in stack configurations
+        """
+        if not hasattr(source_orchestrator, 'stacks') or not source_orchestrator.stacks:
+            raise ValueError("Source orchestrator has no initialized stacks")
+        
+        # Check if source orchestrator has completed training
+        if source_orchestrator._bb_idx < 0:
+            raise ValueError("Source orchestrator has not completed any backbone training")
+        
+        # Log the import operation
+        self.logger.info("=" * 80)
+        self.logger.info("Importing backbone modules from source orchestrator")
+        self.logger.info("=" * 80)
+        self.logger.info(f"Source orchestrator run: {source_orchestrator.run_slug}")
+        self.logger.info(f"Target orchestrator run: {self.run_slug}")
+        self.logger.info(f"Target stacks available: {len(self.stacks)}")
+        
+        # Validate stack compatibility
+        source_stack_count = len(source_orchestrator.stacks)
+        target_stack_count = len(self.stacks)
+        
+        if source_stack_count != target_stack_count:
+            self.logger.warning(
+                f"Stack count mismatch: source has {source_stack_count}, "
+                f"target has {target_stack_count}. Will import available stacks."
+            )
+        
+        # Import backbone modules from source stacks
+        imported_count = 0
+        failed_count = 0
+        
+        for stack_key in self.stacks.keys():
+            if stack_key in source_orchestrator.stacks:
+                try:
+                    # Get source backbone
+                    source_backbone = source_orchestrator.stacks[stack_key].interface.backbone
+                    
+                    # Create new interface and adapter with imported backbone
+                    new_interface = Interface(
+                        backbone_module=source_backbone,  # Use imported backbone
+                        alpha_enet_grid=self.cfg.alpha_enet_grid,
+                        lambda_enet_grid=self.cfg.lambda_enet_grid,
+                        tau_adalasso_grid=self.cfg.tau_adalasso_grid,
+                        lambda_adalasso_grid=self.cfg.lambda_adalasso_grid
+                    )
+                    
+                    new_adapter = Adapter(
+                        interface=new_interface,
+                        update_method=self.cfg.update_method,
+                        arma_order=self.cfg.arma_order,
+                        garch_order=self.cfg.garch_order,
+                        dist=self.cfg.dist,
+                        model=self.cfg.model,
+                        archm=self.cfg.archm,
+                        parameters={}
+                    )
+                    
+                    # Replace the stack with imported backbone
+                    self.stacks[stack_key] = new_adapter
+                    
+                    # Copy scalers and target scales if available
+                    if hasattr(source_orchestrator, 'scalers') and stack_key in source_orchestrator.scalers:
+                        if source_orchestrator.scalers[stack_key] is not None:
+                            self.scalers[stack_key] = source_orchestrator.scalers[stack_key]
+                            self.logger.debug(f"Imported scaler for {stack_key}")
+                    
+                    if hasattr(source_orchestrator, 'target_scales') and stack_key in source_orchestrator.target_scales:
+                        if source_orchestrator.target_scales[stack_key] is not None:
+                            self.target_scales[stack_key] = source_orchestrator.target_scales[stack_key]
+                            self.logger.debug(f"Imported target scales for {stack_key}")
+                    
+                    imported_count += 1
+                    self.logger.debug(f"Successfully imported backbone for {stack_key}")
+                    
+                except Exception as e:
+                    failed_count += 1
+                    self.logger.error(f"Failed to import backbone for {stack_key}: {str(e)}")
+            else:
+                failed_count += 1
+                self.logger.warning(f"Stack {stack_key} not found in source orchestrator")
+        
+        # Set the skip backbone training flag
+        self.skip_backbone_training = True
+        
+        # Log import summary
+        self.logger.info(f"Backbone import completed:")
+        self.logger.info(f"Successfully imported: {imported_count} backbones")
+        self.logger.info(f"Failed imports: {failed_count}")
+        self.logger.info(f"Skip backbone training flag set to: {self.skip_backbone_training}")
+        self.logger.info("=" * 80)
+        
+        if imported_count == 0:
+            raise RuntimeError("No backbone modules were successfully imported")
 
     def _create_backbone_directories(self, mode: str) -> Path:
         """Create directory structure for a backbone bar."""
@@ -502,10 +612,17 @@ class Orchestrator:
             event_df_processed = self._add_time_bar_columns(event_df.copy())
             phys_df_processed = self._add_time_bar_columns(phys_df.copy())
             
-            # Step 1: Backbone training and feature extraction
-            backbone_results = self._run_backbone_global_update(
-                event_df_processed, phys_df_processed, bb_dir
-            )
+
+            if not self.skip_backbone_training:
+                # Step 1: Backbone training and feature extraction
+                backbone_results = self._run_backbone_global_update(
+                    event_df_processed, phys_df_processed, bb_dir
+                )
+            
+            else:
+                backbone_results = self._run_backbone_local_adapt(
+                    event_df_processed, phys_df_processed, bb_dir
+                )
             
             # Step 2: Interface global selection
             interface_results = self._run_interface_global_update(
