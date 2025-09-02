@@ -42,19 +42,22 @@ class Backbone():
                  model : nn.Module, 
                  delta_adapter : float = 0.0,
                  delta_sample : float = 0.0,
-                 parsimonious_mode : bool = False) -> None:
+                 parsimonious_mode : bool = False,
+                 neural_covariates_only : bool = False) -> None:
         """Initialize the Backbone with a model and delta adapter.
         Args:
             model (nn.Module): The neural network model to be used.
             delta_adapter (float, optional): Adapter time bar length in the same units of time as the data.
             delta_sample (float, optional): Sample time bar length in the same units of time as the data.
             parsimonious_mode (bool, optional): Whether to use parsimonious mode for neural covariate extraction.
+            neural_covariates_only (bool, optional): Whether to use only neural covariates (no manual/stationary features).
         """
         self.model = model
         self.device = next(self.model.parameters()).device
         self.delta_adapter = delta_adapter
         self.delta_sample = delta_sample
         self.parsimonious_mode = parsimonious_mode
+        self.neural_covariates_only = neural_covariates_only
         self.full_covariate_list = None
         self.dropped_pairs = dict()
         
@@ -342,17 +345,26 @@ class Backbone():
         else:
             self.logger.warning(f"Target column '{target_col_name}' does not pass stationarity tests.")
 
-        self.full_covariate_list = [var for var in stationary_variables \
-                                    if var not in {'timestamp', target_col_name}]
+        # Initialize covariate list based on mode
+        if self.neural_covariates_only:
+            # Neural covariates only mode - start with empty list, neural covariates will be added later
+            self.full_covariate_list = []
+            self.logger.info("=" * 80)
+            self.logger.info("Neural covariates only mode - manual features will be excluded")
+            self.logger.info("=" * 80)
+        else:
+            # Standard mode - include stationary variables  
+            self.full_covariate_list = [var for var in stationary_variables \
+                                        if var not in {'timestamp', target_col_name}]
 
-        self.logger.info("=" * 80)
-        self.logger.info("Stationary covariates found")
-        self.logger.info("=" * 80)
+            self.logger.info("=" * 80)
+            self.logger.info("Stationary covariates found")
+            self.logger.info("=" * 80)
 
-        for i, var in enumerate(self.full_covariate_list):
-            self.logger.info(f"{i + 1}. {var}")
+            for i, var in enumerate(self.full_covariate_list):
+                self.logger.info(f"{i + 1}. {var}")
 
-        self.logger.info("=" * 80)
+            self.logger.info("=" * 80)
 
         # Issue warnings
         if warning_variables:
@@ -754,11 +766,17 @@ class Backbone():
         }
         
         # Add training history info if available
-        if hasattr(self, 'training_history_df') and self.training_history_df is not None:
+        if hasattr(self, 'training_history_df') and self.training_history_df is not None and len(self.training_history_df) > 0:
             metadata['final_train_loss'] = float(self.training_history_df['train_loss'].iloc[-1])
             metadata['final_validation_loss'] = float(self.training_history_df['validation_loss'].iloc[-1])
             metadata['best_validation_loss'] = float(self.training_history_df['validation_loss'].min())
             metadata['epochs_trained'] = len(self.training_history_df)
+        else:
+            # No training occurred (epochs=0)
+            metadata['final_train_loss'] = None
+            metadata['final_validation_loss'] = None
+            metadata['best_validation_loss'] = None
+            metadata['epochs_trained'] = 0
         
         # Save metadata as JSON
         metadata_path = save_path / "model_metadata.json"
@@ -1111,9 +1129,15 @@ class Backbone():
 
         self.logger.info('Computing correlation matrices for stationary variables and neural covariates')
         if self.full_covariate_list and len(self.full_covariate_list) > 1:
-            # Get stationary variables (excluding neural covariates)
+            # Get neural and stationary variables
             neural_covariate_columns = [col for col in neural_covariates.columns if col != 'timestamp']
-            stationary_covariates = [col for col in stationary_vars if col not in {'timestamp', target_col_name}]
+            
+            if self.neural_covariates_only:
+                # In neural-only mode, stationary_covariates should be empty
+                stationary_covariates = []
+            else:
+                # In standard mode, get stationary variables 
+                stationary_covariates = [col for col in stationary_vars if col not in {'timestamp', target_col_name}]
 
             save_dir_correlation = None
             if save_dir:
@@ -1135,8 +1159,14 @@ class Backbone():
                 threshold=correlation_threshold
             )
             
+        elif len(self.full_covariate_list) == 1:
+            # Handle case with exactly one covariate (acceptable in neural-only mode)
+            if self.neural_covariates_only:
+                self.logger.info(f"Neural covariates only mode: Using single neural covariate '{self.full_covariate_list[0]}'")
+            else:
+                self.logger.warning(f"Only one covariate available: '{self.full_covariate_list[0]}'. Consider adjusting selection criteria.")
         else:
-            raise ValueError("No covariates available for correlation analysis or only one covariate present.")
+            raise ValueError("No covariates available for correlation analysis.")
 
         # Final cleanup
         if self.full_covariate_list:

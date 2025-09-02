@@ -147,8 +147,9 @@ def main():
         
         # Backbone knobs
         parsimonious_mode=True,
+        neural_covariates_only=False,
         #epochs=5,
-        epochs=1,  # For testing purposes 
+        epochs=0,  # For testing purposes 
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
@@ -160,16 +161,16 @@ def main():
         correlation_threshold=0.95,
 
         # Interface knobs
-        #alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
-        alpha_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
-        #lambda_enet_grid=np.logspace(-4, 2, 25).tolist(),
-        lambda_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
-        #tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
-        tau_adalasso_grid=[0.25, 0.5, 1.0], # For testing purposes
-        #lambda_adalasso_grid=np.logspace(-4, 2, 25).tolist(),
-        lambda_adalasso_grid=[5, 5.5],  # For testing purposes
+        alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
+        #alpha_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+        lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
+        #lambda_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+        tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
+        #tau_adalasso_grid=[0.25, 0.5, 1.0], # For testing purposes
+        lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
+        #lambda_adalasso_grid=[5, 5.5],  # For testing purposes
         validation_proportion_interface=0.2,
-        selection_threshold=0.95,
+        selection_threshold=0.2,
         tolerance_threshold=1e-6,
         ols_significance_level=0.05,
         wald_significance_level=0.05,
@@ -200,8 +201,9 @@ def main():
         
         # Backbone knobs
         parsimonious_mode=True,
+        neural_covariates_only=False,  # Use only neural covariates (test neural-only mode)
         #epochs=5,
-        epochs=1,  # For testing purposes 
+        epochs=0,  # For testing purposes 
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
@@ -213,14 +215,14 @@ def main():
         correlation_threshold=0.95,
 
         # Interface knobs
-        #alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
-        alpha_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
-        #lambda_enet_grid=np.logspace(-4, 2, 25).tolist(),
-        lambda_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
-        #tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
-        tau_adalasso_grid=[0.25, 0.5, 1.0], # For testing purposes
-        #lambda_adalasso_grid=np.logspace(-4, 2, 25).tolist(),
-        lambda_adalasso_grid=[5, 5.5],  # For testing purposes
+        alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
+        #alpha_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+        lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
+        #lambda_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+        tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
+        #tau_adalasso_grid=[0.25, 0.5, 1.0], # For testing purposes
+        lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
+        #lambda_adalasso_grid=[5, 5.5],  # For testing purposes
         validation_proportion_interface=0.2,
         selection_threshold=0.95,
         tolerance_threshold=1e-6,
@@ -243,19 +245,19 @@ def main():
     runs_dir.mkdir(exist_ok=True)
 
     orchestrator = Orchestrator(runs_dir, cfg)
-    orchestrator_alternative = Orchestrator(runs_dir, cfg_alternative)
+    #orchestrator_alternative = Orchestrator(runs_dir, cfg_alternative)
 
     log_orchestrator_config(cfg)
 
     all_global_results = orchestrator.global_update(ed_df_0, ptd_df_0)
     all_local_results = orchestrator.local_adapt(ed_df_1, ptd_df_1)
 
-    log_orchestrator_config(cfg_alternative)
+    #log_orchestrator_config(cfg_alternative)
 
-    orchestrator_alternative.import_backbone_modules_from_orchestrator(orchestrator)
+    #orchestrator_alternative.import_backbone_modules_from_orchestrator(orchestrator)
 
-    all_global_results_alt = orchestrator_alternative.global_update(ed_df_0, ptd_df_0)
-    all_local_results_alt = orchestrator_alternative.local_adapt(ed_df_1, ptd_df_1)
+    #all_global_results_alt = orchestrator_alternative.global_update(ed_df_0, ptd_df_0)
+    #all_local_results_alt = orchestrator_alternative.local_adapt(ed_df_1, ptd_df_1)
 
     print("🛬 Finishing synthetic study...")
 

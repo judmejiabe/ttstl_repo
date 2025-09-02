@@ -56,6 +56,7 @@ class OrchestratorConfig:
     # Backbone knobs
     architecture: str = 'cnn_lstm'
     parsimonious_mode: bool = False
+    neural_covariates_only: bool = False  # Use only neural covariates (no manual/stationary features)
     epochs: int = 12 
     batch_size: int = 32
     validation_proportion_backbone: float = 0.1
@@ -320,7 +321,8 @@ class Orchestrator:
                 model=model,
                 delta_adapter=self.cfg.adelta,
                 delta_sample=self.cfg.sdelta,
-                parsimonious_mode=self.cfg.parsimonious_mode
+                parsimonious_mode=self.cfg.parsimonious_mode,
+                neural_covariates_only=self.cfg.neural_covariates_only
             )
             
             # Initialize Interface with backbone module and hyperparameter grids
