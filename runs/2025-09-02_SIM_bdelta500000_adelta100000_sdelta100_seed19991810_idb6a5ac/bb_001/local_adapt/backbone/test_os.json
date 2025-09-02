@@ -1,5 +1,0 @@
-{
-  "model_class": "CNNLSTM",
-  "parsimonious_mode": true,
-  "test_loss": 0.9473633839874511
-}

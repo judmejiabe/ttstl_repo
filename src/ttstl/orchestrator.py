@@ -75,6 +75,9 @@ class OrchestratorConfig:
     tau_adalasso_grid: Optional[List[float]] = field(default_factory=lambda: [0.25, 0.5, 1.0, 1.5, 2.0])
     lambda_adalasso_grid: Optional[List[float]] = field(default_factory=lambda: np.logspace(-4, 2, 20).tolist())
 
+    # Variable selection
+    user_defined_variables: Optional[List[str]] = None  # Bypass adalasso with user-defined variables
+    
     validation_proportion_interface : float = 0.2
     selection_threshold: float = 0.40
     tolerance_threshold: float = 1e-6
@@ -331,7 +334,8 @@ class Orchestrator:
                 alpha_enet_grid=self.cfg.alpha_enet_grid,
                 lambda_enet_grid=self.cfg.lambda_enet_grid,
                 tau_adalasso_grid=self.cfg.tau_adalasso_grid,
-                lambda_adalasso_grid=self.cfg.lambda_adalasso_grid
+                lambda_adalasso_grid=self.cfg.lambda_adalasso_grid,
+                user_defined_variables=self.cfg.user_defined_variables
             )
             
             # Initialize Adapter with interface and adapter configuration
@@ -410,7 +414,8 @@ class Orchestrator:
                         alpha_enet_grid=self.cfg.alpha_enet_grid,
                         lambda_enet_grid=self.cfg.lambda_enet_grid,
                         tau_adalasso_grid=self.cfg.tau_adalasso_grid,
-                        lambda_adalasso_grid=self.cfg.lambda_adalasso_grid
+                        lambda_adalasso_grid=self.cfg.lambda_adalasso_grid,
+                        user_defined_variables=self.cfg.user_defined_variables
                     )
                     
                     new_adapter = Adapter(

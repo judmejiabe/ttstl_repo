@@ -55,7 +55,8 @@ class Interface:
                  alpha_enet_grid: Optional[List[float]] = None,
                  lambda_enet_grid: Optional[List[float]] = None,
                  tau_adalasso_grid: Optional[List[float]] = None,
-                 lambda_adalasso_grid: Optional[List[float]] = None):
+                 lambda_adalasso_grid: Optional[List[float]] = None,
+                 user_defined_variables: Optional[List[str]] = None):
         """
         Initialize the Interface module.
         
@@ -67,6 +68,7 @@ class Interface:
             significance_threshold: Threshold for statistical significance tests
             min_significant_bars: Minimum number of adapter bars where a variable must be significant
             structural_break_threshold: Number of rejections to flag structural break
+            user_defined_variables: Optional list of variable names to use instead of adaptive LASSO selection
         """
         self.backbone = backbone_module
         
@@ -75,6 +77,9 @@ class Interface:
         self.lambda_enet_grid = lambda_enet_grid
         self.tau_adalasso_grid = tau_adalasso_grid
         self.lambda_adalasso_grid = lambda_adalasso_grid
+        
+        # User-defined variable selection bypass
+        self.user_defined_variables = user_defined_variables
 
         self.best_alpha_enet = None
         self.best_lambda_enet = None
@@ -996,6 +1001,65 @@ class Interface:
         self.logger.info("="*80)
         self.logger.info("="*80)
 
+        # Check if user-defined variables are provided (bypass adalasso)
+        if self.user_defined_variables is not None:
+            self.logger.info("User-defined variables provided, bypassing adalasso variable selection")
+            self.logger.info(f"Using {len(self.user_defined_variables)} user-defined variables:")
+            for i, var in enumerate(self.user_defined_variables, 1):
+                self.logger.info(f"  {i:2d}. {var}")
+            
+            # First, create and fit scaler to avoid look-ahead bias
+            self._create_and_fit_scaler(
+                event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
+                physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
+                quantile=quantile,
+                target_col_name=target_col_name,
+                n_lags=n_lags
+            )
+            
+            # Prepare data for consistency with normal flow
+            augmented_data = self._prepare_data(
+                event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
+                physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
+                quantile=quantile,
+                target_col_name=target_col_name,
+                n_lags=n_lags
+            )
+            
+            # Validate that user-defined variables exist in extended covariate list
+            missing_vars = [var for var in self.user_defined_variables if var not in self.extended_covariate_list]
+            if missing_vars:
+                self.logger.error(f"User-defined variables not found in extended covariate list: {missing_vars}")
+                raise ValueError(f"User-defined variables not found in extended covariate list: {missing_vars}")
+            
+            # Store user-defined variables as selected variables
+            self.selected_variables = self.user_defined_variables
+            
+            # Create mock results for compatibility
+            global_update_results = {
+                'selected_variables': self.user_defined_variables,
+                'n_selected': len(self.user_defined_variables),
+                'n_total_variables': len(self.extended_covariate_list),
+                'selection_method': 'user_defined',
+                'user_defined_variables': self.user_defined_variables,
+                'extended_covariate_list': self.extended_covariate_list
+            }
+            
+            # Save user-defined variables to JSON
+            if save_dir is not None:
+                selected_variables_path = Path(save_dir) / 'selected_variables.json'
+                with open(selected_variables_path, 'w') as f:
+                    json.dump({'selected_variables': self.user_defined_variables}, f, indent=2)
+                self.logger.info(f"Saved user-defined variables to {selected_variables_path}")
+            
+            self.logger.info("="*80)
+            self.logger.info("="*80)
+            self.logger.info("Interface module global update completed (user-defined variables)")
+            self.logger.info("="*80)
+            self.logger.info("="*80)
+            
+            return global_update_results
+
         # Step 1: Run hyperparameter tuning
         hyperparameter_results = self._update_hyperparameters(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
@@ -1238,7 +1302,7 @@ class Interface:
                            key=lambda x: x[1]['count'], reverse=True)
         
         self.logger.info("="*80)
-        self.logger.info(f"GLOBAL UPDATE VARIABLE SELECTION RESULTS")
+        self.logger.info(f"Global update variable selection results")
         self.logger.info("="*80)
         self.logger.info(f"Selected {len(selected_variables)} variables out of {len(self.extended_covariate_list)}")
         self.logger.info(f"Selection criteria: significant in ≥{min_bars_for_selection} bars ({selection_threshold:.1%})")
@@ -1357,8 +1421,16 @@ class Interface:
         self.logger.info("="*80)
         
         self.logger.info(f"Using globally optimal hyperparameters:")
-        self.logger.info(f"  Elastic Net: α={self.best_alpha_enet:.3f}, λ={self.best_lambda_enet:.6f}")
-        self.logger.info(f"  Adaptive Lasso: τ={self.best_tau_adalasso:.3f}, λ={self.best_lambda_adalasso:.6f}")
+        if self.best_alpha_enet is not None and self.best_lambda_enet is not None:
+            self.logger.info(f"  Elastic Net: α={self.best_alpha_enet:.3f}, λ={self.best_lambda_enet:.6f}")
+        else:
+            self.logger.info(f"  Elastic Net: Not used (user-defined variables)")
+        
+        if self.best_tau_adalasso is not None and self.best_lambda_adalasso is not None:
+            self.logger.info(f"  Adaptive Lasso: τ={self.best_tau_adalasso:.3f}, λ={self.best_lambda_adalasso:.6f}")
+        else:
+            self.logger.info(f"  Adaptive Lasso: Not used (user-defined variables)")
+        
         self.logger.info(f"  Global selected variables: {len(self.selected_variables)}")
         self.logger.info(f"  Using pre-fitted scaler from global_update to avoid look-ahead bias")
 
@@ -1371,6 +1443,35 @@ class Interface:
             n_lags=n_lags,
             scaler=self.data_scaler  # Use pre-fitted scaler from global_update
         )
+        
+        # Check if user-defined variables are being used (bypass adaptive LASSO processing)
+        if self.user_defined_variables is not None:
+            self.logger.info("User-defined variables detected, bypassing local adaptive LASSO processing")
+            self.logger.info(f"Using {len(self.user_defined_variables)} globally selected user-defined variables: {self.user_defined_variables}")
+            
+            # Create simplified local adaptation results for user-defined variables
+            local_adaptation_results = {
+                'selected_variables': self.user_defined_variables,
+                'n_selected': len(self.user_defined_variables),
+                'n_total_variables': len(self.extended_covariate_list),
+                'selection_method': 'user_defined',
+                'user_defined_variables': self.user_defined_variables,
+                'extended_covariate_list': self.extended_covariate_list,
+                'processed_bars': 0,  # No bars processed in bypass mode
+                'failed_bars': 0,
+                'structural_breaks': [],  # Use 'structural_breaks' key for orchestrator compatibility
+                'message': 'Local adaptation bypassed due to user-defined variable selection'
+            }
+            
+            # Save results
+            local_adaptation_path = Path(save_dir) / 'local_adaptation_results.json'
+            with open(local_adaptation_path, 'w') as f:
+                json.dump(local_adaptation_results, f, indent=2)
+            
+            self.logger.info(f"Local adaptation results saved to {local_adaptation_path}")
+            self.logger.info("Local adaptation completed (bypassed for user-defined variables)")
+            
+            return local_adaptation_results
         
         # Get unique adapter bars
         unique_adapter_bars = augmented_data['adapter_bar'].unique()

@@ -161,19 +161,20 @@ def main():
         correlation_threshold=0.95,
 
         # Interface knobs
+        user_defined_variables=['vpin', 'itv'],  # Test user-defined variables bypass with consistently available names
         alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
-        #alpha_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+        #alpha_enet_grid=[0.0],  # For testing purposes
         lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
-        #lambda_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+        #lambda_enet_grid=[0.0],  # For testing purposes
         tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
-        #tau_adalasso_grid=[0.25, 0.5, 1.0], # For testing purposes
+        #tau_adalasso_grid=[1.0], # For testing purposes
         lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
-        #lambda_adalasso_grid=[5, 5.5],  # For testing purposes
+        #lambda_adalasso_grid=[0.0],  # For testing purposes
         validation_proportion_interface=0.2,
         selection_threshold=0.2,
         tolerance_threshold=1e-6,
-        ols_significance_level=0.05,
-        wald_significance_level=0.05,
+        ols_significance_level=1.0,
+        wald_significance_level=1.0,
         n_lags=5,
 
         # Adapter knobs
@@ -186,59 +187,59 @@ def main():
         update_parameters={'alpha' : 3.0}
     )
 
-    cfg_alternative = OrchestratorConfig(
-        # General settings
-        ticker='SIM',
-        #bdelta=5_000_000.0,
-        bdelta=500_000.0,  # For testing purposes
-        adelta=100_000.0,
-        sdelta=100.0,
-        seed=19991810,
-        session_start=0.0,
-        #session_finish=10_000_000.0,
-        session_finish=1_000_000.0,  # For testing purposes
-        target_col_name='micro_return',
+    # cfg_alternative = OrchestratorConfig(
+    #     # General settings
+    #     ticker='SIM',
+    #     #bdelta=5_000_000.0,
+    #     bdelta=500_000.0,  # For testing purposes
+    #     adelta=100_000.0,
+    #     sdelta=100.0,
+    #     seed=19991810,
+    #     session_start=0.0,
+    #     #session_finish=10_000_000.0,
+    #     session_finish=1_000_000.0,  # For testing purposes
+    #     target_col_name='micro_return',
         
-        # Backbone knobs
-        parsimonious_mode=True,
-        neural_covariates_only=False,  # Use only neural covariates (test neural-only mode)
-        #epochs=5,
-        epochs=0,  # For testing purposes 
-        batch_size=32,
-        validation_proportion_backbone=0.1,
-        buffer_proportion=0.05,
-        quantile=0.005, # Windsorization quantile
-        adf_rejection_rate_threshold=0.8,
-        kpss_verification_threshold=0.2,
-        na_verification_threshold=0.1,
-        learning_rate=0.0001,
-        correlation_threshold=0.95,
+    #     # Backbone knobs
+    #     parsimonious_mode=True,
+    #     neural_covariates_only=False,  # Use only neural covariates (test neural-only mode)
+    #     #epochs=5,
+    #     epochs=0,  # For testing purposes 
+    #     batch_size=32,
+    #     validation_proportion_backbone=0.1,
+    #     buffer_proportion=0.05,
+    #     quantile=0.005, # Windsorization quantile
+    #     adf_rejection_rate_threshold=0.8,
+    #     kpss_verification_threshold=0.2,
+    #     na_verification_threshold=0.1,
+    #     learning_rate=0.0001,
+    #     correlation_threshold=0.95,
 
-        # Interface knobs
-        alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
-        #alpha_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
-        lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
-        #lambda_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
-        tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
-        #tau_adalasso_grid=[0.25, 0.5, 1.0], # For testing purposes
-        lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
-        #lambda_adalasso_grid=[5, 5.5],  # For testing purposes
-        validation_proportion_interface=0.2,
-        selection_threshold=0.95,
-        tolerance_threshold=1e-6,
-        ols_significance_level=0.05,
-        wald_significance_level=0.05,
-        n_lags=5,
+    #     # Interface knobs
+    #     alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
+    #     #alpha_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+    #     lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
+    #     #lambda_enet_grid=[0.0, 0.5, 1.0],  # For testing purposes
+    #     tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
+    #     #tau_adalasso_grid=[0.25, 0.5, 1.0], # For testing purposes
+    #     lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
+    #     #lambda_adalasso_grid=[5, 5.5],  # For testing purposes
+    #     validation_proportion_interface=0.2,
+    #     selection_threshold=0.95,
+    #     tolerance_threshold=1e-6,
+    #     ols_significance_level=0.05,
+    #     wald_significance_level=0.05,
+    #     n_lags=5,
 
-        # Adapter knobs
-        update_method='myopic',
-        arma_order=(0, 1),
-        garch_order=(1, 1),
-        dist='std',
-        model='sGARCH',
-        archm=False,
-        update_parameters={'alpha' : 3.0}
-    )
+    #     # Adapter knobs
+    #     update_method='myopic',
+    #     arma_order=(0, 1),
+    #     garch_order=(1, 1),
+    #     dist='std',
+    #     model='sGARCH',
+    #     archm=False,
+    #     update_parameters={'alpha' : 3.0}
+    # )
 
     
     runs_dir = Path('runs')
@@ -249,6 +250,7 @@ def main():
 
     log_orchestrator_config(cfg)
 
+    
     all_global_results = orchestrator.global_update(ed_df_0, ptd_df_0)
     all_local_results = orchestrator.local_adapt(ed_df_1, ptd_df_1)
 
