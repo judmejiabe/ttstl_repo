@@ -43,7 +43,8 @@ class Backbone():
                  delta_adapter : float = 0.0,
                  delta_sample : float = 0.0,
                  parsimonious_mode : bool = False,
-                 neural_covariates_only : bool = False) -> None:
+                 neural_covariates_only : bool = False,
+                 manual_covariates_only : bool = False) -> None:
         """Initialize the Backbone with a model and delta adapter.
         Args:
             model (nn.Module): The neural network model to be used.
@@ -51,15 +52,21 @@ class Backbone():
             delta_sample (float, optional): Sample time bar length in the same units of time as the data.
             parsimonious_mode (bool, optional): Whether to use parsimonious mode for neural covariate extraction.
             neural_covariates_only (bool, optional): Whether to use only neural covariates (no manual/stationary features).
+            manual_covariates_only (bool, optional): Whether to use only manual/stationary features (no neural covariates).
         """
         self.model = model
         self.device = next(self.model.parameters()).device
         self.delta_adapter = delta_adapter
         self.delta_sample = delta_sample
-        self.parsimonious_mode = parsimonious_mode
+        self.parsimonious_mode = parsimonious_mode if not manual_covariates_only else True
         self.neural_covariates_only = neural_covariates_only
+        self.manual_covariates_only = manual_covariates_only
         self.full_covariate_list = None
         self.dropped_pairs = dict()
+        
+        # Validate mutually exclusive modes
+        if self.neural_covariates_only and self.manual_covariates_only:
+            raise ValueError("neural_covariates_only and manual_covariates_only cannot both be True")
         
         # Correlation matrix attributes
         self.neural_covariates_correlation = None
@@ -569,8 +576,8 @@ class Backbone():
         """
         Compute and store correlation matrices for neural and manually extracted covariates.
         """
-        
-        self.logger.info('Computing correlation matrices for stationary variables and neural covariates')
+
+        self.logger.info(f'Computing correlation matrices for {len(neural_covariates_names)} neural covariates and {len(microstructural_covariates_names)} microstructural covariates.')
 
         # Prepare correlation data including extra covariates
         correlation_variables = [target_col_name] + neural_covariates_names + microstructural_covariates_names
@@ -854,6 +861,33 @@ class Backbone():
         if self.model is None:
             raise ValueError("No model available for evaluation. Run global_update first.")
         
+        # Skip evaluation if running in manual_covariates_only mode
+        if self.manual_covariates_only:
+            self.logger.info("=" * 80)
+            self.logger.info("SKIPPING NEURAL NETWORK EVALUATION (manual_covariates_only=True)")
+            self.logger.info("Returning test_loss = -1.0 to indicate no neural evaluation occurred")
+            self.logger.info("=" * 80)
+            
+            # Save test results indicating no evaluation occurred
+            if save_dir:
+                test_results = {
+                    'model_class': self.model.__class__.__name__,
+                    'parsimonious_mode': self.parsimonious_mode,
+                    'manual_covariates_only': True,
+                    'neural_network_evaluated': False,
+                    'test_loss': -1.0,
+                    'note': 'Neural network evaluation skipped in manual_covariates_only mode'
+                }
+                
+                save_path = Path(save_dir)
+                save_path.mkdir(parents=True, exist_ok=True)
+                test_path = save_path / "test_os.json"
+                with open(test_path, 'w') as f:
+                    json.dump(test_results, f, indent=2)
+                self.logger.info(f"Saved test results (no evaluation) to {test_path}")
+            
+            return -1.0  # Special value indicating no neural evaluation occurred
+        
         self.logger.info("Starting neural network evaluation in local adapt mode")
         
         # Create dataset using the CNN-LSTM preprocessor
@@ -1036,27 +1070,55 @@ class Backbone():
             )
         
         
-        # Train the model using existing batch_gradient_descent method
-        checkpoint_dir = None
-        if save_dir:
-            checkpoint_dir = str(Path(save_dir) / "architecture" / "checkpoints")
-        
-        best_validation_loss = self.batch_gradient_descent(
-            train_loader=train_loader,
-            criterion=criterion,
-            optimizer=optimizer,
-            epochs=epochs,
-            validation_loader=validation_loader,
-            save_checkpoints=True,
-            checkpoint_dir=checkpoint_dir
-        )
+        # Train the model using existing batch_gradient_descent method (skip if manual_covariates_only)
+        if self.manual_covariates_only:
+            self.logger.info("=" * 80)
+            self.logger.info("SKIPPING NEURAL NETWORK TRAINING (manual_covariates_only=True)")
+            self.logger.info("=" * 80)
+            best_validation_loss = 0.0  # No training occurred
+            
+            # Create architecture directory but don't save model artifacts
+            if save_dir:
+                architecture_dir = Path(save_dir) / "architecture"
+                architecture_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Save minimal metadata indicating no training occurred
+                metadata = {
+                    'model_class': self.model.__class__.__name__,
+                    'device': str(self.device),
+                    'delta_adapter': self.delta_adapter,
+                    'delta_sample': self.delta_sample,
+                    'parsimonious_mode': self.parsimonious_mode,
+                    'manual_covariates_only': self.manual_covariates_only,
+                    'neural_network_trained': False,
+                    'epochs_trained': 0
+                }
+                
+                metadata_path = architecture_dir / "model_metadata.json"
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                self.logger.info(f"Saved model metadata (no training) to {metadata_path}")
+        else:
+            checkpoint_dir = None
+            if save_dir:
+                checkpoint_dir = str(Path(save_dir) / "architecture" / "checkpoints")
+            
+            best_validation_loss = self.batch_gradient_descent(
+                train_loader=train_loader,
+                criterion=criterion,
+                optimizer=optimizer,
+                epochs=epochs,
+                validation_loader=validation_loader,
+                save_checkpoints=True,
+                checkpoint_dir=checkpoint_dir
+            )
 
-        architecture_dir = None
-        if save_dir:
-            architecture_dir = Path(save_dir) / "architecture"
-            self.save_training_history(save_dir=str(architecture_dir))
-            self.save_model_weights(save_dir=str(architecture_dir))
-            self.save_nn_weights(save_dir=str(architecture_dir))
+            architecture_dir = None
+            if save_dir:
+                architecture_dir = Path(save_dir) / "architecture"
+                self.save_training_history(save_dir=str(architecture_dir))
+                self.save_model_weights(save_dir=str(architecture_dir))
+                self.save_nn_weights(save_dir=str(architecture_dir))
 
         # Apply stationarity analysis to the physical time-driven data
         if physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
@@ -1083,8 +1145,15 @@ class Backbone():
             raise ValueError("No physical time-driven data provided for stationarity analysis")
             
 
-        # Extract neural network covariates from the trained model
-        if physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
+        # Extract neural network covariates from the trained model (skip if manual_covariates_only)
+        if self.manual_covariates_only:
+            self.logger.info("=" * 80)
+            self.logger.info("SKIPPING NEURAL COVARIATE EXTRACTION (manual_covariates_only=True)")
+            self.logger.info("=" * 80)
+            # Use the original physical data without neural covariates
+            augmented_physical_data = physical_time_driven_backbone_time_bar_data.copy()
+            neural_covariate_columns = []  # No neural covariates
+        elif physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
             
             # Extract features from event-driven data using the trained model
             neural_covariates = self.extract_neural_covariates(
@@ -1127,14 +1196,15 @@ class Backbone():
             raise ValueError("No physical time-driven data provided for neural covariate extraction")
 
 
-        self.logger.info('Computing correlation matrices for stationary variables and neural covariates')
         if self.full_covariate_list and len(self.full_covariate_list) > 1:
             # Get neural and stationary variables
-            neural_covariate_columns = [col for col in neural_covariates.columns if col != 'timestamp']
             
             if self.neural_covariates_only:
                 # In neural-only mode, stationary_covariates should be empty
                 stationary_covariates = []
+            elif self.manual_covariates_only:
+                # In manual-only mode, neural_covariate_columns should be empty
+                stationary_covariates = [col for col in stationary_vars if col not in {'timestamp', target_col_name}]
             else:
                 # In standard mode, get stationary variables 
                 stationary_covariates = [col for col in stationary_vars if col not in {'timestamp', target_col_name}]
@@ -1160,13 +1230,15 @@ class Backbone():
             )
             
         elif len(self.full_covariate_list) == 1:
-            # Handle case with exactly one covariate (acceptable in neural-only mode)
+            # Handle case with exactly one covariate - continue execution but warn
             if self.neural_covariates_only:
                 self.logger.info(f"Neural covariates only mode: Using single neural covariate '{self.full_covariate_list[0]}'")
+            elif self.manual_covariates_only:
+                self.logger.info(f"Manual covariates only mode: Using single manual covariate '{self.full_covariate_list[0]}'")
             else:
                 self.logger.warning(f"Only one covariate available: '{self.full_covariate_list[0]}'. Consider adjusting selection criteria.")
         else:
-            raise ValueError("No covariates available for correlation analysis.")
+            self.logger.warning("No covariates available for correlation analysis. Continuing with empty covariate set.")
 
         # Final cleanup
         if self.full_covariate_list:

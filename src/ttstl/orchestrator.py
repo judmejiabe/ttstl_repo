@@ -57,6 +57,7 @@ class OrchestratorConfig:
     architecture: str = 'cnn_lstm'
     parsimonious_mode: bool = False
     neural_covariates_only: bool = False  # Use only neural covariates (no manual/stationary features)
+    manual_covariates_only: bool = False  # Use only manual/stationary covariates (no neural features)
     epochs: int = 12 
     batch_size: int = 32
     validation_proportion_backbone: float = 0.1
@@ -325,7 +326,8 @@ class Orchestrator:
                 delta_adapter=self.cfg.adelta,
                 delta_sample=self.cfg.sdelta,
                 parsimonious_mode=self.cfg.parsimonious_mode,
-                neural_covariates_only=self.cfg.neural_covariates_only
+                neural_covariates_only=self.cfg.neural_covariates_only,
+                manual_covariates_only=self.cfg.manual_covariates_only
             )
             
             # Initialize Interface with backbone module and hyperparameter grids
@@ -358,7 +360,7 @@ class Orchestrator:
         
         self.logger.info(f"Successfully initialized {len(self.stacks)} backbone-interface-adapter stacks")
     
-    def import_backbone_modules_from_orchestrator(self, source_orchestrator: 'Orchestrator') -> None:
+    def import_backbone_models_from_orchestrator(self, source_orchestrator: 'Orchestrator') -> None:
         """
         Import backbone modules from another orchestrator instance.
         
@@ -406,43 +408,14 @@ class Orchestrator:
             if stack_key in source_orchestrator.stacks:
                 try:
                     # Get source backbone
-                    source_backbone = source_orchestrator.stacks[stack_key].interface.backbone
-                    
-                    # Create new interface and adapter with imported backbone
-                    new_interface = Interface(
-                        backbone_module=source_backbone,  # Use imported backbone
-                        alpha_enet_grid=self.cfg.alpha_enet_grid,
-                        lambda_enet_grid=self.cfg.lambda_enet_grid,
-                        tau_adalasso_grid=self.cfg.tau_adalasso_grid,
-                        lambda_adalasso_grid=self.cfg.lambda_adalasso_grid,
-                        user_defined_variables=self.cfg.user_defined_variables
-                    )
-                    
-                    new_adapter = Adapter(
-                        interface=new_interface,
-                        update_method=self.cfg.update_method,
-                        arma_order=self.cfg.arma_order,
-                        garch_order=self.cfg.garch_order,
-                        dist=self.cfg.dist,
-                        model=self.cfg.model,
-                        archm=self.cfg.archm,
-                        parameters={}
-                    )
-                    
-                    # Replace the stack with imported backbone
-                    self.stacks[stack_key] = new_adapter
-                    
-                    # Copy scalers and target scales if available
-                    if hasattr(source_orchestrator, 'scalers') and stack_key in source_orchestrator.scalers:
-                        if source_orchestrator.scalers[stack_key] is not None:
-                            self.scalers[stack_key] = source_orchestrator.scalers[stack_key]
-                            self.logger.debug(f"Imported scaler for {stack_key}")
-                    
-                    if hasattr(source_orchestrator, 'target_scales') and stack_key in source_orchestrator.target_scales:
-                        if source_orchestrator.target_scales[stack_key] is not None:
-                            self.target_scales[stack_key] = source_orchestrator.target_scales[stack_key]
-                            self.logger.debug(f"Imported target scales for {stack_key}")
-                    
+                    source_backbone_model = source_orchestrator.stacks[stack_key].interface.backbone.model
+                    source_backbone_device = source_orchestrator.stacks[stack_key].interface.backbone.device
+
+                    self.stacks[stack_key].interface.backbone.model = copy.deepcopy(source_backbone_model)
+                    self.stacks[stack_key].interface.backbone.device = source_backbone_device
+
+                    self.cfg.epochs = 0  # Disable further training
+
                     imported_count += 1
                     self.logger.debug(f"Successfully imported backbone for {stack_key}")
                     
@@ -454,13 +427,14 @@ class Orchestrator:
                 self.logger.warning(f"Stack {stack_key} not found in source orchestrator")
         
         # Set the skip backbone training flag
-        self.skip_backbone_training = True
+        # self.skip_backbone_training = True
         
         # Log import summary
         self.logger.info(f"Backbone import completed:")
         self.logger.info(f"Successfully imported: {imported_count} backbones")
         self.logger.info(f"Failed imports: {failed_count}")
-        self.logger.info(f"Skip backbone training flag set to: {self.skip_backbone_training}")
+        self.logger.info(f'Epochs set to zero to avoid further neural network training')
+        # self.logger.info(f"Skip backbone training flag set to: {self.skip_backbone_training}")
         self.logger.info("=" * 80)
         
         if imported_count == 0:
