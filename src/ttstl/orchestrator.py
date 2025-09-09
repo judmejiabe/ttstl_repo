@@ -337,7 +337,8 @@ class Orchestrator:
                 lambda_enet_grid=self.cfg.lambda_enet_grid,
                 tau_adalasso_grid=self.cfg.tau_adalasso_grid,
                 lambda_adalasso_grid=self.cfg.lambda_adalasso_grid,
-                user_defined_variables=self.cfg.user_defined_variables
+                user_defined_variables=self.cfg.user_defined_variables,
+                session_start=self.cfg.session_start
             )
             
             # Initialize Adapter with interface and adapter configuration
@@ -807,8 +808,8 @@ class Orchestrator:
             event_df = event_df.copy()
 
             # Create adapter bar assignments
-            phys_df['adapter_bar'] = (np.floor((phys_df['timestamp'] + 1e-6) / self.cfg.adelta).astype(int))
-            event_df['adapter_bar'] = (np.floor((event_df['timestamp'] + 1e-6) / self.cfg.adelta).astype(int))
+            phys_df['adapter_bar'] = (np.floor((phys_df['timestamp'] - self.cfg.session_start + 1e-6) / self.cfg.adelta).astype(int))
+            event_df['adapter_bar'] = (np.floor((event_df['timestamp'] - self.cfg.session_start + 1e-6) / self.cfg.adelta).astype(int))
             
             # Get unique adapter bars
             adapter_bars = sorted(phys_df['adapter_bar'].unique())
@@ -832,6 +833,7 @@ class Orchestrator:
             all_parameters = {}
             all_adapter_bar_specific_parameters = {}
             all_adapter_bar_specific_p_values = {}
+            all_garch_diagnostics = {}  # Track GARCH model validity tests
             processing_stats = {}
             performance_metrics = []
             
@@ -954,6 +956,32 @@ class Orchestrator:
                                                                                 copy.deepcopy(adapter_result['coefficients'])))
                     all_adapter_bar_specific_p_values[adapter_bar] = dict(zip(copy.deepcopy(adapter_result['coefficient_names']), 
                                                                                 copy.deepcopy(adapter_result['p_values'])))
+                    
+                    # Store GARCH diagnostic test results
+                    garch_diagnostics = {}
+                    if 'gof_pval' in adapter_result:
+                        gof_pvals = adapter_result['gof_pval']
+                        if isinstance(gof_pvals, (list, np.ndarray)) and len(gof_pvals) >= 4:
+                            garch_diagnostics['gof20'] = gof_pvals[0]
+                            garch_diagnostics['gof30'] = gof_pvals[1] 
+                            garch_diagnostics['gof40'] = gof_pvals[2]
+                            garch_diagnostics['gof50'] = gof_pvals[3]
+                    
+                    if 'lb_pval' in adapter_result:
+                        lb_pvals = adapter_result['lb_pval']
+                        if isinstance(lb_pvals, (list, np.ndarray)) and len(lb_pvals) >= 3:
+                            garch_diagnostics['lb1'] = lb_pvals[0]
+                            garch_diagnostics['lb5'] = lb_pvals[1]
+                            garch_diagnostics['lb9'] = lb_pvals[2]
+                    
+                    if 'lb_sq_pval' in adapter_result:
+                        lb_sq_pvals = adapter_result['lb_sq_pval']
+                        if isinstance(lb_sq_pvals, (list, np.ndarray)) and len(lb_sq_pvals) >= 3:
+                            garch_diagnostics['lbsq1'] = lb_sq_pvals[0]
+                            garch_diagnostics['lbsq5'] = lb_sq_pvals[1]
+                            garch_diagnostics['lbsq9'] = lb_sq_pvals[2]
+                    
+                    all_garch_diagnostics[adapter_bar] = garch_diagnostics
 
 
                     processing_stats[adapter_bar] = {
@@ -1024,6 +1052,11 @@ class Orchestrator:
             }
             
             
+            # Calculate actual artifacts created count
+            artifacts_created = 4  # param_series.png, armax_garch_corridor.png, param_series.parquet, all_parameters.parquet
+            if all_garch_diagnostics and not pd.DataFrame.from_dict(all_garch_diagnostics, orient='index').empty:
+                artifacts_created += 1  # model_validity_corridor.png
+            
             # Compile final results
             adapter_global_results = {
                 'status': 'completed',
@@ -1033,7 +1066,7 @@ class Orchestrator:
                 'success_rate': performance_data['success_rate'],
                 'parameters_by_bar': all_parameters,
                 'processing_stats': processing_stats,
-                'artifacts_created': 4
+                'artifacts_created': artifacts_created
             }
             
             self.logger.info(f"Adapter global update completed: "
@@ -1066,6 +1099,18 @@ class Orchestrator:
                 title='ARMAX-GARCH Corridor',
                 save_path=plot_save_path
             )
+
+            # Generate model validity corridor plot for GARCH diagnostics
+            if all_garch_diagnostics:
+                garch_diagnostics_df = pd.DataFrame.from_dict(all_garch_diagnostics, orient='index')
+                garch_diagnostics_df.index.name = 'adapter_bar'
+                
+                if not garch_diagnostics_df.empty:
+                    plot_save_path = artifacts_dir / 'model_validity_corridor.png'
+                    self._plot_model_validity_corridor(
+                        diagnostics_df=garch_diagnostics_df,
+                        save_path=plot_save_path
+                    )
 
             # Save parameter series to parquet
             params_path = artifacts_dir / "param_series.parquet"
@@ -1541,6 +1586,83 @@ class Orchestrator:
             self.logger.info(f"Successfully saved adapter bar-specific corridor plot to {save_path}")
         except Exception as e:
             self.logger.error(f"Failed to save plot to {save_path}: {e}")
+        finally:
+            plt.close(fig)
+
+    def _plot_model_validity_corridor(self, 
+                                     diagnostics_df: pd.DataFrame,
+                                     save_path: Path) -> None:
+        """
+        Create a corridor plot for GARCH model validity diagnostics.
+        
+        Args:
+            diagnostics_df: DataFrame with adapter_bar as index and diagnostic test p-values as columns
+            save_path: Path to save the plot
+        """
+        if diagnostics_df.empty:
+            self.logger.warning("No GARCH diagnostics data available for corridor plot")
+            return
+            
+        # Ensure the save directory exists
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+            
+        # Define test labels in order
+        test_labels = ['gof20', 'gof30', 'gof40', 'gof50', 'lb1', 'lb5', 'lb9', 'lbsq1', 'lbsq5', 'lbsq9']
+        
+        # Filter to only tests that exist in the data
+        available_tests = [test for test in test_labels if test in diagnostics_df.columns]
+        
+        if not available_tests:
+            self.logger.warning("No recognized diagnostic tests found in data")
+            return
+            
+        # Subset and reorder data
+        plot_data = diagnostics_df[available_tests]
+        
+        # Create significance annotations (reject H0 if p < 0.05)
+        significance_data = plot_data < 0.05
+        
+        # Count rejections for each test across all adapter bars
+        rejection_counts = significance_data.sum(axis=0)
+        
+        # Create heatmap with same style as ARMAX-GARCH corridor plot
+        fig, ax = plt.subplots(figsize=(12, 8))
+        sns.heatmap(plot_data.T, cmap='RdYlGn', annot=False,
+                    vmin=0, vmax=1, ax=ax)
+        
+        # Add asterisk annotations for significant results (p < 0.05)
+        for i, test_name in enumerate(available_tests):
+            for j, bar_name in enumerate(plot_data.index):
+                if significance_data.loc[bar_name, test_name]:
+                    ax.text(j + 0.5, i + 0.5, '*',
+                            ha='center', va='center', color='white', fontsize=12)
+        
+        # Set ticks and labels (matching ARMAX-GARCH style)
+        ax.set_yticks(np.arange(len(available_tests)) + 0.5)
+        ax.set_yticklabels(available_tests, rotation=0, fontsize=8)
+
+        ax.set_xticks(np.arange(len(plot_data.index)) + 0.5)
+        ax.set_xticklabels(plot_data.index, rotation=90, fontsize=8)
+        
+        # Add rejection count annotations on the right margin (matching ARMAX-GARCH style)
+        total_bars = len(plot_data.index)
+        trans = transforms.blended_transform_factory(ax.transAxes, ax.transData)
+        for idx, test_name in enumerate(available_tests):
+            text_str = f"(*) {rejection_counts.get(test_name, 0)}/{total_bars}"
+            ax.text(1.005, idx + 0.5, text_str,
+                    ha='left', va='center', fontsize=6, color='black',
+                    transform=trans)
+        
+        plt.title('Adapter Model Validity Diagnostics')
+        plt.xlabel('Adapter Bar')
+        plt.ylabel('Diagnostic Test')
+        plt.tight_layout(rect=[0, 0, 0.9, 1])  # Adjust layout to make space for annotations
+        
+        try:
+            plt.savefig(save_path, dpi=300)
+            self.logger.info(f"Successfully saved model validity corridor plot to {save_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to save model validity plot to {save_path}: {e}")
         finally:
             plt.close(fig)
 

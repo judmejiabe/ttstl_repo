@@ -317,7 +317,7 @@ def main():
     ed_df_1, ptd_df_1 = load_synthetic_data(1)
 
     # Create runs directory
-    runs_dir = Path('runs')
+    runs_dir = Path('runs_synthetic_study')
     runs_dir.mkdir(exist_ok=True)
 
     # Get base configuration and experiment configurations

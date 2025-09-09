@@ -323,9 +323,9 @@ class Adapter:
         result_dict['se_coefficients'] = np.array(r_result.rx2('se_coef'))
         result_dict['p_values'] = np.array(r_result.rx2('pvals'))
         result_dict['coefficient_names'] = list(r_result.rx2('coef_names'))
-        result_dict['goodness_of_fit'] = np.array(r_result.rx2('gof'))
-        result_dict['ljung_box_tests'] = np.array(r_result.rx2('lb'))
-        result_dict['ljung_box_squared_tests'] = np.array(r_result.rx2('lb_sq'))
+        result_dict['gof_pval'] = np.array(r_result.rx2('gof'))
+        result_dict['lb_pval'] = np.array(r_result.rx2('lb'))
+        result_dict['lb_sq_pval'] = np.array(r_result.rx2('lb_sq'))
         result_dict['standardized_residuals'] = np.array(r_result.rx2('stdresid'))
         result_dict['saddle_point_indicator'] = int(r_result.rx2('saddle')[0])
         result_dict['spec'] = r_result.rx2('spec')  # Store GARCH specification

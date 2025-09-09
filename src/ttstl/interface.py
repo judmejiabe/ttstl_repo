@@ -56,7 +56,8 @@ class Interface:
                  lambda_enet_grid: Optional[List[float]] = None,
                  tau_adalasso_grid: Optional[List[float]] = None,
                  lambda_adalasso_grid: Optional[List[float]] = None,
-                 user_defined_variables: Optional[List[str]] = None):
+                 user_defined_variables: Optional[List[str]] = None,
+                 session_start: float = 0.0):
         """
         Initialize the Interface module.
         
@@ -69,6 +70,7 @@ class Interface:
             min_significant_bars: Minimum number of adapter bars where a variable must be significant
             structural_break_threshold: Number of rejections to flag structural break
             user_defined_variables: Optional list of variable names to use instead of adaptive LASSO selection
+            session_start: Session start timestamp for adapter bar normalization
         """
         self.backbone = backbone_module
         
@@ -80,6 +82,9 @@ class Interface:
         
         # User-defined variable selection bypass
         self.user_defined_variables = user_defined_variables
+        
+        # Session configuration
+        self.session_start = session_start
 
         self.best_alpha_enet = None
         self.best_lambda_enet = None
@@ -197,7 +202,7 @@ class Interface:
         # Assign adapter time bars using delta_adapter from backbone
         delta_adapter = self.backbone.delta_adapter
         augmented_physical_data['adapter_bar'] = (
-            np.floor((augmented_physical_data['timestamp'] + 1e-6) / delta_adapter).astype(int)
+            np.floor((augmented_physical_data['timestamp'] - self.session_start + 1e-6) / delta_adapter).astype(int)
         )
         
         # Create lagged values of target variable
