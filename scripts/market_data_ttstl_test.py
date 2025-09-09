@@ -269,27 +269,27 @@ def main():
         # General settings
         ticker='INTC',
         bdelta=7_200 * 1_000_000_000.0,  # Two hours
-        #bdelta=1_500 * 1_000_000_000.0,  # 25 minutes - For testing purposes
-        adelta=300 * 1_000_000_000.0,    # Five minutes  
-        sdelta=0.5 * 1_000_000_000.0,        # half a second
+        #bdelta=3_000 * 1_000_000_000.0,  # 50 minutes - For testing purposes
+        adelta=600 * 1_000_000_000.0,    # Ten minutes
+        sdelta=5 * 1_000_000_000.0,        # Five seconds
         seed=19991810,
         session_start=35_100 * 1_000_000_000.0,  # 9:45 AM in nanoseconds
         session_finish=56_700 * 1_000_000_000.0,  # 15:45 PM in nanoseconds
-        #session_finish=36_600 * 1_000_000_000.0,  # 10:10 AM in nanoseconds - For testing purposes
+        #session_finish=38_100 * 1_000_000_000.0,  # 10:35 AM in nanoseconds - For testing purposes
         target_col_name='micro_return',
         
         # Backbone knobs - full mode
         parsimonious_mode=False,  # Full mode (not parsimonious)
         neural_covariates_only=False,
         manual_covariates_only=False,
-        epochs=10,           # For testing purposes
+        epochs=0,           # For testing purposes
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
         quantile=0.005,      # Windsorization quantile
-        adf_rejection_rate_threshold=0.8,
-        kpss_verification_threshold=0.2,
-        na_verification_threshold=0.1,
+        adf_rejection_rate_threshold=0.6,
+        kpss_verification_threshold=0.4,
+        na_verification_threshold=0.2,
         learning_rate=0.0001,
         correlation_threshold=0.95,
 
@@ -299,16 +299,16 @@ def main():
         tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
         lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
         validation_proportion_interface=0.2,
-        selection_threshold=0.2,
+        selection_threshold=0.15,
         tolerance_threshold=1e-6,
-        ols_significance_level=1.0,
-        wald_significance_level=1.0,
+        ols_significance_level=0.05,
+        wald_significance_level=0.05,
         n_lags=5,
 
         # Adapter knobs - power law update rule
         update_method='power_law',
         arma_order=(1, 1),
-        garch_order=(1, 1),
+        garch_order=(0, 1),
         dist='sstd',
         model='sGARCH',
         archm=False,
@@ -333,12 +333,12 @@ def main():
                               runs_dir, "June_28_Local_Update")
 
     logger.info("Starting global update phase with June 27, 2024 data")
-    all_global_results = orchestrator.global_update(global_ed_df, global_ptd_df)
+    orchestrator.global_update(global_ed_df, global_ptd_df)
     
     logger.info("Global update completed successfully")
 
     logger.info("Starting local adaptation phase with June 28, 2024 data")
-    all_local_results = orchestrator.local_adapt(local_ed_df, local_ptd_df)
+    orchestrator.local_adapt(local_ed_df, local_ptd_df)
     
     logger.info("Local adaptation completed successfully")
 

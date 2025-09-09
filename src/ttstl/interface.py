@@ -1197,6 +1197,8 @@ class Interface:
                 
                 if len(significant_var_indices) == 0:
                     self.logger.info(f"No variables above tolerance threshold for adapter bar {adapter_bar}")
+                    # Store an all-False mask if no significant variables (consistent with local_adapt)
+                    ols_significance_dict[adapter_bar] = np.zeros(len(self.extended_covariate_list), dtype=bool)
                     processed_bars += 1
                     continue
 
@@ -1673,6 +1675,8 @@ class Interface:
         
         # Create significance DataFrame for adaptive lasso corridor plot
         ols_sig_df = pd.DataFrame.from_dict(ols_significance_dict, orient='index', columns=self.extended_covariate_list)
+        # self.logger.info("Debugging output of ols_sig_df:")
+        # self.logger.info(ols_sig_df)
         
         # Create Adaptive Lasso corridor plot
         self._corridor_plot_adalasso(

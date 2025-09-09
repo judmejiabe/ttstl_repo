@@ -113,19 +113,19 @@ def get_base_config():
     return OrchestratorConfig(
         # General settings
         ticker='SIM',
-        bdelta=5_000_000.0,  # For testing purposes
+        bdelta=5_000_000.0,  
         adelta=100_000.0,
         sdelta=100.0,
         seed=19991810,
         session_start=0.0,
-        session_finish=10_000_000.0,  # For testing purposes
+        session_finish=10_000_000.0,  
         target_col_name='micro_return',
         
         # Backbone knobs (will be modified per experiment)
         parsimonious_mode=True,  # Default, will be overridden
         neural_covariates_only=False,  # Default, will be overridden
         manual_covariates_only=False,  # Default, will be overridden
-        epochs=1,  # Default, will be overridden
+        epochs=10,  # Default, will be overridden
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
@@ -143,10 +143,10 @@ def get_base_config():
         tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
         lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
         validation_proportion_interface=0.2,
-        selection_threshold=0.2,
+        selection_threshold=0.17, # alpha = 0.05 and gamma = 0.00005
         tolerance_threshold=1e-6,
-        ols_significance_level=1.0,
-        wald_significance_level=1.0,
+        ols_significance_level=0.05,
+        wald_significance_level=0.05,
         n_lags=5,
 
         # Adapter knobs (will be modified per experiment)

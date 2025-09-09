@@ -378,8 +378,41 @@ class Adapter:
 
         
         if scaler is not None:
-            self.logger.info(f"Scaling covariates")
-            augmented_physical_data[covariate_names] = scaler.transform(augmented_physical_data[covariate_names])
+            self.logger.info(f"Scaling {len(covariate_names)} covariates")
+            
+            # Smart column reordering and validation for scaler compatibility
+            if hasattr(scaler, 'feature_names_in_'):
+                fitted_columns = scaler.feature_names_in_.tolist()
+                
+                # Check for missing columns (critical error)
+                missing_cols = set(fitted_columns) - set(covariate_names)
+                if missing_cols:
+                    self.logger.error(f"Cannot scale: missing required columns: {missing_cols}")
+                    self.logger.error(f"Available columns: {covariate_names}")
+                    self.logger.error(f"Required columns: {fitted_columns}")
+                    raise ValueError(f"Missing required columns for scaling: {missing_cols}")
+                
+                # Check for extra columns (will be ignored)
+                extra_cols = set(covariate_names) - set(fitted_columns)
+                if extra_cols:
+                    self.logger.warning(f"Ignoring extra columns not in fitted scaler: {extra_cols}")
+                
+                # Automatically reorder columns to match scaler's fitted order
+                original_order = covariate_names.copy()
+                reordered_columns = fitted_columns  # Use exact fitted order
+                
+                self.logger.info(f"Automatically reordered {len(reordered_columns)} columns to match scaler:")
+                self.logger.info(f"  Original order: {original_order}")
+                self.logger.info(f"  Reordered to:   {reordered_columns}")
+                
+                # Apply scaling with properly ordered columns
+                augmented_physical_data[reordered_columns] = scaler.transform(augmented_physical_data[reordered_columns])
+                
+            else:
+                # Fallback for older scikit-learn versions without feature_names_in_
+                self.logger.warning("Scaler does not have feature_names_in_ attribute.")
+                self.logger.warning("Using original column order - this may cause scaling errors!")
+                augmented_physical_data[covariate_names] = scaler.transform(augmented_physical_data[covariate_names])
 
         self.logger.info(f"Merged neural covariates")
 

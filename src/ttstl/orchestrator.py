@@ -669,9 +669,10 @@ class Orchestrator:
             quantile=self.cfg.quantile
         )
         
-        # Fit scaler on all covariates except timestamp and target
+        # Fit scaler on all covariates except timestamp, target, and time bar columns
+        # This must match the filtering logic in adapter.augment_data()
         covariate_columns = [col for col in augmented_df.columns 
-                           if col not in ['timestamp', self.cfg.target_col_name]]
+                           if col not in ['timestamp', self.cfg.target_col_name, 'adapter_bar', 'backbone_bar']]
         scaler.fit(augmented_df[covariate_columns])
         self.scalers[f"backbone_{self._bb_idx}"] = scaler
 
