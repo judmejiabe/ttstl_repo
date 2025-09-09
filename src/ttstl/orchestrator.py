@@ -723,7 +723,8 @@ class Orchestrator:
                 kpss_drop=True,
                 correlation_threshold=self.cfg.correlation_threshold,
                 target_col_name=self.cfg.target_col_name,
-                save_dir=str(bb_dir / "backbone")  # Enable checkpoints and nn_weights saving
+                save_dir=str(bb_dir / "backbone"),  # Enable checkpoints and nn_weights saving
+                session_start=self.cfg.session_start
             )
             
             return {

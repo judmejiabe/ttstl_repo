@@ -225,7 +225,7 @@ class Interface:
         augmented_physical_data = augmented_physical_data[relevant_columns].copy()
         
         self.logger.info(f"Prepared unscaled data shape: {augmented_physical_data.shape}")
-        self.logger.info(f"Columns include the target variable {target_col_name}, {n_lags} lags of the target variable, {len(self.backbone.full_covariate_list)} neural covariates, a 'timestamp', and 'adapter_bar' columns")
+        self.logger.info(f"Columns include the target variable {target_col_name}, {n_lags} lags of the target variable, {len(self.backbone.full_covariate_list)} covariates, a 'timestamp', and 'adapter_bar' columns")
 
         return augmented_physical_data
 

@@ -231,7 +231,8 @@ class Backbone():
             return {'ADF': 0, 'PP': 0, 'KPSS': 0, 'NA': 1}
 
     def _run_multiple_stationarity_tests(self,
-                           data : pd.DataFrame) -> pd.DataFrame:
+                           data : pd.DataFrame,
+                           session_start: float = 0.0) -> pd.DataFrame:
 
         """Perform multiple stationarity tests on the provided data. 
         The testing frequency is determined by the delta_adapter attribute.
@@ -248,12 +249,12 @@ class Backbone():
 
         try:
             data['adapter_bar'] = (
-            np.floor((data['timestamp'] + 1e-6) / self.delta_adapter)
+            np.floor((data['timestamp'] - session_start + 1e-6) / self.delta_adapter)
             .astype(int)
             )
         except KeyError:
             data['adapter_bar'] = (
-            np.floor((data.index.to_series() + 1e-6) / self.delta_adapter)
+            np.floor((data.index.to_series() - session_start + 1e-6) / self.delta_adapter)
             .astype(int)
             )
 
@@ -289,7 +290,8 @@ class Backbone():
                                      na_verification_threshold : float = 0.1,
                                      kpss_drop : bool = True,
                                      target_col_name : str = 'micro_return',
-                                     save_dir: Optional[str] = None) -> pd.DataFrame:
+                                     save_dir: Optional[str] = None,
+                                     session_start: float = 0.0) -> pd.DataFrame:
         """Select stationary variables from the DataFrame.
         Args:
             data (pd.DataFrame): DataFrame containing the time series data.
@@ -304,7 +306,7 @@ class Backbone():
         """
         self.logger.info(f'Running stationarity tests with kpss_drop:{kpss_drop}')
 
-        rejections_df = self._run_multiple_stationarity_tests(data)
+        rejections_df = self._run_multiple_stationarity_tests(data, session_start=session_start)
 
         grouped = rejections_df.groupby('variable')[['ADF', 'KPSS', 'NA']]\
             .mean()
@@ -937,7 +939,8 @@ class Backbone():
                       kpss_drop: bool = True,
                       correlation_threshold: float = 0.95,
                       target_col_name: str = 'micro_return',
-                      save_dir: str = None) -> float:
+                      save_dir: str = None,
+                      session_start: float = 0.0) -> float:
         """Perform global update of the model with time-based train/validation split.
         
         Creates a 90/10% (configurable) partition of the backbone interval event driven data.
@@ -1137,7 +1140,8 @@ class Backbone():
                 na_verification_threshold=na_verification_threshold,
                 kpss_drop=kpss_drop,
                 target_col_name=target_col_name,
-                save_dir=stationarity_save_dir
+                save_dir=stationarity_save_dir,
+                session_start=session_start
             )
         
         else:
