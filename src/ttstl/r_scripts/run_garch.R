@@ -69,17 +69,29 @@ run_garch <-
     lb_sq_1 <- Weighted.Box.test(stdresid, lag = 1, type = "Ljung-Box", 
                                  sqrd.res = TRUE)
 
-    lb_2 <- Weighted.Box.test(stdresid, lag = 3 * (p + q) - 1, 
-                              fitdf = p + q, type = "Ljung-Box")
-    lb_sq_2 <- Weighted.Box.test(stdresid, lag = 3 * (m + s) - 1, 
-                                 fitdf = m + s, type = "Ljung-Box", 
-                                 sqrd.res = TRUE)
+    # Handle the case when p + q = 0 (no ARMA terms)
+    if (p + q == 0) {
+        lb_2 <- list(p.value = 1.0)
+        lb_3 <- list(p.value = 1.0)
+    } else {
+        lb_2 <- Weighted.Box.test(stdresid, lag = 3 * (p + q) - 1, 
+                                  fitdf = p + q, type = "Ljung-Box")
+        lb_3 <- Weighted.Box.test(stdresid, lag = 5 * (p + q) - 1, 
+                                  fitdf = p + q, type = "Ljung-Box")
+    }
     
-    lb_3 <- Weighted.Box.test(stdresid, lag = 5 * (p + q) - 1, 
-                              fitdf = p + q, type = "Ljung-Box")
-    lb_sq_3 <- Weighted.Box.test(stdresid, lag = 5 * (m + s) - 1, 
-                                 fitdf = m + s, type = "Ljung-Box", 
-                                 sqrd.res = TRUE)
+    # Handle the case when m + s = 0 (no GARCH terms) - though this is unlikely
+    if (m + s == 0) {
+        lb_sq_2 <- list(p.value = 1.0)
+        lb_sq_3 <- list(p.value = 1.0)
+    } else {
+        lb_sq_2 <- Weighted.Box.test(stdresid, lag = 3 * (m + s) - 1, 
+                                     fitdf = m + s, type = "Ljung-Box", 
+                                     sqrd.res = TRUE)
+        lb_sq_3 <- Weighted.Box.test(stdresid, lag = 5 * (m + s) - 1, 
+                                     fitdf = m + s, type = "Ljung-Box", 
+                                     sqrd.res = TRUE)
+    }
 
     return(list(fit = fit, 
                 coef = fit@fit$coef, 
