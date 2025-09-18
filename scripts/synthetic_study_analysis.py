@@ -414,17 +414,18 @@ def create_adapter_bar_rankings(runs_dir: Path = Path('runs_synthetic_study')) -
             if bar_data.empty:
                 continue
             
-            # Sort by RelMAE (ascending - lower is better)
+            # Sort by RelMAE (ascending - lower is better) and calculate ranks with average tie handling
             bar_data = bar_data.sort_values('relmae', ascending=True)
+            bar_data['rank'] = bar_data['relmae'].rank(method='average', ascending=True)
             
             # Add ranking information
-            for rank, (_, row) in enumerate(bar_data.iterrows(), 1):
+            for _, row in bar_data.iterrows():
                 update_key, cov_key = extract_experiment_info(row['experiment_id'])
                 exp_description = get_experiment_description(update_key, cov_key)
                 
                 ranking_entry = {
                     'adapter_bar': adapter_bar,
-                    'rank': rank,
+                    'rank': row['rank'],
                     'experiment_id': row['experiment_id'],
                     'update_method': update_key,
                     'covariate_config': cov_key,
@@ -545,7 +546,7 @@ def analyze_ranking_consistency(ranking_tables: Dict[str, pd.DataFrame]) -> pd.D
     
     # Add rank of avg_rank within each mode_backbone group
     if not consistency_df.empty:
-        consistency_df['avg_rank_rank'] = consistency_df.groupby('mode_backbone')['avg_rank'].rank(method='min')
+        consistency_df['avg_rank_rank'] = consistency_df.groupby('mode_backbone')['avg_rank'].rank(method='average', ascending=True)
     
     logger.info(f"Created consistency analysis for {len(consistency_df)} experiment-mode combinations")
     
