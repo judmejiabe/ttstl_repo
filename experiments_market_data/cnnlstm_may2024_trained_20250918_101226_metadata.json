@@ -1,0 +1,10 @@
+{
+  "model_type": "CNN-LSTM",
+  "architecture": "CNNLSTM",
+  "training_completed": "2025-09-18T10:12:26.143556",
+  "num_epochs": 0,
+  "best_validation_loss": null,
+  "best_epoch": null,
+  "final_train_loss": null,
+  "final_validation_loss": null
+}

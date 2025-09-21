@@ -1,6 +1,8 @@
 library(rugarch)
 library(WeightedPortTest)
 library(ggplot2)
+# library(forecast)  # For ggAcf and ggPacf functions - not available
+# library(gridExtra) # For grid.arrange function - not available
 
 run_garch <- 
     function(y, X = NULL, Z = NULL, model = 'sGARCH',
@@ -44,18 +46,26 @@ run_garch <-
         png(paste0(plot_label, "_garch_fit_plots.png"), width = 800, height = 600)
 
         # Plot and save the fit object
-        plot(fit, which = 9)
+        plot(fit, which = 8)
 
         # Close the device to save the image
         dev.off()
 
         png(paste0(plot_label, "_garch_fit_residuals_(p)acf.png"), width = 800, height = 600)
-        acf_std_res <- ggAcf(std_res) + ggtitle("ACF of Standardized Residuals")
-        pacf_std_res <- ggPacf(std_res) + ggtitle("PACF of Standardized Residuals")
-        acf_std_res_sq <- ggAcf(std_res_sq) + ggtitle("ACF of Squared Standardized Residuals")
-        pacf_std_res_sq <- ggPacf(std_res_sq) + ggtitle("PACF of Squared Standardized Residuals")
+        # Comment out ggAcf/ggPacf functions as forecast package is not available
+        # acf_std_res <- ggAcf(std_res) + ggtitle("ACF of Standardized Residuals")
+        # pacf_std_res <- ggPacf(std_res) + ggtitle("PACF of Standardized Residuals")
+        # acf_std_res_sq <- ggAcf(std_res_sq) + ggtitle("ACF of Squared Standardized Residuals")
+        # pacf_std_res_sq <- ggPacf(std_res_sq) + ggtitle("PACF of Squared Standardized Residuals")
+        
+        # Use base R ACF/PACF plots instead
+        par(mfrow = c(2, 2))
+        acf(std_res, main = "ACF of Standardized Residuals")
+        pacf(std_res, main = "PACF of Standardized Residuals")
+        acf(std_res_sq, main = "ACF of Squared Standardized Residuals")
+        pacf(std_res_sq, main = "PACF of Squared Standardized Residuals")
 
-        grid.arrange(acf_std_res, pacf_std_res, acf_std_res_sq, pacf_std_res_sq, ncol = 2)
+        # grid.arrange(acf_std_res, pacf_std_res, acf_std_res_sq, pacf_std_res_sq, ncol = 2)
 
         # Close the device to save the image
         dev.off()

@@ -270,8 +270,8 @@ def main():
         ticker='INTC',
         bdelta=7_200 * 1_000_000_000.0,  # Two hours
         #bdelta=3_000 * 1_000_000_000.0,  # 50 minutes - For testing purposes
-        adelta=600 * 1_000_000_000.0,    # Ten minutes
-        sdelta=5 * 1_000_000_000.0,        # Five seconds
+        adelta=600 * 1_000_000_000.0,    # Five minutes
+        sdelta=0.5 * 1_000_000_000.0,      # 0.5 seconds
         seed=19991810,
         session_start=35_100 * 1_000_000_000.0,  # 9:45 AM in nanoseconds
         session_finish=56_700 * 1_000_000_000.0,  # 15:45 PM in nanoseconds
@@ -282,24 +282,25 @@ def main():
         parsimonious_mode=False,  # Full mode (not parsimonious)
         neural_covariates_only=False,
         manual_covariates_only=False,
-        epochs=0,           # For testing purposes
+        epochs=5,           # For testing purposes
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
         quantile=0.005,      # Windsorization quantile
-        adf_rejection_rate_threshold=0.6,
-        kpss_verification_threshold=0.4,
+        adf_rejection_rate_threshold=0.8,
+        kpss_verification_threshold=0.2,
         na_verification_threshold=0.2,
         learning_rate=0.0001,
         correlation_threshold=0.95,
 
         # Interface knobs
+        #user_defined_variables=['forward_pass_0'],
         alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
         lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
         tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
         lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
         validation_proportion_interface=0.2,
-        selection_threshold=0.15,
+        selection_threshold=0.11,  # L = 24, alpha = 0.00005
         tolerance_threshold=1e-6,
         ols_significance_level=0.05,
         wald_significance_level=0.05,
@@ -307,10 +308,10 @@ def main():
 
         # Adapter knobs - power law update rule
         update_method='power_law',
-        arma_order=(1, 1),
-        garch_order=(0, 1),
-        dist='sstd',
-        model='sGARCH',
+        arma_order=(0, 1),
+        garch_order=(1, 1),
+        dist='nig',
+        model='eGARCH',
         archm=False,
         update_parameters={'alpha': 3.0}
     )

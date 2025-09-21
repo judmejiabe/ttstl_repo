@@ -361,7 +361,9 @@ class Orchestrator:
         
         self.logger.info(f"Successfully initialized {len(self.stacks)} backbone-interface-adapter stacks")
     
-    def import_backbone_models_from_orchestrator(self, source_orchestrator: 'Orchestrator') -> None:
+    def import_backbone_models_from_orchestrator(self, 
+                                                 source_orchestrator: 'Orchestrator', 
+                                                 keep_epochs: bool = False) -> None:
         """
         Import backbone modules from another orchestrator instance.
         
@@ -415,7 +417,8 @@ class Orchestrator:
                     self.stacks[stack_key].interface.backbone.model = copy.deepcopy(source_backbone_model)
                     self.stacks[stack_key].interface.backbone.device = source_backbone_device
 
-                    self.cfg.epochs = 0  # Disable further training
+                    if not keep_epochs:
+                        self.cfg.epochs = 0  # Disable further training
 
                     imported_count += 1
                     self.logger.debug(f"Successfully imported backbone for {stack_key}")
