@@ -20,7 +20,7 @@ def setup_logging():
     
     # Create log filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"synthetic_study_proposal_{timestamp}.log"
+    log_file = log_dir / f"synthetic_study_{timestamp}.log"
     
     # Configure logging to both console and file
     logging.basicConfig(

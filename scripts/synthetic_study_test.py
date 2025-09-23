@@ -19,7 +19,7 @@ def setup_logging():
     
     # Create log filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"synthetic_study_{timestamp}.log"
+    log_file = log_dir / f"synthetic_study_test_{timestamp}.log"
     
     # Configure logging to both console and file
     logging.basicConfig(
@@ -135,22 +135,22 @@ def main():
     cfg = OrchestratorConfig(
         # General settings
         ticker='SIM',
-        #bdelta=5_000_000.0,
-        bdelta=500_000.0,  # For testing purposes
+        bdelta=5_000_000.0,
+        #bdelta=500_000.0,  # For testing purposes
         adelta=100_000.0,
         sdelta=100.0,
         seed=19991810,
         session_start=0.0,
-        #session_finish=10_000_000.0,
-        session_finish=1_000_000.0,  # For testing purposes
+        session_finish=10_000_000.0,
+        #session_finish=1_000_000.0,  # For testing purposes
         target_col_name='micro_return',
         
         # Backbone knobs
         parsimonious_mode=False,
         neural_covariates_only=False,
-        manual_covariates_only=True,
-        #epochs=5,
-        epochs=1,  # For testing purposes 
+        manual_covariates_only=False,
+        epochs=5,
+        #epochs=1,  # For testing purposes 
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
@@ -172,7 +172,7 @@ def main():
         lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
         #lambda_adalasso_grid=[0.0],  # For testing purposes
         validation_proportion_interface=0.2,
-        selection_threshold=0.2,
+        selection_threshold=0.17,
         tolerance_threshold=1e-6,
         ols_significance_level=0.05,
         wald_significance_level=0.05,
@@ -182,7 +182,7 @@ def main():
         update_method='power_law',
         arma_order=(1, 1),
         garch_order=(1, 1),
-        dist='std',
+        dist='sstd',
         model='sGARCH',
         archm=False,
         update_parameters={'alpha' : 3.0}
