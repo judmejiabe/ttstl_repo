@@ -725,7 +725,7 @@ class Adapter:
         
         # In-sample data
         in_sample_y = in_sample_augmented[target_col_name]
-        in_sample_X = in_sample_augmented[selected_vars]
+        #in_sample_X = in_sample_augmented[selected_vars]
         
         # Out-of-sample data
         out_of_sample_y = out_of_sample_augmented[target_col_name]
@@ -733,7 +733,7 @@ class Adapter:
 
         # Combine again for the R function call format
         combined_y = pd.concat([in_sample_y, out_of_sample_y])
-        combined_X = pd.concat([in_sample_X, out_of_sample_X])
+        #combined_X = pd.concat([in_sample_X, out_of_sample_X])
 
         # Perform forecast using R
         self.logger.info(f"Performing rolling forecast on {len(out_of_sample_y)} observations.")
@@ -747,9 +747,9 @@ class Adapter:
         # Prepare external regressors for the forecast period
         external_forecasts_r = ro.ListVector({
             'mregfor': ro.r['matrix'](
-                combined_X.values,
-                nrow=combined_X.shape[0],
-                ncol=combined_X.shape[1]
+                out_of_sample_X.values,
+                nrow=out_of_sample_X.shape[0],
+                ncol=out_of_sample_X.shape[1]
             )
         })
 
