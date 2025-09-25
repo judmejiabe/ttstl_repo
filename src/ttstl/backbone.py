@@ -77,6 +77,8 @@ class Backbone():
         self.neural_covariate_columns = None
         self.stationary_variables = None
         self.available_extra_covariates = None
+        # Considers the pretrained model in the batch gradient descent
+        self.pretrained = False
 
         self.logger = logging.getLogger("ttstl.backbone")
 
@@ -146,8 +148,16 @@ class Backbone():
         train_losses = []
         validation_losses = []
         best_model = self.model
-        best_validation_loss = self._one_epoch(validation_loader, criterion)
-        self.logger.info(f"Initial Mean Validation Loss: {best_validation_loss:.4f}")
+        if self.pretrained:
+            best_validation_loss = self._one_epoch(validation_loader, criterion)
+            train_losses.append(-1)
+            validation_losses.append(best_validation_loss)
+        else:
+            best_validation_loss = float('inf')
+        if self.pretrained:
+            self.logger.info(f"Initial Mean Validation Loss: {best_validation_loss:.4f}")
+        else:
+            self.logger.info("No pretrained model detected, starting fresh training.")
         best_epoch = 0
         
         # Setup checkpoint directory if needed
@@ -188,12 +198,24 @@ class Backbone():
                 }
                 torch.save(checkpoint_data, checkpoint_file)
                 self.logger.info(f"Saved checkpoint: {checkpoint_file}")
-
+            
+    
+        # Handle epochs numbering when pretrained model exists
+        if self.pretrained:
+            # Include epoch 0 for pretrained model validation loss
+            epoch_numbers = [0] + list(range(1, epochs + 1))
+        else:
+            epoch_numbers = list(range(1, epochs + 1))
+        
+        # Create training history dataframe
         self.training_history_df = pd.DataFrame({
-            "epoch": range(1, epochs + 1),
+            "epoch": epoch_numbers,
             "train_loss": train_losses,
             "validation_loss": validation_losses
         })
+
+        if self.epochs > 0:
+            self.pretrained = True
 
         self.logger.info(f"Training complete. Best Mean Validation Loss: {best_validation_loss:.4f} at epoch {best_epoch}")
 
