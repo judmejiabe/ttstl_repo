@@ -146,7 +146,8 @@ class Backbone():
         train_losses = []
         validation_losses = []
         best_model = self.model
-        best_validation_loss = float('inf')
+        best_validation_loss = self._one_epoch(validation_loader, criterion)
+        self.logger.info(f"Initial Mean Validation Loss: {best_validation_loss:.4f}")
         best_epoch = 0
         
         # Setup checkpoint directory if needed
