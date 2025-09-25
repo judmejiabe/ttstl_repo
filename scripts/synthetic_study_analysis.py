@@ -183,20 +183,23 @@ def collect_all_performance_data(runs_dir: Path = Path('runs_synthetic_study'),
 def plot_relmae_time_series(runs_dir: Path = Path('runs_synthetic_study'), 
                            save_path: Optional[Path] = None) -> None:
     """
-    Create RelMAE time series plots comparing all experiment configurations.
+    Create RelMAE time series plots for each update rule separately.
     
-    Creates a 2x2 panel plot showing:
-    - Top left: Global Update, bb_000
-    - Top right: Global Update, bb_001  
-    - Bottom left: Local Adapt, bb_000
-    - Bottom right: Local Adapt, bb_001
+    Creates separate plots for each update method:
+    - Myopic (M)
+    - Simple Average (SA)  
+    - Power Law (PL3)
+    - Exponential Smoothing (ES010)
+    
+    Each plot shows 2x2 subplots for mode/backbone combinations with only 
+    covariate configuration identifiers in the legend.
     
     Args:
         runs_dir: Root directory containing experiment runs
-        save_path: Optional path to save the plot
+        save_path: Optional path to save the plot (will create multiple files)
     """
     logger = logging.getLogger(__name__)
-    logger.info("Creating RelMAE time series plots...")
+    logger.info("Creating RelMAE time series plots by update rule...")
     
     # Collect all performance data
     performance_data = collect_all_performance_data(runs_dir)
@@ -211,7 +214,26 @@ def plot_relmae_time_series(runs_dir: Path = Path('runs_synthetic_study'),
         logger.info(f"Available columns: {list(performance_data.columns)}")
         return
     
-    # Define the combinations to plot
+    # Define update methods
+    update_methods = {
+        'M': 'Myopic',
+        'SA': 'Simple Average', 
+        'PL3': 'Power Law (α=3.0)',
+        'ES010': 'Exponential Smoothing (α=0.1)'
+    }
+    
+    # Define covariate configurations for legend
+    cov_descriptions = {
+        '01': '01: Full mode',
+        '02': '02: Parsimonious mode', 
+        '03': '03: Manual covariates only',
+        '04': '04: Neural covariates only',
+        '05': '05: Only forward_pass_0',
+        '06': '06: No covariates',
+        '07': '07: Only itv'
+    }
+    
+    # Define the mode/backbone combinations
     combinations = [
         ('global_update', 'bb_000', 'Global Update - BB 000'),
         ('global_update', 'bb_001', 'Global Update - BB 001'),
@@ -219,77 +241,105 @@ def plot_relmae_time_series(runs_dir: Path = Path('runs_synthetic_study'),
         ('local_adapt', 'bb_001', 'Local Adapt - BB 001')
     ]
     
-    # Create figure with 2x2 subplots
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    axes = axes.flatten()
-    
-    # Color palette for different experiments
-    unique_experiments = performance_data['experiment_id'].unique()
-    colors = sns.color_palette("husl", len(unique_experiments))
-    color_map = dict(zip(unique_experiments, colors))
-    
-    for idx, (mode, backbone_bar, title) in enumerate(combinations):
-        ax = axes[idx]
+    # Create separate plot for each update method
+    for update_key, update_name in update_methods.items():
+        logger.info(f"Creating plot for update method: {update_name}")
         
-        # Filter data for current combination
-        subset = performance_data[
-            (performance_data['mode'] == mode) & 
-            (performance_data['backbone_bar'] == backbone_bar)
+        # Filter data for current update method
+        update_data = performance_data[
+            performance_data['experiment_id'].str.startswith(f"{update_key}_")
         ]
         
-        if subset.empty:
-            ax.text(0.5, 0.5, f'No data for\n{title}', 
-                   ha='center', va='center', transform=ax.transAxes,
-                   fontsize=12, style='italic')
-            ax.set_title(title, fontsize=14, fontweight='bold')
+        if update_data.empty:
+            logger.warning(f"No data found for update method: {update_key}")
             continue
         
-        # Plot each experiment
-        for experiment_id in sorted(unique_experiments):
-            exp_data = subset[subset['experiment_id'] == experiment_id]
+        # Create figure with 2x2 subplots
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        axes = axes.flatten()
+        
+        # Get unique covariate configurations for this update method
+        unique_configs = set()
+        for exp_id in update_data['experiment_id'].unique():
+            _, cov_key = extract_experiment_info(exp_id)
+            unique_configs.add(cov_key)
+        
+        # Color palette for different covariate configurations
+        colors = sns.color_palette("husl", len(unique_configs))
+        color_map = dict(zip(sorted(unique_configs), colors))
+        
+        # Marker styles for different covariate configurations
+        marker_styles = ['o', 's', '^', 'v', 'D', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
+        marker_map = dict(zip(sorted(unique_configs), marker_styles[:len(unique_configs)]))
+        
+        for idx, (mode, backbone_bar, title) in enumerate(combinations):
+            ax = axes[idx]
             
-            if exp_data.empty:
+            # Filter data for current combination
+            subset = update_data[
+                (update_data['mode'] == mode) & 
+                (update_data['backbone_bar'] == backbone_bar)
+            ]
+            
+            if subset.empty:
+                ax.text(0.5, 0.5, f'No data for\n{title}', 
+                       ha='center', va='center', transform=ax.transAxes,
+                       fontsize=12, style='italic')
+                ax.set_title(title, fontsize=14, fontweight='bold')
                 continue
             
-            # Extract experiment info for legend
-            update_key, cov_key = extract_experiment_info(experiment_id)
-            exp_description = get_experiment_description(update_key, cov_key)
+            # Plot each covariate configuration
+            for experiment_id in sorted(subset['experiment_id'].unique()):
+                exp_data = subset[subset['experiment_id'] == experiment_id]
+                
+                if exp_data.empty:
+                    continue
+                
+                # Extract covariate configuration for legend
+                _, cov_key = extract_experiment_info(experiment_id)
+                cov_label = cov_descriptions.get(cov_key, cov_key)
+                
+                # Sort by adapter_bar for proper time series
+                exp_data = exp_data.sort_values('adapter_bar')
+                
+                # Plot the time series
+                ax.plot(exp_data['adapter_bar'], exp_data['relmae'], 
+                       color=color_map[cov_key], 
+                       marker=marker_map[cov_key], markersize=6, linewidth=2,
+                       label=cov_label,
+                       alpha=0.8, markeredgewidth=1, markeredgecolor='white')
             
-            # Sort by adapter_bar for proper time series
-            exp_data = exp_data.sort_values('adapter_bar')
+            # Customize subplot
+            ax.set_title(title, fontsize=14, fontweight='bold')
+            ax.set_xlabel('Adapter Bar', fontsize=12)
+            ax.set_ylabel('RelMAE', fontsize=12)
+            ax.grid(True, alpha=0.3)
+            ax.legend(fontsize=10, loc='best')
             
-            # Plot the time series
-            ax.plot(exp_data['adapter_bar'], exp_data['relmae'], 
-                   color=color_map[experiment_id], 
-                   marker='o', markersize=4, linewidth=2,
-                   label=f"{experiment_id}: {exp_description}",
-                   alpha=0.8)
+            # Set reasonable y-axis limits
+            if not subset['relmae'].isna().all():
+                y_min, y_max = subset['relmae'].min(), subset['relmae'].max()
+                y_range = y_max - y_min
+                if y_range > 0:
+                    ax.set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
         
-        # Customize subplot
-        ax.set_title(title, fontsize=14, fontweight='bold')
-        ax.set_xlabel('Adapter Bar', fontsize=12)
-        ax.set_ylabel('RelMAE', fontsize=12)
-        ax.grid(True, alpha=0.3)
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+        # Overall plot formatting for this update method
+        plt.suptitle(f'RelMAE Time Series - {update_name}', 
+                     fontsize=16, fontweight='bold', y=0.98)
+        plt.tight_layout()
         
-        # Set reasonable y-axis limits
-        if not subset['relmae'].isna().all():
-            y_min, y_max = subset['relmae'].min(), subset['relmae'].max()
-            y_range = y_max - y_min
-            ax.set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
-    
-    # Overall plot formatting
-    plt.suptitle('RelMAE Time Series Comparison Across All Experiments', 
-                 fontsize=16, fontweight='bold', y=0.98)
-    plt.tight_layout()
-    
-    # Save plot if path provided
-    if save_path:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        logger.info(f"Plot saved to {save_path}")
-    
-    plt.show()
+        # Save plot if path provided
+        if save_path:
+            # Create separate file for each update method
+            save_dir = save_path.parent
+            save_dir.mkdir(parents=True, exist_ok=True)
+            update_save_path = save_dir / f'relmae_time_series_{update_key}.png'
+            plt.savefig(update_save_path, dpi=300, bbox_inches='tight')
+            logger.info(f"Plot saved to {update_save_path}")
+        
+        plt.show()
+        
+    logger.info("Completed creating RelMAE time series plots for all update methods")
 
 def create_summary_statistics(runs_dir: Path = Path('runs_synthetic_study')) -> pd.DataFrame:
     """
@@ -462,7 +512,7 @@ def create_adapter_bar_rankings(runs_dir: Path = Path('runs_synthetic_study')) -
     return ranking_tables
 
 def save_ranking_tables(ranking_tables: Dict[str, pd.DataFrame], 
-                       output_dir: Path = Path('analysis_outputs')) -> None:
+                       output_dir: Path = Path('synthetic_experiment_analysis_outputs')) -> None:
     """
     Save ranking tables to CSV files.
     
@@ -610,11 +660,11 @@ def main():
     
     # Define paths
     runs_dir = Path('runs_synthetic_study')
-    output_dir = Path('analysis_outputs')
+    output_dir = Path('synthetic_experiment_analysis_outputs')
     output_dir.mkdir(exist_ok=True)
     
-    # Create RelMAE time series plots
-    plot_save_path = output_dir / 'relmae_time_series_comparison.png'
+    # Create RelMAE time series plots (one for each update method)
+    plot_save_path = output_dir / 'relmae_time_series_by_update_method.png'
     plot_relmae_time_series(runs_dir, plot_save_path)
     
     # Create adapter bar rankings
