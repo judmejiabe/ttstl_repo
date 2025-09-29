@@ -17,7 +17,7 @@ from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 from ttstl.utils.data_downloader import import_to_pandas
 
 # Import CNN-LSTM pretraining functions
-from scripts.market_data_cnn_lstm_pretraining import load_pretrained_model
+from market_data_cnn_lstm_pretraining import load_pretrained_model
 
 
 def setup_logging():
@@ -148,7 +148,7 @@ def get_base_config():
         n_lags=5,
 
         # Adapter knobs (same as market_data_ttstl_test)
-        update_method='power_law',
+        update_method='simple_average',
         arma_order=(1, 1),
         garch_order=(1, 1),
         dist='nig',
@@ -170,6 +170,16 @@ def get_experiment_configs():
             'user_defined_variables': None,
             'arma_order': (1, 1)  # Default ARMA order
         },
+        'parsimonious': {
+            'description': 'Parsimonious mode configuration with ARMA(1,1)',
+            'run_id': 'PARSIMONIOUS',
+            'parsimonious_mode': True,
+            'neural_covariates_only': False,
+            'manual_covariates_only': False,
+            'epochs': 0,  # No training, uses imported backbone
+            'user_defined_variables': None,  # Uses default parsimonious covariate selection
+            'arma_order': (1, 1)  # ARMA(1,1) order
+        },
         'benchmark': {
             'description': 'Benchmark configuration (forward_pass_0 only, parsimonious)',
             'run_id': 'BENCHMARK_FP0',
@@ -182,7 +192,7 @@ def get_experiment_configs():
         },
         'no_covariates': {
             'description': 'No covariates configuration with ARMA(1,1)',
-            'run_id': 'NO_COVARIATES_ARMA01',
+            'run_id': 'NO_COVARIATES',
             'parsimonious_mode': True,
             'neural_covariates_only': False,
             'manual_covariates_only': False,
@@ -295,9 +305,9 @@ def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, b
         elif previous_orchestrator is not None:
             # For subsequent date pairs within same experiment: copy from previous orchestrator
             logger.info(f"Copying orchestrator state from previous date pair to {config.run_id}")
-            logger.info("This preserves learned state while allowing retraining on new data")
+            logger.info("This enables sequential learning: previous knowledge + new data training")
 
-            # Copy the trained models from previous orchestrator in this experiment
+            # Copy the trained models from previous orchestrator and KEEP training capability
             orchestrator.import_backbone_models_from_orchestrator(previous_orchestrator, keep_epochs=True)
             
         elif trained_model is not None:
@@ -390,15 +400,21 @@ def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir,
     main_config = create_experiment_config(base_config, experiment_configs['main'])
     benchmark_config = create_experiment_config(base_config, experiment_configs['benchmark'])
     no_covariates_config = create_experiment_config(base_config, experiment_configs['no_covariates'])
+    parsimonious_config = create_experiment_config(base_config, experiment_configs['parsimonious'])
     
     logger.info(f"Will process {len(experiment_pairs)} date pairs")
-    logger.info("For each date pair: Main (train backbone) → Benchmark (import) → No-covariates (import)")
+    logger.info("SEQUENTIAL LEARNING DESIGN (Design B):")
+    logger.info("  - Date pair 1: Start with pretrained model → train 10 epochs")
+    logger.info("  - Date pair 2: Start with date pair 1 results → train 10 epochs") 
+    logger.info("  - Date pair 3: Start with date pair 2 results → train 10 epochs")
+    logger.info("  - And so on... (progressive learning across time)")
+    logger.info("For each date pair: Main (train backbone) → Parsimonious (import) → Benchmark (import) → No-covariates (import)")
     
     # Track orchestrators for state transfer between date pairs
     previous_main_orchestrator = None
     
     # Counters for summary
-    total_experiments = len(experiment_pairs) * 3  # 3 configs per date pair
+    total_experiments = len(experiment_pairs) * 4  # 4 configs per date pair
     successful_experiments = 0
     failed_experiments = 0
     
@@ -433,8 +449,28 @@ def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir,
             # Continue to next pair if main fails
             continue
         
-        # Step 2: Run BENCHMARK configuration for this date pair
-        logger.info(f"\n--- STEP 2: Running BENCHMARK configuration for pair {pair_idx+1} ---")
+        # Step 2: Run PARSIMONIOUS configuration for this date pair
+        logger.info(f"\n--- STEP 2: Running PARSIMONIOUS configuration for pair {pair_idx+1} ---")
+        
+        parsimonious_pair_config = OrchestratorConfig(**vars(parsimonious_config))
+        parsimonious_pair_config.run_id = f"{parsimonious_config.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        
+        parsimonious_orchestrator = run_single_date_pair_experiment(
+            parsimonious_pair_config, global_date, local_date, runs_dir,
+            base_orchestrator=main_orchestrator,  # Import backbone from main
+            previous_orchestrator=None,  # Transfer from previous parsimonious
+            trained_model=None  # No pretrained model needed
+        )
+        
+        if parsimonious_orchestrator is not None:
+            successful_experiments += 1
+            logger.info(f"✓ PARSIMONIOUS configuration completed for pair {pair_idx+1}")
+        else:
+            failed_experiments += 1
+            logger.error(f"✗ PARSIMONIOUS configuration failed for pair {pair_idx+1}")
+        
+        # Step 3: Run BENCHMARK configuration for this date pair
+        logger.info(f"\n--- STEP 3: Running BENCHMARK configuration for pair {pair_idx+1} ---")
         
         benchmark_pair_config = OrchestratorConfig(**vars(benchmark_config))
         benchmark_pair_config.run_id = f"{benchmark_config.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
@@ -453,8 +489,8 @@ def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir,
             failed_experiments += 1
             logger.error(f"✗ BENCHMARK configuration failed for pair {pair_idx+1}")
         
-        # Step 3: Run NO-COVARIATES configuration for this date pair
-        logger.info(f"\n--- STEP 3: Running NO-COVARIATES configuration for pair {pair_idx+1} ---")
+        # Step 4: Run NO-COVARIATES configuration for this date pair
+        logger.info(f"\n--- STEP 4: Running NO-COVARIATES configuration for pair {pair_idx+1} ---")
         
         no_covariates_pair_config = OrchestratorConfig(**vars(no_covariates_config))
         no_covariates_pair_config.run_id = f"{no_covariates_config.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
