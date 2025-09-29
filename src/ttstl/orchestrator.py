@@ -410,12 +410,16 @@ class Orchestrator:
         for stack_key in self.stacks.keys():
             if stack_key in source_orchestrator.stacks:
                 try:
-                    # Get source backbone
-                    source_backbone_model = source_orchestrator.stacks[stack_key].interface.backbone.model
-                    source_backbone_device = source_orchestrator.stacks[stack_key].interface.backbone.device
+                    # Get source and target backbones
+                    source_backbone = source_orchestrator.stacks[stack_key].interface.backbone
+                    target_backbone = self.stacks[stack_key].interface.backbone
 
-                    self.stacks[stack_key].interface.backbone.model = copy.deepcopy(source_backbone_model)
-                    self.stacks[stack_key].interface.backbone.device = source_backbone_device
+                    # Copy the trained model
+                    target_backbone.model = copy.deepcopy(source_backbone.model)
+                    target_backbone.device = source_backbone.device
+
+                    # Copy learned state for sequential learning
+                    target_backbone.pretrained = True  # Mark as having pretrained weights
 
                     if not keep_epochs:
                         self.cfg.epochs = 0  # Disable further training

@@ -214,7 +214,7 @@ class Backbone():
             "validation_loss": validation_losses
         })
 
-        if self.epochs > 0:
+        if epochs > 0:
             self.pretrained = True
 
         self.logger.info(f"Training complete. Best Mean Validation Loss: {best_validation_loss:.4f} at epoch {best_epoch}")
