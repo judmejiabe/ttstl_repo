@@ -147,7 +147,7 @@ class Backbone():
         validation_loader = validation_loader or train_loader
         train_losses = []
         validation_losses = []
-        best_model = self.model
+        best_model = copy.deepcopy(self.model)
         if self.pretrained:
             best_validation_loss = self._one_epoch(validation_loader, criterion)
             train_losses.append(-1)
