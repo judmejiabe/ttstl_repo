@@ -5,7 +5,7 @@ library(rugarch)
 run_adalasso <- function(y, X, alpha_enet, lambda_enet,
                          tau_adalasso, lambda_adalasso,
                          garchOrder = c(1,1),
-                         distribution.model = 'sstd') {
+                         distribution.model = NULL) {
   # 4.1 Elastic‑Net initial fit
   enet_fit <- glmnet(x = X, y = y,
                      alpha = alpha_enet,
@@ -29,22 +29,31 @@ run_adalasso <- function(y, X, alpha_enet, lambda_enet,
   y_hat <- as.numeric(predict(ada_fit, newx = X, s = lambda_adalasso))
   resid  <- y - y_hat
   
-  # 4.5 Fit GARCH on residuals
-  spec_resid <- ugarchspec(
-    variance.model     = list(model = "sGARCH", garchOrder = garchOrder),
-    mean.model         = list(armaOrder = c(0,0), include.mean = FALSE),
-    distribution.model = distribution.model
-  )
-  fit_resid <- ugarchfit(spec = spec_resid, data = resid, solver = "hybrid")
-  
-  # 4.6 Compute AIC/BIC
-  llh        <- fit_resid@fit$LLH
-  k_adalasso <- sum(abs(coef(ada_fit, s = lambda_adalasso)[-1,1]) > eps)
-  k_garch    <- length(coef(fit_resid))
-  n          <- length(y)
-  k_total    <- k_adalasso + k_garch
-  AIC <- 2 * k_total - 2 * llh
-  BIC <- k_total * log(n) - 2 * llh
+  # 4.5 Fit GARCH on residuals (bypass if distribution.model is NULL)
+  if (is.null(distribution.model)) {
+    # No GARCH fitting - return NULL for GARCH-dependent objects
+    fit_resid <- NULL
+    llh <- NULL
+    k_garch <- 0
+    AIC <- NULL
+    BIC <- NULL
+  } else {
+    spec_resid <- ugarchspec(
+      variance.model     = list(model = "sGARCH", garchOrder = garchOrder),
+      mean.model         = list(armaOrder = c(0,0), include.mean = FALSE),
+      distribution.model = distribution.model
+    )
+    fit_resid <- ugarchfit(spec = spec_resid, data = resid, solver = "hybrid")
+    
+    # 4.6 Compute AIC/BIC
+    llh        <- fit_resid@fit$LLH
+    k_adalasso <- sum(abs(coef(ada_fit, s = lambda_adalasso)[-1,1]) > eps)
+    k_garch    <- length(coef(fit_resid))
+    n          <- length(y)
+    k_total    <- k_adalasso + k_garch
+    AIC <- 2 * k_total - 2 * llh
+    BIC <- k_total * log(n) - 2 * llh
+  }
   
   list(ada_fit = ada_fit,
        garch_fit = fit_resid,
