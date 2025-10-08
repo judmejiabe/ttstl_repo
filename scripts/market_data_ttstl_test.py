@@ -1,15 +1,26 @@
 from pathlib import Path
 import logging
+import random
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import torch
 
 from ttstl import orchestrator
 from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 from ttstl.utils.data_downloader import import_to_pandas
+
+# Import necessary methods from market_data_experiments script
+from market_data_experiments import (
+    log_orchestrator_config,
+    load_date_data,
+    set_trained_model_to_orchestrator,
+    load_pretrained_model_for_experiments,
+    get_base_config
+)
 
 
 def setup_logging():
@@ -21,7 +32,7 @@ def setup_logging():
     
     # Create log filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"market_data_test_{timestamp}.log"
+    log_file = log_dir / f"market_data_experiments_test_{timestamp}.log"
     
     # Configure logging to both console and file
     logging.basicConfig(
@@ -37,117 +48,31 @@ def setup_logging():
 
 def load_market_data():
     """
-    Loads market data for INTC from the 'evolving-microstructural-tk-data' bucket.
+    Loads market data for INTC for the test date pair: June 12, 2024 and June 13, 2024.
     
     Returns:
         Tuple of (global_update_ed_df, global_update_ptd_df, local_update_ed_df, local_update_ptd_df)
     """
     logger = logging.getLogger(__name__)
-    logger.info("Loading market data for INTC")
+    logger.info("Loading market data for INTC test pair: 06122024 → 06132024")
     
-    credentials_path = 'credentials.json'
-    bucket_name = 'evolving-microstructural-tk-data'
-    gcs_market_data_folder = 'market_data/'
-
-    # Load global update data (June 27, 2024)
-    logger.info("Loading global update data (June 27, 2024)")
-    global_ed_df = import_to_pandas(
-        blob_name=gcs_market_data_folder + "06272024_INTC_event_driven_recorded_lob.parquet",
-        credentials_path=credentials_path,
-        bucket_name=bucket_name
-    )
+    # Load global update data (June 12, 2024)
+    logger.info("Loading global update data (June 12, 2024)")
+    global_ed_df, global_ptd_df = load_date_data("06122024")
     
-    logger.info(
-        "Loaded global update event driven data with shape %s from %s",
-        global_ed_df.shape,
-        f"{gcs_market_data_folder}06272024_INTC_event_driven_recorded_lob.parquet"
-    )
-
-    global_ptd_df = import_to_pandas(
-        blob_name=gcs_market_data_folder + "06272024_INTC_physical_time_driven_recorded_data.parquet",
-        credentials_path=credentials_path,
-        bucket_name=bucket_name
-    )
-
-    # Check if timestamp is an index and convert to column if needed
-    if global_ptd_df.index.name == 'timestamp' or 'timestamp' in global_ptd_df.index.names:
-        logger.info("Converting timestamp from index to column for global update physical time-driven data")
-        global_ptd_df = global_ptd_df.reset_index()
-    elif 'timestamp' not in global_ptd_df.columns:
-        logger.error("No timestamp found in either index or columns for global update physical time-driven data")
-        raise ValueError("No timestamp found in either index or columns for global update physical time-driven data")
-
-    # Calculate micro returns for global update data
-    global_ptd_df['micro_return'] = global_ptd_df['micro'].pct_change() * 1e3
-    global_ptd_df['micro_return'] = global_ptd_df['micro_return'].shift(-1)
-    global_ptd_df = global_ptd_df.iloc[:-1]
-
-    logger.info(
-        "Loaded global update physical time-driven data with shape %s from %s",
-        global_ptd_df.shape,
-        f"{gcs_market_data_folder}06272024_INTC_physical_time_driven_recorded_data.parquet"
-    )
-
-    # Load local update data (June 28, 2024)
-    logger.info("Loading local update data (June 28, 2024)")
-    local_ed_df = import_to_pandas(
-        blob_name=gcs_market_data_folder + "06282024_INTC_event_driven_recorded_lob.parquet",
-        credentials_path=credentials_path,
-        bucket_name=bucket_name
-    )
+    if global_ed_df is None or global_ptd_df is None:
+        logger.error("Failed to load global update data for June 12, 2024")
+        raise ValueError("Could not load global update data for 06122024")
     
-    logger.info(
-        "Loaded local update event driven data with shape %s from %s",
-        local_ed_df.shape,
-        f"{gcs_market_data_folder}06282024_INTC_event_driven_recorded_lob.parquet"
-    )
-
-    local_ptd_df = import_to_pandas(
-        blob_name=gcs_market_data_folder + "06282024_INTC_physical_time_driven_recorded_data.parquet",
-        credentials_path=credentials_path,
-        bucket_name=bucket_name
-    )
-
-    # Check if timestamp is an index and convert to column if needed
-    if local_ptd_df.index.name == 'timestamp' or 'timestamp' in local_ptd_df.index.names:
-        logger.info("Converting timestamp from index to column for local update physical time-driven data")
-        local_ptd_df = local_ptd_df.reset_index()
-    elif 'timestamp' not in local_ptd_df.columns:
-        logger.error("No timestamp found in either index or columns for local update physical time-driven data")
-        raise ValueError("No timestamp found in either index or columns for local update physical time-driven data")
-
-    # Calculate micro returns for local update data
-    local_ptd_df['micro_return'] = local_ptd_df['micro'].pct_change() * 1e3
-    local_ptd_df['micro_return'] = local_ptd_df['micro_return'].shift(-1)
-    local_ptd_df = local_ptd_df.iloc[:-1]
-
-    logger.info(
-        "Loaded local update physical time-driven data with shape %s from %s",
-        local_ptd_df.shape,
-        f"{gcs_market_data_folder}06282024_INTC_physical_time_driven_recorded_data.parquet"
-    )
+    # Load local update data (June 13, 2024)
+    logger.info("Loading local update data (June 13, 2024)")
+    local_ed_df, local_ptd_df = load_date_data("06132024")
+    
+    if local_ed_df is None or local_ptd_df is None:
+        logger.error("Failed to load local update data for June 13, 2024")
+        raise ValueError("Could not load local update data for 06132024")
 
     return global_ed_df, global_ptd_df, local_ed_df, local_ptd_df
-
-def log_orchestrator_config(cfg: OrchestratorConfig):
-    """Log the orchestrator configuration in a readable format."""
-    logger = logging.getLogger(__name__)
-    
-    logger.info("=" * 80)
-    logger.info("Orchestrator configuration")
-    logger.info("=" * 80)
-    
-    # Convert config to dictionary for easy logging
-    config_dict = cfg.__dict__ if hasattr(cfg, '__dict__') else vars(cfg)
-    
-    for key, value in config_dict.items():
-        if isinstance(value, (list, tuple)) and len(value) > 10:
-            # For long lists/tuples, show only first few and last few elements
-            logger.info(f"{key}: [{value[0]}, {value[1]}, ..., {value[-2]}, {value[-1]}] (length: {len(value)})")
-        else:
-            logger.info(f"{key}: {value}")
-    
-    logger.info("=" * 80)
 
 def plot_microreturns_analysis(ptd_df: pd.DataFrame, session_start: float, session_finish: float, 
                               save_dir: Path, data_label: str = ""):
@@ -249,104 +174,125 @@ def plot_microreturns_analysis(ptd_df: pd.DataFrame, session_start: float, sessi
 
 def main():
     """
-    Main function to orchestrate the market data test.
+    Main function to test the market data TTSTL system with a single date pair.
+    
+    This test follows the same logic as market_data_experiments.py but runs only
+    the base configuration on the date pair 06122024 → 06132024.
     """
 
     print("🚀 Starting market data TTSTL test...")
     print("="*80)
 
+    # Set global random seeds for reproducibility
+    SEED = 19991810  # Same seed as in config
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
+    
+    # PyTorch reproducibility settings
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("Starting market data TTSTL test for INTC")
+    logger.info(f"Global random seed set to: {SEED}")
+    logger.info("Test date pair: June 12, 2024 → June 13, 2024")
 
-    # Load market data
+    # Load pretrained CNN-LSTM model
+    logger.info("Loading pretrained CNN-LSTM model...")
+    trained_model = load_pretrained_model_for_experiments()
+    
+    if trained_model is None:
+        logger.error("Failed to load pretrained model. Please run cnn_lstm_pretraining.py first.")
+        print("❌ Failed to load pretrained model.")
+        print("💡 Please run cnn_lstm_pretraining.py first to create a pretrained model.")
+        return
+    
+    logger.info("Pretrained CNN-LSTM model loaded successfully")
+
+    # Load market data for the test date pair
     global_ed_df, global_ptd_df, local_ed_df, local_ptd_df = load_market_data()
 
     logger.info("Setting up orchestrator configuration")
 
-    # Single base configuration with power law update rule in full mode
-    cfg = OrchestratorConfig(
-        # General settings
-        ticker='INTC',
-        bdelta=7_200 * 1_000_000_000.0,  # Two hours
-        #bdelta=3_000 * 1_000_000_000.0,  # 50 minutes - For testing purposes
-        adelta=600 * 1_000_000_000.0,    # Five minutes
-        sdelta=0.5 * 1_000_000_000.0,      # 0.5 seconds
-        seed=19991810,
-        session_start=35_100 * 1_000_000_000.0,  # 9:45 AM in nanoseconds
-        session_finish=56_700 * 1_000_000_000.0,  # 15:45 PM in nanoseconds
-        #session_finish=38_100 * 1_000_000_000.0,  # 10:35 AM in nanoseconds - For testing purposes
-        target_col_name='micro_return',
-        
-        # Backbone knobs - full mode
-        parsimonious_mode=False,  # Full mode (not parsimonious)
-        neural_covariates_only=False,
-        manual_covariates_only=False,
-        epochs=5,           # For testing purposes
-        batch_size=32,
-        validation_proportion_backbone=0.1,
-        buffer_proportion=0.05,
-        quantile=0.005,      # Windsorization quantile
-        adf_rejection_rate_threshold=0.8,
-        kpss_verification_threshold=0.2,
-        na_verification_threshold=0.2,
-        learning_rate=0.0001,
-        correlation_threshold=0.95,
-
-        # Interface knobs
-        #user_defined_variables=['forward_pass_0'],
-        alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
-        lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
-        tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
-        lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
-        validation_proportion_interface=0.2,
-        selection_threshold=0.11,  # L = 24, alpha = 0.00005
-        tolerance_threshold=1e-6,
-        ols_significance_level=0.05,
-        wald_significance_level=0.05,
-        n_lags=5,
-
-        # Adapter knobs - power law update rule
-        update_method='power_law',
-        arma_order=(0, 1),
-        garch_order=(1, 1),
-        dist='nig',
-        model='eGARCH',
-        archm=False,
-        update_parameters={'alpha': 3.0}
-    )
+    # Get base configuration from experiments script
+    cfg = get_base_config()
+    
+    # Enable MSE mode for adalasso hyperparameter selection
+    cfg.second_stage_mse = True
+    
+    # Set epochs to 1 for faster testing
+    cfg.epochs = 1
+    
+    # Set specific run ID for test
+    cfg.run_id = "TEST_BASE_CONFIG_06122024_06132024"
+    
+    # Log configuration
+    log_orchestrator_config(cfg)
 
     # Create runs directory
     runs_dir = Path('runs_market_data_test')
     runs_dir.mkdir(exist_ok=True)
 
+    logger.info("Creating orchestrator with base configuration")
+    
     # Create orchestrator
-    orchestrator = Orchestrator(runs_dir, cfg)
+    orchestrator_instance = Orchestrator(runs_dir, cfg)
 
-    # Log configuration
-    log_orchestrator_config(cfg)
+    # Set the pretrained model to the orchestrator
+    logger.info("Setting pretrained CNN-LSTM model to orchestrator")
+    set_trained_model_to_orchestrator(orchestrator_instance, trained_model)
 
     # Generate microreturns analysis plots
     logger.info("Generating microreturns analysis plots")
     plot_microreturns_analysis(global_ptd_df, cfg.session_start, cfg.session_finish, 
-                              runs_dir, "June_27_Global_Update")
+                              runs_dir, "June_12_Global_Update")
     plot_microreturns_analysis(local_ptd_df, cfg.session_start, cfg.session_finish, 
-                              runs_dir, "June_28_Local_Update")
+                              runs_dir, "June_13_Local_Update")
 
-    logger.info("Starting global update phase with June 27, 2024 data")
-    orchestrator.global_update(global_ed_df, global_ptd_df)
+    logger.info("Starting global update phase with June 12, 2024 data")
+    logger.info(f"Neural network training: {'ENABLED' if cfg.epochs > 0 else 'DISABLED'} ({cfg.epochs} epochs)")
+    logger.info(f"AdaLASSO hyperparameter selection: {'MSE mode' if cfg.second_stage_mse else 'BIC mode'}")
     
-    logger.info("Global update completed successfully")
+    try:
+        orchestrator_instance.global_update(global_ed_df, global_ptd_df)
+        logger.info("Global update completed successfully")
+    except Exception as e:
+        logger.error(f"Global update failed: {str(e)}")
+        logger.exception("Full traceback:")
+        print("❌ Global update failed. Check logs for details.")
+        return
 
-    logger.info("Starting local adaptation phase with June 28, 2024 data")
-    orchestrator.local_adapt(local_ed_df, local_ptd_df)
+    logger.info("Starting local adaptation phase with June 13, 2024 data")
     
-    logger.info("Local adaptation completed successfully")
+    try:
+        orchestrator_instance.local_adapt(local_ed_df, local_ptd_df)
+        logger.info("Local adaptation completed successfully")
+    except Exception as e:
+        logger.error(f"Local adaptation failed: {str(e)}")
+        logger.exception("Full traceback:")
+        print("❌ Local adaptation failed. Check logs for details.")
+        return
 
     print("🛬 Market data TTSTL test completed successfully!")
     print("="*80)
     print(f"📁 Results saved to: {runs_dir}")
     print(f"📝 Check logs for detailed information")
+    print(f"🎯 Test configuration: {cfg.run_id}")
+    print(f"🔬 AdaLASSO mode: {'MSE-based' if cfg.second_stage_mse else 'BIC-based'}")
+    
+    logger.info("=" * 80)
+    logger.info("MARKET DATA TTSTL TEST COMPLETED SUCCESSFULLY")
+    logger.info("=" * 80)
+    logger.info(f"Test date pair: 06122024 → 06132024")
+    logger.info(f"Configuration: Base configuration with MSE-based adalasso")
+    logger.info(f"AdaLASSO hyperparameter selection: {'MSE mode' if cfg.second_stage_mse else 'BIC mode'}")
+    logger.info(f"Results directory: {runs_dir}")
+    logger.info(f"Run ID: {cfg.run_id}")
+    logger.info("=" * 80)
 
 if __name__ == "__main__":
     main()
