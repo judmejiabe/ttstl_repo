@@ -90,6 +90,10 @@ class Interface:
         self.best_lambda_enet = None
         self.best_tau_adalasso = None
         self.best_lambda_adalasso = None
+        
+        # Additional attributes for results storage
+        self.best_mse_adalasso = None
+        self.best_bic_adalasso = None
 
         self.logger = logging.getLogger('ttstl.interface')
 
@@ -454,7 +458,7 @@ class Interface:
                 enet_mse_array.append({'alpha_enet' : alpha, 'lambda_enet' : lambda_enet, 'val_mse' : mse})
                 self.logger.info(f"α: {alpha:.3f}, λ: {lambda_enet:.4f}, Validation MSE: {mse:.6f}")
 
-                # Update best parameters if this is better
+                # Update best parameters if this mse is better
                 if mse < best_mse:
                     best_mse = mse
                     best_alpha = alpha
@@ -506,8 +510,8 @@ class Interface:
             Dictionary with adaptive lasso fit, GARCH fit, coefficients, and information criteria
         """
         # Debugging
-        if distribution_model is None:
-            raise ValueError("distribution_model must be specified for GARCH fitting")
+        # if distribution_model is None:
+        #    raise ValueError("distribution_model must be specified for GARCH fitting")
 
         if glmnet is None or rugarch is None:
             raise RuntimeError("glmnet and rugarch R packages not available")
@@ -522,11 +526,17 @@ class Interface:
             # Convert garch_order tuple to R vector
             garch_order_r = ro.IntVector(list(garch_order))
             
+            # Convert None to R NULL for distribution_model
+            if distribution_model is None:
+                distribution_model_r = ro.r('NULL')
+            else:
+                distribution_model_r = distribution_model
+            
             # Call the R function
             r_result = ro.r.run_adalasso(
                 y, X, alpha_enet, lambda_enet, 
                 tau_adalasso, lambda_adalasso,
-                garch_order_r, distribution_model
+                garch_order_r, distribution_model_r
             )
             
             # Extract results
@@ -535,8 +545,21 @@ class Interface:
             enet_coef = np.array(r_result.rx2('enet_coef'))
             penalty_weights = np.array(r_result.rx2('penalty_weights'))
             ada_coef = np.array(r_result.rx2('ada_coef'))
-            aic = float(r_result.rx2('AIC')[0])
-            bic = float(r_result.rx2('BIC')[0])
+            
+            # Handle NULL AIC/BIC from R when distribution_model is None
+            aic_r = r_result.rx2('AIC')
+            bic_r = r_result.rx2('BIC')
+            
+            # Safely extract AIC/BIC values, handling R NULL
+            try:
+                aic = float(aic_r[0]) if aic_r is not ro.r('NULL') and len(aic_r) > 0 else None
+            except (TypeError, IndexError):
+                aic = None
+                
+            try:
+                bic = float(bic_r[0]) if bic_r is not ro.r('NULL') and len(bic_r) > 0 else None
+            except (TypeError, IndexError):
+                bic = None
             
             return {
                 'ada_fit': ada_fit,
@@ -555,13 +578,13 @@ class Interface:
         except Exception as e:
             raise RuntimeError(f"Error fitting adaptive lasso: {e}")
         
-    def _update_ada_lasso_hyperparameters(self,
-                                          physical_time_driven_backbone_time_bar_data: pd.DataFrame,
-                                          alpha_enet: float = 1.0,
-                                          lambda_enet: float = 0.0,
-                                          target_col_name: str = 'micro_return',
-                                          distribution_model: str = None,
-                                          save_dir: str = None) -> Dict:
+    def _update_ada_lasso_hyperparameters_bic(self,
+                                               physical_time_driven_backbone_time_bar_data: pd.DataFrame,
+                                               alpha_enet: float = 1.0,
+                                               lambda_enet: float = 0.0,
+                                               target_col_name: str = 'micro_return',
+                                               distribution_model: str = None,
+                                               save_dir: str = None) -> Dict:
         """
         Find the best adaptive lasso hyperparameters using BIC across adapter time bars.
         
@@ -688,6 +711,129 @@ class Interface:
             'lambda_enet': lambda_enet
         }
 
+    def _update_ada_lasso_hyperparameters_mse(self,
+                                              physical_time_train_data: pd.DataFrame,
+                                              physical_time_validation_data: pd.DataFrame,
+                                              alpha_enet: float = 1.0,
+                                              lambda_enet: float = 0.0,
+                                              target_col_name: str = 'micro_return',
+                                              distribution_model: str = None,
+                                              save_dir: str = None) -> Dict:
+        """
+        Find the best adaptive lasso hyperparameters using MSE on validation data.
+        
+        This method follows the same approach as elastic net hyperparameter tuning,
+        using MSE as the criterion instead of BIC across adapter time bars.
+        
+        Args:
+            physical_time_train_data: Training data DataFrame
+            physical_time_validation_data: Validation data DataFrame
+            alpha_enet: Elastic net mixing parameter for initial fit
+            lambda_enet: Elastic net regularization parameter for initial fit
+            target_col_name: Name of target variable column
+            distribution_model: Distribution model for GARCH fitting (optional)
+            save_dir: Directory to save results (optional)
+            
+        Returns:
+            Dictionary with best hyperparameters and MSE results
+        """
+        
+        self.logger.info("Running Adaptive Lasso hyperparameter tuning (MSE-based)")
+        self.logger.info("Finding best Adaptive Lasso hyperparameters using grid search. The performance will be assessed through the MSE metric on validation data")
+
+        if self.tau_adalasso_grid is None or self.lambda_adalasso_grid is None:
+            self.logger.error("tau_adalasso_grid and lambda_adalasso_grid must be defined for hyperparameter tuning")
+            raise ValueError("tau_adalasso_grid and lambda_adalasso_grid must be defined")
+        
+        self.logger.info(f"Comparing {len(self.tau_adalasso_grid)} values of tau_adalasso: {self.tau_adalasso_grid}")
+        self.logger.info(f"Comparing {len(self.lambda_adalasso_grid)} values of lambda_adalasso: {self.lambda_adalasso_grid}")
+
+        best_mse = float('inf')
+        best_tau = None
+        best_lambda = None
+        results = []
+        
+        for tau_adalasso in self.tau_adalasso_grid:
+            for lambda_adalasso in self.lambda_adalasso_grid:
+                try:
+                    # Get the data (already scaled in _prepare_data)
+                    if not hasattr(self, 'extended_covariate_list') or self.extended_covariate_list is None:
+                        self.logger.error("Extended covariate list not available. Run _prepare_data first.")
+                        raise ValueError("Extended covariate list not available. Run _prepare_data first.")
+
+                    X_train = physical_time_train_data[self.extended_covariate_list].values
+                    X_val = physical_time_validation_data[self.extended_covariate_list].values
+
+                    y_train = physical_time_train_data[target_col_name].values
+                    y_val = physical_time_validation_data[target_col_name].values
+
+                    # Fit adaptive lasso on training data
+                    ada_result = self._fit_flexible_adalasso(
+                        X=X_train,
+                        y=y_train,
+                        alpha_enet=alpha_enet,
+                        lambda_enet=lambda_enet,
+                        tau_adalasso=tau_adalasso,
+                        lambda_adalasso=lambda_adalasso
+                    )
+
+                    # Get coefficients and make predictions on validation data
+                    coefs = ada_result['ada_coefficients']
+                    
+                    if len(coefs) == X_val.shape[1] + 1:  
+                        predictions = X_val @ coefs[1:] + coefs[0]
+                    else:  
+                        self.logger.error(f"Coefficient mismatch: expected {X_val.shape[1] + 1} but got {len(coefs)}")
+                        raise ValueError(f"Coefficient mismatch: expected {X_val.shape[1] + 1} but got {len(coefs)}")
+                    
+                    # Calculate MSE on validation data
+                    mse = np.mean((predictions - y_val) ** 2)
+
+                    results.append({
+                        'tau_adalasso': tau_adalasso,
+                        'lambda_adalasso': lambda_adalasso,
+                        'val_mse': mse
+                    })
+
+                    self.logger.info(f"τ = {tau_adalasso:.3f}, λ = {lambda_adalasso:.6f}, Validation MSE: {mse:.6f}")
+
+                    # Update best parameters if this is better
+                    if mse < best_mse:
+                        best_mse = mse
+                        best_tau = tau_adalasso
+                        best_lambda = lambda_adalasso
+                        
+                except Exception as e:
+                    self.logger.warning(f"Warning: Error processing hyperparameters τ = {tau_adalasso}, λ = {lambda_adalasso}: {e}")
+                    continue
+        
+        # Save results as parquet file if save_dir provided
+        self.ada_lasso_mse_results_df = pd.DataFrame(results)
+        if save_dir is not None:
+            save_path = Path(save_dir) / 'adalasso_hyperparams_mse_grid_eval.parquet'
+            self.ada_lasso_mse_results_df.to_parquet(save_path, index=False)
+            self.logger.info(f"Saved Adaptive Lasso MSE hyperparameter tuning results to {save_path}")
+        
+        if best_tau is None or best_lambda is None:
+            self.logger.error("No valid hyperparameter combination found")
+            raise RuntimeError("No valid hyperparameter combination found")
+        
+        # Set as class attributes (using standard names for consistency)
+        self.best_tau_adalasso = best_tau
+        self.best_lambda_adalasso = best_lambda
+        self.best_mse_adalasso = best_mse
+
+        self.logger.info(f"Best hyperparameters (MSE): τ={best_tau:.3f}, λ={best_lambda:.6f}, Validation MSE={best_mse:.6f}")
+
+        return {
+            'best_tau_adalasso': best_tau,
+            'best_lambda_adalasso': best_lambda,
+            'best_mse': best_mse,
+            'all_results': results,
+            'alpha_enet': alpha_enet,
+            'lambda_enet': lambda_enet
+        }
+
     def _update_hyperparameters(self, 
                                  event_driven_backbone_time_bar_data: pd.DataFrame,
                                  physical_time_driven_backbone_time_bar_data: pd.DataFrame,
@@ -696,7 +842,8 @@ class Interface:
                                  n_lags: int = 5,
                                  validation_proportion: float = 0.2,
                                  distribution_model : str = None,
-                                 save_dir : str = None) -> Dict:
+                                 save_dir : str = None,
+                                 second_stage_mse: bool = False) -> Dict:
         """
         Complete hyperparameter tuning procedure for both Elastic Net and Adaptive Lasso.
         
@@ -704,7 +851,7 @@ class Interface:
         1. Prepare data with neural covariates, adapter bars, lagged targets, and scaling
         2. Split data into training and validation sets
         3. Tune Elastic Net hyperparameters (alpha, lambda) using MSE on validation set
-        4. Keeping Elastic Net parameters fixed, tune Adaptive Lasso hyperparameters (tau, lambda) using BIC
+        4. Keeping Elastic Net parameters fixed, tune Adaptive Lasso hyperparameters (tau, lambda) using BIC or MSE
         
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
@@ -713,6 +860,9 @@ class Interface:
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             validation_proportion: Proportion of adapter bars to use for validation
+            distribution_model: Distribution model for GARCH fitting (optional)
+            save_dir: Directory to save results (optional)
+            second_stage_mse: If True, use MSE-based criterion for Adaptive Lasso tuning instead of BIC
             
         Returns:
             Dictionary with all hyperparameter tuning results
@@ -756,16 +906,28 @@ class Interface:
             save_dir=save_dir
         )
         
-        # Step 5: Tune Adaptive Lasso hyperparameters using BIC, keeping Elastic Net parameters fixed
-        print("Tuning Adaptive Lasso hyperparameters with fixed Elastic Net parameters...")
-        ada_lasso_results = self._update_ada_lasso_hyperparameters(
-            physical_time_driven_backbone_time_bar_data=augmented_data,
-            alpha_enet=best_alpha_enet,
-            lambda_enet=best_lambda_enet,
-            target_col_name=target_col_name,
-            distribution_model=distribution_model,
-            save_dir=save_dir
-        )
+        # Step 5: Tune Adaptive Lasso hyperparameters using BIC or MSE, keeping Elastic Net parameters fixed
+        if second_stage_mse:
+            print("Tuning Adaptive Lasso hyperparameters with fixed Elastic Net parameters (MSE-based)...")
+            ada_lasso_results = self._update_ada_lasso_hyperparameters_mse(
+                physical_time_train_data=train_data,
+                physical_time_validation_data=validation_data,
+                alpha_enet=best_alpha_enet,
+                lambda_enet=best_lambda_enet,
+                target_col_name=target_col_name,
+                distribution_model=distribution_model,
+                save_dir=save_dir
+            )
+        else:
+            print("Tuning Adaptive Lasso hyperparameters with fixed Elastic Net parameters (BIC-based)...")
+            ada_lasso_results = self._update_ada_lasso_hyperparameters_bic(
+                physical_time_driven_backbone_time_bar_data=augmented_data,
+                alpha_enet=best_alpha_enet,
+                lambda_enet=best_lambda_enet,
+                target_col_name=target_col_name,
+                distribution_model=distribution_model,
+                save_dir=save_dir
+            )
         
         # Compile complete results
         hyperparameter_results = {
@@ -778,7 +940,8 @@ class Interface:
             'adaptive_lasso': {
                 'best_tau': ada_lasso_results['best_tau_adalasso'],
                 'best_lambda': ada_lasso_results['best_lambda_adalasso'],
-                'best_bic': ada_lasso_results['best_bic'],
+                'best_metric': ada_lasso_results.get('best_bic', ada_lasso_results.get('best_mse')),
+                'metric_type': 'BIC' if 'best_bic' in ada_lasso_results else 'MSE',
                 'tau_grid': self.tau_adalasso_grid,
                 'lambda_grid': self.lambda_adalasso_grid,
                 'all_results': ada_lasso_results['all_results']
@@ -971,7 +1134,8 @@ class Interface:
                       selection_threshold: float = 0.5,
                       tolerance_threshold: float = 1e-6,
                       ols_significance_level: float = 0.05,
-                      save_dir : str = None) -> Dict:
+                      save_dir : str = None,
+                      second_stage_mse: bool = False) -> Dict:
         """
         Perform global variable selection for the TTSTL Interface module.
         
@@ -991,6 +1155,7 @@ class Interface:
             tolerance_threshold: Minimum absolute coefficient value to consider in Adaptive Lasso
             ols_significance_level: Significance level for OLS heteroskedasticity-robust tests
             save_dir: Directory to save results and plots
+            second_stage_mse: If True, use MSE-based criterion for Adaptive Lasso tuning instead of BIC
 
         Returns:
             Dictionary with selected variables and global update results
@@ -1074,16 +1239,22 @@ class Interface:
             n_lags=n_lags,
             validation_proportion=validation_proportion,
             distribution_model=distribution_model,
-            save_dir=save_dir
+            save_dir=save_dir,
+            second_stage_mse=second_stage_mse
         )
         
         # Extract optimal hyperparameters from class attributes (set by _update_hyperparameters)
         best_alpha_enet = self.best_alpha_enet
         best_lambda_enet = self.best_lambda_enet
         best_mse_enet = self.best_mse_enet
-        best_tau_adalasso = self.best_tau_adalasso
-        best_lambda_adalasso = self.best_lambda_adalasso
-        best_bic_adalasso = self.best_bic_adalasso
+        
+        # Handle both BIC and MSE modes for adaptive lasso
+        if second_stage_mse:
+            best_metric_adalasso = self.best_mse_adalasso
+            metric_name = 'best_mse'
+        else:
+            best_metric_adalasso = self.best_bic_adalasso
+            metric_name = 'best_bic'
 
         # Store optimal hyperparameters and metrics in JSON file
         hyperparams_and_metrics = {
@@ -1093,9 +1264,9 @@ class Interface:
                 'best_mse': float(best_mse_enet)
             },
             'adaptive_lasso': {
-                'best_tau': float(best_tau_adalasso),
-                'best_lambda': float(best_lambda_adalasso),
-                'best_bic': float(best_bic_adalasso)
+                'best_tau': float(self.best_tau_adalasso),
+                'best_lambda': float(self.best_lambda_adalasso),
+                metric_name: float(best_metric_adalasso)
             }
         }
 
@@ -1159,8 +1330,8 @@ class Interface:
                     y=y_bar,
                     alpha_enet=best_alpha_enet,
                     lambda_enet=best_lambda_enet,
-                    tau_adalasso=best_tau_adalasso,
-                    lambda_adalasso=best_lambda_adalasso,
+                    tau_adalasso=self.best_tau_adalasso,
+                    lambda_adalasso=self.best_lambda_adalasso,
                     distribution_model=distribution_model
                 )
                 

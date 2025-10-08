@@ -78,6 +78,7 @@ class OrchestratorConfig:
 
     # Variable selection
     user_defined_variables: Optional[List[str]] = None  # Bypass adalasso with user-defined variables
+    second_stage_mse: bool = False  # Use MSE instead of BIC for adalasso hyperparameter selection
     
     validation_proportion_interface : float = 0.2
     selection_threshold: float = 0.40
@@ -787,6 +788,7 @@ class Orchestrator:
                 selection_threshold=self.cfg.selection_threshold,
                 tolerance_threshold=self.cfg.tolerance_threshold,
                 ols_significance_level=self.cfg.ols_significance_level,
+                second_stage_mse=self.cfg.second_stage_mse,
                 save_dir=str(bb_dir / "interface")
             )
                      
