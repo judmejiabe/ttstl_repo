@@ -6,7 +6,7 @@ import os
 import traceback
 import warnings
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 # Third-party imports
 import matplotlib.pyplot as plt
@@ -16,6 +16,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from sklearn.preprocessing import StandardScaler
 
 # R interface imports
 from rpy2.rinterface_lib import callbacks
@@ -23,7 +24,7 @@ from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import importr
 
 # Local application imports
-from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm
+from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm, create_pretrained_scaler
 
 # Suppress R console output to reduce noise from stationarity tests
 def nullify_output(x):
@@ -44,7 +45,10 @@ class Backbone():
                  delta_sample : float = 0.0,
                  parsimonious_mode : bool = False,
                  neural_covariates_only : bool = False,
-                 manual_covariates_only : bool = False) -> None:
+                 manual_covariates_only : bool = False,
+                 pretrained_scaler: Optional[StandardScaler] = None,
+                 lower_bounds: Optional[Dict[str, float]] = None,
+                 upper_bounds: Optional[Dict[str, float]] = None) -> None:
         """Initialize the Backbone with a model and delta adapter.
         Args:
             model (nn.Module): The neural network model to be used.
@@ -53,6 +57,9 @@ class Backbone():
             parsimonious_mode (bool, optional): Whether to use parsimonious mode for neural covariate extraction.
             neural_covariates_only (bool, optional): Whether to use only neural covariates (no manual/stationary features).
             manual_covariates_only (bool, optional): Whether to use only manual/stationary features (no neural covariates).
+            pretrained_scaler (Optional[StandardScaler], optional): Pretrained scaler for consistent preprocessing.
+            lower_bounds (Optional[Dict[str, float]], optional): Lower quantile bounds for winsorization.
+            upper_bounds (Optional[Dict[str, float]], optional): Upper quantile bounds for winsorization.
         """
         self.model = model
         self.device = next(self.model.parameters()).device
@@ -63,6 +70,11 @@ class Backbone():
         self.manual_covariates_only = manual_covariates_only
         self.full_covariate_list = None
         self.dropped_pairs = dict()
+        
+        # Preprocessing components for consistent data processing
+        self.pretrained_scaler = pretrained_scaler
+        self.lower_bounds = lower_bounds
+        self.upper_bounds = upper_bounds
         
         # Validate mutually exclusive modes
         if self.neural_covariates_only and self.manual_covariates_only:
@@ -81,6 +93,41 @@ class Backbone():
         self.pretrained = False
 
         self.logger = logging.getLogger("ttstl.backbone")
+
+    def set_preprocessing_components(self, 
+                                   pretrained_scaler: StandardScaler,
+                                   lower_bounds: Dict[str, float],
+                                   upper_bounds: Dict[str, float]) -> None:
+        """
+        Set or update the preprocessing components (scaler and bounds).
+        
+        This method allows setting preprocessing components after backbone initialization,
+        which is useful when the scaler is created during training or loaded from disk.
+        
+        Args:
+            pretrained_scaler: Fitted StandardScaler for feature preprocessing
+            lower_bounds: Dictionary mapping feature names to lower quantile bounds
+            upper_bounds: Dictionary mapping feature names to upper quantile bounds
+        """
+        self.pretrained_scaler = pretrained_scaler
+        self.lower_bounds = lower_bounds
+        self.upper_bounds = upper_bounds
+        self.logger.info("Updated backbone preprocessing components")
+        self.logger.info(f"Scaler available: {self.pretrained_scaler is not None}")
+        self.logger.info(f"Bounds available: {self.lower_bounds is not None and self.upper_bounds is not None}")
+        if self.lower_bounds is not None:
+            self.logger.info(f"Bounds available for features: {list(self.lower_bounds.keys())}")
+
+    def has_preprocessing_components(self) -> bool:
+        """
+        Check if all preprocessing components are available.
+        
+        Returns:
+            bool: True if scaler and bounds are available, False otherwise
+        """
+        return (self.pretrained_scaler is not None and 
+                self.lower_bounds is not None and 
+                self.upper_bounds is not None)
 
     def _one_epoch(self, 
                    train_loader : DataLoader,
@@ -506,10 +553,23 @@ class Backbone():
         try:
             self.logger.info(f"Extracting neural covariates in {'parsimonious' if self.parsimonious_mode else 'full'} mode")
             
+            # Validate that preprocessing components are available
+            if not self.has_preprocessing_components():
+                raise ValueError(
+                    "Preprocessing components (scaler and bounds) are required for neural covariate extraction. "
+                    "Use set_preprocessing_components() to provide them or initialize backbone with these components."
+                )
+            
             # Create dataset from event-driven data (using train=False to keep all data)
             event_dataset = get_dataset_cnn_lstm(
-                event_driven_data, delta=self.delta_sample, quantile=quantile,
-                train=False)
+                event_driven_data, 
+                delta=self.delta_sample, 
+                quantile=quantile,
+                train=False,
+                pretrained_scaler=self.pretrained_scaler,
+                lower_bounds=self.lower_bounds,
+                upper_bounds=self.upper_bounds
+            )
             
             # Create a DataLoader for batch processing with larger batch size for efficiency
             if self.device != torch.device('cpu'):
@@ -588,6 +648,10 @@ class Backbone():
             return covariates_df
 
             
+        except ValueError as e:
+            # Re-raise ValueError as-is (these are usually validation errors with useful messages)
+            self.logger.error(f"Validation error in neural covariate extraction: {str(e)}")
+            raise e
         except Exception as e:
             self.logger.error(f"Error extracting neural covariates: {str(e)}")
             traceback.print_exc()
@@ -915,11 +979,24 @@ class Backbone():
         
         self.logger.info("Starting neural network evaluation in local adapt mode")
         
+        # Validate that preprocessing components are available
+        if not self.has_preprocessing_components():
+            raise ValueError(
+                "Preprocessing components (scaler and bounds) are required for dataset creation. "
+                "Use set_preprocessing_components() to provide them or initialize backbone with these components."
+            )
+        
         # Create dataset using the CNN-LSTM preprocessor
         # Use train=True to filter out NaN targets for proper loss evaluation
         test_dataset = get_dataset_cnn_lstm(
-            event_driven_data, delta=self.delta_sample, quantile=quantile, 
-            train=True)  # Filter NaN targets for evaluation
+            event_driven_data, 
+            delta=self.delta_sample, 
+            quantile=quantile, 
+            train=True,  # Filter NaN targets for evaluation
+            pretrained_scaler=self.pretrained_scaler,
+            lower_bounds=self.lower_bounds,
+            upper_bounds=self.upper_bounds
+        )
         
         # Create data loader
         if self.device != torch.device('cpu'):
@@ -1062,14 +1139,33 @@ class Backbone():
         self.logger.info(f"Validation interval: [{validation_start:.2f}, {validation_end:.2f}]")
         self.logger.info(f"Buffer intervals: [{validation_buffer_start:.2f}, {validation_start:.2f}] and [{validation_end:.2f}, {validation_buffer_end:.2f}]")
 
+        # Validate that preprocessing components are available
+        if not self.has_preprocessing_components():
+            raise ValueError(
+                "Preprocessing components (scaler and bounds) are required for dataset creation. "
+                "Use set_preprocessing_components() to provide them or initialize backbone with these components."
+            )
+
         # Create datasets using the CNN-LSTM preprocessor
         train_dataset = get_dataset_cnn_lstm(
-            train_data, delta=self.delta_sample, quantile=quantile, 
-            train=True)
+            train_data, 
+            delta=self.delta_sample, 
+            quantile=quantile, 
+            train=True,
+            pretrained_scaler=self.pretrained_scaler,
+            lower_bounds=self.lower_bounds,
+            upper_bounds=self.upper_bounds
+        )
         
         validation_dataset = get_dataset_cnn_lstm(
-            validation_data, delta=self.delta_sample, quantile=quantile, 
-            train=True)
+            validation_data, 
+            delta=self.delta_sample, 
+            quantile=quantile, 
+            train=True,
+            pretrained_scaler=self.pretrained_scaler,
+            lower_bounds=self.lower_bounds,
+            upper_bounds=self.upper_bounds
+        )
         
         # Create data loaders
 

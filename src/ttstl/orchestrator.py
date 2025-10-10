@@ -68,6 +68,11 @@ class OrchestratorConfig:
     na_verification_threshold : float = 0.1
     learning_rate: float = 0.0001  # Learning rate for backbone optimizer
     correlation_threshold: float = 0.95  # Correlation threshold for feature filtering
+    
+    # Preprocessing components for lookahead bias prevention
+    pretrained_scaler: Optional[StandardScaler] = None  # Pretrained scaler from preprocessing
+    lower_bounds: Optional[Dict[str, float]] = None     # Lower windsorization bounds
+    upper_bounds: Optional[Dict[str, float]] = None     # Upper windsorization bounds
 
     # Interface knobs
     # Hyperparameter grids (using default factory approach)
@@ -328,7 +333,10 @@ class Orchestrator:
                 delta_sample=self.cfg.sdelta,
                 parsimonious_mode=self.cfg.parsimonious_mode,
                 neural_covariates_only=self.cfg.neural_covariates_only,
-                manual_covariates_only=self.cfg.manual_covariates_only
+                manual_covariates_only=self.cfg.manual_covariates_only,
+                pretrained_scaler=self.cfg.pretrained_scaler,
+                lower_bounds=self.cfg.lower_bounds,
+                upper_bounds=self.cfg.upper_bounds
             )
             
             # Initialize Interface with backbone module and hyperparameter grids

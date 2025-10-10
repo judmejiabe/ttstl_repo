@@ -17,7 +17,7 @@ from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 from ttstl.utils.data_downloader import import_to_pandas
 
 # Import CNN-LSTM pretraining functions
-from market_data_cnn_lstm_pretraining import load_pretrained_model
+from market_data_cnn_lstm_pretraining import load_pretrained_model, load_full_pretrained_setup
 
 
 def setup_logging():
@@ -133,6 +133,11 @@ def get_base_config():
         na_verification_threshold=0.2,
         learning_rate=0.0001,
         correlation_threshold=0.95,
+        
+        # Preprocessing components for lookahead bias prevention
+        pretrained_scaler=None,      # Will be set when loading pretrained model
+        lower_bounds=None,           # Will be set when loading pretrained model
+        upper_bounds=None,           # Will be set when loading pretrained model
 
         # Interface knobs (same as market_data_ttstl_test)
         user_defined_variables=None,  # Will be modified per experiment
@@ -525,14 +530,14 @@ def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir,
 
 def load_pretrained_model_for_experiments(model_path=None):
     """
-    Load a pretrained CNN-LSTM model for use in TTSTL experiments.
+    Load a pretrained CNN-LSTM model and preprocessing components for use in TTSTL experiments.
     
     Args:
         model_path: Path to the pretrained model file. If None, will look for 
                    the most recent model in cnn_lstm_pretraining_market_data directory.
         
     Returns:
-        Loaded CNN-LSTM model or None if loading fails
+        Tuple of (trained_model, scaler, lower_bounds, upper_bounds) or None if loading fails
     """
     logger = logging.getLogger(__name__)
     
@@ -555,14 +560,27 @@ def load_pretrained_model_for_experiments(model_path=None):
             # Use the most recent model file
             model_path = max(model_files, key=lambda p: p.stat().st_mtime)
             logger.info(f"Using most recent pretrained model: {model_path}")
+            
+            # Extract directory and model name from the full path
+            experiments_dir = model_path.parent
+            model_name = model_path.stem  # Gets filename without .pth extension
+        else:
+            # User provided a specific model path
+            model_path = Path(model_path)
+            experiments_dir = model_path.parent
+            model_name = model_path.stem  # Gets filename without .pth extension
+            logger.info(f"Using specified pretrained model: {model_path}")
         
-        # Load the pretrained model
-        trained_model = load_pretrained_model(model_path)
-        logger.info("Successfully loaded pretrained CNN-LSTM model for experiments")
-        return trained_model
+        # Load the complete pretrained setup (model + preprocessing components)
+        trained_model, scaler, lower_bounds, upper_bounds = load_full_pretrained_setup(
+            experiments_dir, model_name
+        )
+        logger.info("Successfully loaded pretrained CNN-LSTM model and preprocessing components for experiments")
+        
+        return trained_model, scaler, lower_bounds, upper_bounds
         
     except Exception as e:
-        logger.error(f"Failed to load pretrained model: {str(e)}")
+        logger.error(f"Failed to load pretrained model and preprocessing components: {str(e)}")
         logger.info("Please ensure you have run cnn_lstm_pretraining.py successfully")
         return None
 
@@ -594,15 +612,16 @@ def main():
     logger.info("Starting market data TTSTL experiments for INTC")
     logger.info(f"Global random seed set to: {SEED}")
 
-    # Load pretrained CNN-LSTM model
-    logger.info("Loading pretrained CNN-LSTM model...")
-    trained_model = load_pretrained_model_for_experiments()
+    # Load pretrained CNN-LSTM model and preprocessing components
+    logger.info("Loading pretrained CNN-LSTM model and preprocessing components...")
+    model_data = load_pretrained_model_for_experiments()
     
-    if trained_model is None:
-        logger.error("Failed to load pretrained model. Please run cnn_lstm_pretraining.py first.")
+    if model_data is None:
+        logger.error("Failed to load pretrained model and preprocessing components. Please run cnn_lstm_pretraining.py first.")
         return
     
-    logger.info("Pretrained CNN-LSTM model loaded successfully")
+    trained_model, scaler, lower_bounds, upper_bounds = model_data
+    logger.info("Pretrained CNN-LSTM model and preprocessing components loaded successfully")
     
     # Create runs directory
     runs_dir = Path('runs_market_data_experiments')
@@ -610,6 +629,12 @@ def main():
 
     # Get base configuration and experiment configurations
     base_config = get_base_config()
+    
+    # Update base configuration with preprocessing components
+    base_config.pretrained_scaler = scaler
+    base_config.lower_bounds = lower_bounds
+    base_config.upper_bounds = upper_bounds
+    
     experiment_configs = get_experiment_configs()
 
     logger.info("=" * 80)

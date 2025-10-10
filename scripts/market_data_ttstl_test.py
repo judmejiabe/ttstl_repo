@@ -201,17 +201,18 @@ def main():
     logger.info(f"Global random seed set to: {SEED}")
     logger.info("Test date pair: June 12, 2024 → June 13, 2024")
 
-    # Load pretrained CNN-LSTM model
-    logger.info("Loading pretrained CNN-LSTM model...")
-    trained_model = load_pretrained_model_for_experiments()
+    # Load pretrained CNN-LSTM model and preprocessing components
+    logger.info("Loading pretrained CNN-LSTM model and preprocessing components...")
+    model_data = load_pretrained_model_for_experiments()
     
-    if trained_model is None:
-        logger.error("Failed to load pretrained model. Please run cnn_lstm_pretraining.py first.")
-        print("❌ Failed to load pretrained model.")
+    if model_data is None:
+        logger.error("Failed to load pretrained model and preprocessing components. Please run cnn_lstm_pretraining.py first.")
+        print("❌ Failed to load pretrained model and preprocessing components.")
         print("💡 Please run cnn_lstm_pretraining.py first to create a pretrained model.")
         return
     
-    logger.info("Pretrained CNN-LSTM model loaded successfully")
+    trained_model, scaler, lower_bounds, upper_bounds = model_data
+    logger.info("Pretrained CNN-LSTM model and preprocessing components loaded successfully")
 
     # Load market data for the test date pair
     global_ed_df, global_ptd_df, local_ed_df, local_ptd_df = load_market_data()
@@ -220,6 +221,11 @@ def main():
 
     # Get base configuration from experiments script
     cfg = get_base_config()
+    
+    # Update configuration with preprocessing components
+    cfg.pretrained_scaler = scaler
+    cfg.lower_bounds = lower_bounds
+    cfg.upper_bounds = upper_bounds
     
     # Enable MSE mode for adalasso hyperparameter selection
     cfg.second_stage_mse = True

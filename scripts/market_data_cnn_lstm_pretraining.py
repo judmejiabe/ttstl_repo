@@ -2,6 +2,7 @@
 import copy
 import json
 import logging
+import pickle
 import random
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,7 @@ from torch.utils.data import DataLoader, ConcatDataset
 # Local imports
 from ttstl.architectures.cnn_lstm import CNNLSTM
 from ttstl.utils.data_downloader import import_to_pandas
-from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm
+from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm, create_pretrained_scaler
 
 
 def setup_logging():
@@ -175,8 +176,11 @@ def load_may_training_data():
 
 def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_000.0, quantile=0.005, batch_size=32):
     """
-    Prepare training data for CNN-LSTM by processing each day individually using backbone's preprocessing logic.
-    This avoids issues with temporal gaps between days affecting forward-looking return computation.
+    Prepare training data for CNN-LSTM using pretrained scaler approach to avoid lookahead bias.
+    
+    This function creates a pretrained scaler from all training data, then uses it consistently
+    for both training and validation preprocessing. This prevents lookahead bias by ensuring
+    validation data preprocessing uses only information available during training.
     
     Args:
         train_ed_dfs: List of training event-driven DataFrames (individual days)
@@ -186,17 +190,42 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
         batch_size: Batch size for data loaders
         
     Returns:
-        Tuple of (train_loader, val_loader, feature_names, device)
+        Tuple of (train_loader, val_loader, feature_names, device, pretrained_scaler, lower_bounds, upper_bounds)
+        - train_loader: DataLoader for training data
+        - val_loader: DataLoader for validation data  
+        - feature_names: List of order flow feature names
+        - device: PyTorch device being used
+        - pretrained_scaler: Fitted StandardScaler for future use
+        - lower_bounds: Lower quantile bounds for winsorization
+        - upper_bounds: Upper quantile bounds for winsorization
     """
     logger = logging.getLogger(__name__)
-    logger.info("Preparing training data using day-by-day preprocessing with backbone's logic")
+    logger.info("Preparing training data using day-by-day preprocessing with pretrained scaler approach")
     
-    # Process each training day individually
+    # Step 1: Create pretrained scaler from all training data to avoid lookahead bias
+    logger.info("Creating pretrained scaler from all training data...")
+    
+    # Combine all training data for scaler fitting
+    all_train_data = []
+    for train_ed_df in train_ed_dfs:
+        df_clean = train_ed_df.drop(['trading_day', 'date'], axis=1)
+        all_train_data.append(df_clean)
+    
+    combined_train_data = pd.concat(all_train_data, ignore_index=True)
+    logger.info(f"Combined training data for scaler fitting: {len(combined_train_data)} samples from {len(train_ed_dfs)} days")
+    
+    # Create pretrained scaler from combined training data
+    pretrained_scaler, lower_bounds, upper_bounds = create_pretrained_scaler(
+        combined_train_data, quantile=quantile
+    )
+    logger.info(f"Pretrained scaler created with bounds for {len(lower_bounds)} features")
+    
+    # Step 2: Process each training day individually using pretrained scaler
     train_datasets = []
     total_train_samples_before = 0
     total_train_samples_after = 0
     
-    logger.info("Processing training days individually...")
+    logger.info("Processing training days individually with pretrained scaler...")
     for i, train_ed_df in enumerate(train_ed_dfs):
         day = train_ed_df['trading_day'].iloc[0]
         logger.info(f"Processing training day {day} ({i+1}/{len(train_ed_dfs)}): {len(train_ed_df)} samples")
@@ -207,7 +236,13 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
         
         try:
             train_dataset = get_dataset_cnn_lstm(
-                df_clean, delta=delta, quantile=quantile, train=True
+                df_clean, 
+                delta=delta, 
+                quantile=quantile, 
+                train=True,
+                pretrained_scaler=pretrained_scaler,
+                lower_bounds=lower_bounds,
+                upper_bounds=upper_bounds
             )
             train_datasets.append(train_dataset)
             total_train_samples_after += len(train_dataset)
@@ -216,12 +251,12 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
             logger.warning(f"  Day {day}: Failed to process - {str(e)}")
             continue
     
-    # Process each validation day individually
+    # Step 3: Process each validation day individually using the SAME pretrained scaler
     val_datasets = []
     total_val_samples_before = 0
     total_val_samples_after = 0
     
-    logger.info("Processing validation days individually...")
+    logger.info("Processing validation days individually with SAME pretrained scaler...")
     for i, val_ed_df in enumerate(val_ed_dfs):
         day = val_ed_df['trading_day'].iloc[0]
         logger.info(f"Processing validation day {day} ({i+1}/{len(val_ed_dfs)}): {len(val_ed_df)} samples")
@@ -232,7 +267,13 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
         
         try:
             val_dataset = get_dataset_cnn_lstm(
-                df_clean, delta=delta, quantile=quantile, train=True
+                df_clean, 
+                delta=delta, 
+                quantile=quantile, 
+                train=True,
+                pretrained_scaler=pretrained_scaler,  # Use SAME scaler as training
+                lower_bounds=lower_bounds,            # Use SAME bounds as training
+                upper_bounds=upper_bounds             # Use SAME bounds as training
             )
             val_datasets.append(val_dataset)
             total_val_samples_after += len(val_dataset)
@@ -281,7 +322,7 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
     logger.info(f"Using {len(feature_names)} order flow features for training")
     logger.info(f"Final dataset sizes: Training {len(combined_train_dataset)}, Validation {len(combined_val_dataset)}")
     
-    return train_loader, val_loader, feature_names, device
+    return train_loader, val_loader, feature_names, device, pretrained_scaler, lower_bounds, upper_bounds
 
 def train_cnn_lstm_model(train_loader, val_loader, device, num_epochs=10, learning_rate=0.0001, seed=19991810):
     """
@@ -426,14 +467,18 @@ def train_cnn_lstm_model(train_loader, val_loader, device, num_epochs=10, learni
     logger.info("CNN-LSTM training completed")
     return model
 
-def save_pretrained_model(model, experiments_dir, model_name="pretrained_cnnlstm"):
+def save_pretrained_model(model, experiments_dir, model_name="pretrained_cnnlstm", 
+                         pretrained_scaler=None, lower_bounds=None, upper_bounds=None):
     """
-    Save the pretrained CNN-LSTM model and its training history.
+    Save the pretrained CNN-LSTM model, its training history, and preprocessing components.
     
     Args:
         model: Trained CNN-LSTM model with training_history_df attribute
         experiments_dir: Directory to save the model and history
         model_name: Base name for saved files
+        pretrained_scaler: StandardScaler fitted on training data
+        lower_bounds: Dictionary of lower quantile bounds for winsorization
+        upper_bounds: Dictionary of upper quantile bounds for winsorization
     """
     logger = logging.getLogger(__name__)
     
@@ -455,11 +500,34 @@ def save_pretrained_model(model, experiments_dir, model_name="pretrained_cnnlstm
         history_path = None
         logger.warning("No training history found in model")
     
+    # Save preprocessing components (scaler and bounds)
+    scaler_path = None
+    bounds_path = None
+    
+    if pretrained_scaler is not None:
+        scaler_path = experiments_dir / f"{model_name}_scaler.pkl"
+        with open(scaler_path, 'wb') as f:
+            pickle.dump(pretrained_scaler, f)
+        logger.info(f"Saved pretrained scaler to: {scaler_path}")
+    
+    if lower_bounds is not None and upper_bounds is not None:
+        bounds_data = {
+            'lower_bounds': lower_bounds,
+            'upper_bounds': upper_bounds
+        }
+        bounds_path = experiments_dir / f"{model_name}_bounds.json"
+        with open(bounds_path, 'w') as f:
+            json.dump(bounds_data, f, indent=2)
+        logger.info(f"Saved winsorization bounds to: {bounds_path}")
+    
     # Save model metadata
     metadata = {
         'model_type': 'CNN-LSTM',
         'architecture': 'CNNLSTM',
         'training_completed': datetime.now().isoformat(),
+        'has_pretrained_scaler': pretrained_scaler is not None,
+        'has_winsorization_bounds': lower_bounds is not None and upper_bounds is not None,
+        'feature_names': list(lower_bounds.keys()) if lower_bounds is not None else None,
         'num_epochs': len(model.training_history_df) if hasattr(model, 'training_history_df') and model.training_history_df is not None else None,
         'best_validation_loss': model.training_history_df['validation_loss'].min() if hasattr(model, 'training_history_df') and model.training_history_df is not None and len(model.training_history_df) > 0 else None,
         'best_epoch': (model.training_history_df['validation_loss'].idxmin() + 1) if hasattr(model, 'training_history_df') and model.training_history_df is not None and len(model.training_history_df) > 0 else None,
@@ -476,7 +544,9 @@ def save_pretrained_model(model, experiments_dir, model_name="pretrained_cnnlstm
     return {
         'model_path': model_path,
         'history_path': history_path,
-        'metadata_path': metadata_path
+        'metadata_path': metadata_path,
+        'scaler_path': scaler_path,
+        'bounds_path': bounds_path
     }
 
 def load_pretrained_model(model_path, device=None):
@@ -515,6 +585,72 @@ def load_pretrained_model(model_path, device=None):
     
     return model
 
+def load_preprocessing_components(scaler_path, bounds_path):
+    """
+    Load the pretrained scaler and winsorization bounds from disk.
+    
+    Args:
+        scaler_path: Path to the saved scaler (.pkl file)
+        bounds_path: Path to the saved bounds (.json file)
+        
+    Returns:
+        Tuple of (pretrained_scaler, lower_bounds, upper_bounds)
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Load scaler
+    scaler_path = Path(scaler_path)
+    if not scaler_path.exists():
+        raise FileNotFoundError(f"Scaler file not found: {scaler_path}")
+    
+    with open(scaler_path, 'rb') as f:
+        pretrained_scaler = pickle.load(f)
+    logger.info(f"Loaded pretrained scaler from: {scaler_path}")
+    
+    # Load bounds
+    bounds_path = Path(bounds_path)
+    if not bounds_path.exists():
+        raise FileNotFoundError(f"Bounds file not found: {bounds_path}")
+    
+    with open(bounds_path, 'r') as f:
+        bounds_data = json.load(f)
+    
+    lower_bounds = bounds_data['lower_bounds']
+    upper_bounds = bounds_data['upper_bounds']
+    logger.info(f"Loaded winsorization bounds from: {bounds_path}")
+    logger.info(f"Bounds available for features: {list(lower_bounds.keys())}")
+    
+    return pretrained_scaler, lower_bounds, upper_bounds
+
+def load_full_pretrained_setup(experiments_dir, model_name, device=None):
+    """
+    Load the complete pretrained setup: model, scaler, and bounds.
+    
+    Args:
+        experiments_dir: Directory containing the saved artifacts
+        model_name: Base name of the saved files
+        device: PyTorch device to load the model on (if None, will auto-select)
+        
+    Returns:
+        Tuple of (model, pretrained_scaler, lower_bounds, upper_bounds)
+    """
+    logger = logging.getLogger(__name__)
+    experiments_dir = Path(experiments_dir)
+    
+    # Load model
+    model_path = experiments_dir / f"{model_name}.pth"
+    model = load_pretrained_model(model_path, device)
+    
+    # Load preprocessing components
+    scaler_path = experiments_dir / f"{model_name}_scaler.pkl"
+    bounds_path = experiments_dir / f"{model_name}_bounds.json"
+    pretrained_scaler, lower_bounds, upper_bounds = load_preprocessing_components(
+        scaler_path, bounds_path
+    )
+    
+    logger.info("Successfully loaded complete pretrained setup")
+    return model, pretrained_scaler, lower_bounds, upper_bounds
+
 def main():
     """
     Main function to train and save CNN-LSTM model using May 2024 data.
@@ -543,8 +679,8 @@ def main():
     logger.info("Loading May 2024 event-driven data for neural network training...")
     train_ed_dfs, val_ed_dfs = load_may_training_data()
 
-    # Prepare training data using backbone's preprocessing and day-by-day processing
-    train_loader, val_loader, feature_names, device = prepare_daily_training_data(
+    # Prepare training data using pretrained scaler approach to avoid lookahead bias
+    train_loader, val_loader, feature_names, device, pretrained_scaler, lower_bounds, upper_bounds = prepare_daily_training_data(
         train_ed_dfs, val_ed_dfs,
         delta=2 * 1_000_000_000.0,  # Same as sdelta in TTSTL config
         quantile=0.005,  # Same as TTSTL config
@@ -554,21 +690,24 @@ def main():
     # Train the model using backbone's training logic
     trained_model = train_cnn_lstm_model(
         train_loader, val_loader, device,
-        num_epochs=50,  # Set to desired number of epochs
+        num_epochs=1,  # Set to desired number of epochs
         learning_rate=0.0001,  # Same as backbone
         seed=SEED  # Use global seed for reproducibility
     )
     
     logger.info("Neural network training completed successfully")
     
-    # Create experiments directory and save the pretrained model
+    # Create experiments directory and save the pretrained model with preprocessing components
     experiments_dir = Path('cnn_lstm_pretraining_market_data')
-    logger.info("Saving pretrained CNN-LSTM model and training history...")
+    logger.info("Saving pretrained CNN-LSTM model, scaler, bounds, and training history...")
     
     saved_paths = save_pretrained_model(
         trained_model, 
         experiments_dir, 
-        model_name=f"cnnlstm_may2024_trained_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        model_name=f"cnnlstm_may2024_trained_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        pretrained_scaler=pretrained_scaler,
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds
     )
     
     logger.info("Pretrained model saved successfully")
