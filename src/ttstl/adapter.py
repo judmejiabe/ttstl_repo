@@ -344,6 +344,51 @@ class Adapter:
         # except Exception as e:
         #     raise RuntimeError(f"Failed to fit GARCH model: {str(e)}")
 
+    def get_nn_output(self,
+                      event_driven_adapter_time_bar_data: pd.DataFrame,
+                      physical_time_driven_adapter_time_bar_data: pd.DataFrame,
+                      batch_size: int = 512) -> pd.DataFrame:
+        """
+        Extract raw neural network outputs (forward pass) from the backbone model.
+        
+        This method uses the backbone's extract_neural_covariates method with get_output=True
+        to obtain the raw CNN-LSTM outputs instead of hidden activations. This is useful
+        for comparison purposes and analysis of the model's direct predictions.
+        
+        Args:
+            event_driven_adapter_time_bar_data (pd.DataFrame): Event-driven data for neural network processing.
+            physical_time_driven_adapter_time_bar_data (pd.DataFrame): Physical time-driven data with timestamps.
+            batch_size (int, optional): Batch size for processing. Defaults to 512.
+            
+        Returns:
+            pd.DataFrame: DataFrame containing timestamps and raw neural network outputs with 'forward_pass_' prefix.
+            
+        Example:
+            >>> nn_outputs = adapter.get_nn_output(event_df, phys_df)
+            >>> print(nn_outputs.columns)
+            ['timestamp', 'forward_pass_0']  # For single output CNN-LSTM
+        """
+        self.logger.info("Extracting raw neural network outputs from backbone")
+        
+        # Use the backbone's extract_neural_covariates method with get_output=True
+        # This will return the forward pass outputs instead of hidden activations
+        nn_outputs = self.interface.backbone.extract_neural_covariates(
+            event_driven_data=event_driven_adapter_time_bar_data,
+            physical_time_data=physical_time_driven_adapter_time_bar_data,
+            batch_size=batch_size,
+            get_output=True  # This is the key parameter to get raw outputs
+        )
+        
+        # Convert timestamp to float for consistency
+        nn_outputs['timestamp'] = nn_outputs['timestamp'].astype(float)
+        
+        # Log information about the extracted outputs
+        output_columns = [col for col in nn_outputs.columns if col.startswith('forward_pass_')]
+        self.logger.info(f"Extracted {len(output_columns)} neural network output features: {output_columns}")
+        self.logger.info(f"Neural network outputs shape: {nn_outputs.shape}")
+        
+        return nn_outputs
+
     def augment_data(self,
                      event_driven_adapter_time_bar_data : pd.DataFrame,
                      physical_time_driven_adapter_time_bar_data : pd.DataFrame,
@@ -356,13 +401,14 @@ class Adapter:
         neural_covariates = self.interface.backbone.extract_neural_covariates(event_driven_adapter_time_bar_data,
                                                                               physical_time_driven_adapter_time_bar_data)
         
+        # Ensure timestamp consistency - convert to float and create copy to avoid modifying original
         neural_covariates['timestamp'] = neural_covariates['timestamp'].astype(float)
-        physical_time_driven_adapter_time_bar_data['timestamp'] = \
-            physical_time_driven_adapter_time_bar_data['timestamp'].astype(float)
+        physical_data_copy = physical_time_driven_adapter_time_bar_data.copy()
+        physical_data_copy['timestamp'] = physical_data_copy['timestamp'].astype(float)
 
         # Merge neural covariates with physical time data
         augmented_physical_data = pd.merge_asof(
-            physical_time_driven_adapter_time_bar_data,
+            physical_data_copy,
             neural_covariates,
             on='timestamp',
             direction='nearest',
@@ -777,7 +823,7 @@ class Adapter:
                           target_col_name: str = 'micro_return'):
         """
         Calculates Mean Absolute Error (MAE) and Mean Squared Error (MSE)
-        by leveraging the new forecast method.
+        by leveraging the new forecast method and comparing with raw neural network outputs.
 
         Args:
             in_sample_event_df (pd.DataFrame): In-sample event-driven data.
@@ -787,12 +833,12 @@ class Adapter:
             target_col_name (str): The name of the target variable column.
 
         Returns:
-            dict: A dictionary containing the calculated 'mae' and 'mse'.
+            dict: A dictionary containing the calculated metrics for both GARCH model and raw NN outputs.
         """
-        self.logger.info("Calculating MAE and MSE using the new forecast structure.")
+        self.logger.info("Calculating MAE and MSE using the forecast method and raw neural network outputs.")
 
-        # Call the new forecast method to get predictions
-        forecast_df = self.forecast(
+        # Call the GARCH forecast method to get predictions
+        garch_forecast_df = self.forecast(
             in_sample_event_df=in_sample_event_df,
             in_sample_phys_df=in_sample_phys_df,
             out_of_sample_event_df=out_of_sample_event_df,
@@ -801,50 +847,152 @@ class Adapter:
             target_col_name=target_col_name
         )
 
-        # Ensure alignment between actual and predicted values
-        # The forecast_df contains timestamps that we can use for alignment
-        # Merge on timestamp to ensure alignment
-        forecast_with_actual = pd.merge(
-            forecast_df[['timestamp', 'mean']],
-            out_of_sample_phys_df[['timestamp', target_col_name]],
+        # Get raw neural network outputs for out-of-sample period
+        self.logger.info("Extracting raw neural network outputs for performance comparison")
+        nn_outputs = self.get_nn_output(
+            event_driven_adapter_time_bar_data=out_of_sample_event_df,
+            physical_time_driven_adapter_time_bar_data=out_of_sample_phys_df,
+            batch_size=512
+        )
+
+        # Handle NaN values in nn_outputs - replace with zeros and report
+        nan_count = nn_outputs.isna().sum().sum()
+        if nan_count > 0:
+            nn_outputs = nn_outputs.fillna(0)
+            self.logger.warning(f"Replaced {nan_count} NaN values with zeros in neural network outputs")
+        else:
+            self.logger.info("No NaN values found in neural network outputs")
+
+        # Ensure timestamp consistency and alignment between GARCH forecasts and actual values
+        garch_forecast_df_copy = garch_forecast_df[['timestamp', 'mean']].copy()
+        out_of_sample_phys_df_copy = out_of_sample_phys_df[['timestamp', target_col_name]].copy()
+        
+        # Convert timestamps to float for consistent merging
+        garch_forecast_df_copy['timestamp'] = garch_forecast_df_copy['timestamp'].astype(float)
+        out_of_sample_phys_df_copy['timestamp'] = out_of_sample_phys_df_copy['timestamp'].astype(float)
+        
+        garch_forecast_with_actual = pd.merge_asof(
+            garch_forecast_df_copy.sort_values('timestamp'),
+            out_of_sample_phys_df_copy.sort_values('timestamp'),
             on='timestamp',
-            how='inner'
+            direction='nearest',
+            tolerance=1e-6  # Tolerance for float timestamp matching
         )
         
-        actual_values = forecast_with_actual[target_col_name]
-        predicted_values = forecast_with_actual['mean']
+        # Ensure alignment between NN outputs and actual values
+        # nn_outputs already has float timestamps from get_nn_output method
+        nn_output_with_actual = pd.merge_asof(
+            nn_outputs.sort_values('timestamp'),
+            out_of_sample_phys_df_copy.sort_values('timestamp'),
+            on='timestamp',
+            direction='nearest',
+            tolerance=1e-6
+        )
         
-        self.logger.info(f"Aligned data: {len(actual_values)} observations (forecast: {len(forecast_df)}, original: {len(out_of_sample_phys_df)})")
+        # Extract aligned data for GARCH model
+        garch_actual_values = garch_forecast_with_actual[target_col_name]
+        garch_predicted_values = garch_forecast_with_actual['mean']
+        
+        # Extract aligned data for NN outputs (use first forward_pass column as prediction)
+        nn_output_cols = [col for col in nn_output_with_actual.columns if col.startswith('forward_pass_')]
+        if len(nn_output_cols) == 0:
+            self.logger.warning("No forward_pass columns found in NN outputs. Skipping NN performance metrics.")
+            nn_actual_values = None
+            nn_predicted_values = None
+        else:
+            nn_prediction_col = nn_output_cols[0]  # Use first output as prediction
+            nn_actual_values = nn_output_with_actual[target_col_name]
+            nn_predicted_values = nn_output_with_actual[nn_prediction_col]
+            self.logger.info(f"Using NN output column '{nn_prediction_col}' as prediction")
+        
+        self.logger.info(f"GARCH aligned data: {len(garch_actual_values)} observations (forecast: {len(garch_forecast_df)}, original: {len(out_of_sample_phys_df)})")
+        if nn_actual_values is not None:
+            self.logger.info(f"NN aligned data: {len(nn_actual_values)} observations")
 
-        # Calculate metrics
-        mae = mean_absolute_error(actual_values, predicted_values)
-        mse = mean_squared_error(actual_values, predicted_values)
+        # Calculate GARCH model metrics
+        garch_mae = mean_absolute_error(garch_actual_values, garch_predicted_values)
+        garch_mse = mean_squared_error(garch_actual_values, garch_predicted_values)
 
-        # Handle benchmark computation with proper type checking and alignment
+        # Calculate NN output metrics (if available)
+        if nn_actual_values is not None and len(nn_actual_values) > 0:
+            nn_mae = mean_absolute_error(nn_actual_values, nn_predicted_values)
+            nn_mse = mean_squared_error(nn_actual_values, nn_predicted_values)
+        else:
+            nn_mae = None
+            nn_mse = None
+
+        # Handle benchmark computation for GARCH model
         try:
             if isinstance(benchmark_forecast, (pd.Series, np.ndarray)):
                 # If benchmark is a series, ensure it aligns with actual_values
-                if len(benchmark_forecast) != len(actual_values):
-                    self.logger.error(f"Benchmark length ({len(benchmark_forecast)}) != actual values length ({len(actual_values)}). Using benchmark mean.")
-                    raise ValueError(f"Benchmark length ({len(benchmark_forecast)}) != actual values length ({len(actual_values)}). Using benchmark mean.")
+                if len(benchmark_forecast) != len(garch_actual_values):
+                    self.logger.error(f"Benchmark length ({len(benchmark_forecast)}) != actual values length ({len(garch_actual_values)}). Using benchmark mean.")
+                    raise ValueError(f"Benchmark length ({len(benchmark_forecast)}) != actual values length ({len(garch_actual_values)}). Using benchmark mean.")
                 else:
                     benchmark_value = benchmark_forecast
             else:
                 # Scalar benchmark - will broadcast correctly
                 benchmark_value = benchmark_forecast
             
-            benchmark_errors = np.abs(actual_values - benchmark_value)
-            benchmark_mse = np.mean((actual_values - benchmark_value) ** 2)
+            # Calculate relative metrics for GARCH
+            benchmark_errors = np.abs(garch_actual_values - benchmark_value)
+            benchmark_mse = np.mean((garch_actual_values - benchmark_value) ** 2)
             
-            relmae = mae / np.mean(benchmark_errors) if np.mean(benchmark_errors) != 0 else None
-            relmse = mse / benchmark_mse if benchmark_mse != 0 else None
+            garch_relmae = garch_mae / np.mean(benchmark_errors) if np.mean(benchmark_errors) != 0 else None
+            garch_relmse = garch_mse / benchmark_mse if benchmark_mse != 0 else None
+            garch_r2 = 1 - garch_relmse if garch_relmse is not None else None
+            
+            # Calculate relative metrics for NN outputs (if available)
+            if nn_actual_values is not None and len(nn_actual_values) > 0:
+                # Use same benchmark but align with NN data
+                if isinstance(benchmark_forecast, (pd.Series, np.ndarray)):
+                    if len(benchmark_forecast) != len(nn_actual_values):
+                        self.logger.warning(f"Benchmark length mismatch for NN data. Using scalar benchmark.")
+                        nn_benchmark_value = np.mean(benchmark_forecast) if hasattr(benchmark_forecast, '__len__') else benchmark_forecast
+                    else:
+                        nn_benchmark_value = benchmark_forecast
+                else:
+                    nn_benchmark_value = benchmark_forecast
+                
+                nn_benchmark_errors = np.abs(nn_actual_values - nn_benchmark_value)
+                nn_benchmark_mse = np.mean((nn_actual_values - nn_benchmark_value) ** 2)
+                
+                nn_relmae = nn_mae / np.mean(nn_benchmark_errors) if np.mean(nn_benchmark_errors) != 0 else None
+                nn_relmse = nn_mse / nn_benchmark_mse if nn_benchmark_mse != 0 else None
+                nn_r2 = 1 - nn_relmse if nn_relmse is not None else None
+            else:
+                nn_relmae = None
+                nn_relmse = None
+                nn_r2 = None
             
         except Exception as e:
             self.logger.warning(f"Benchmark computation failed: {e}. Setting relative metrics to None.")
-            relmae = None
-            relmse = None
-        r2 = 1 - relmse if relmse is not None else None
+            garch_relmae = None
+            garch_relmse = None
+            garch_r2 = None
+            nn_relmae = None
+            nn_relmse = None
+            nn_r2 = None
 
-        self.logger.info(f"Calculated Metrics - MAE: {mae:.6f}, MSE: {mse:.6f}, RelMAE: {relmae:.6f}, RelMSE: {relmse:.6f}, R2: {r2:.6f}")
+        # Log results
+        self.logger.info(f"GARCH Model Metrics - MAE: {garch_mae:.6f}, MSE: {garch_mse:.6f}, RelMAE: {garch_relmae:.6f}, RelMSE: {garch_relmse:.6f}, R2: {garch_r2:.6f}")
+        if nn_mae is not None:
+            self.logger.info(f"NN Output Metrics - MAE: {nn_mae:.6f}, MSE: {nn_mse:.6f}, RelMAE: {nn_relmae:.6f}, RelMSE: {nn_relmse:.6f}, R2: {nn_r2:.6f}")
+            
+            # Log comparison
+            mae_improvement = ((nn_mae - garch_mae) / nn_mae * 100) if nn_mae != 0 else 0
+            mse_improvement = ((nn_mse - garch_mse) / nn_mse * 100) if nn_mse != 0 else 0
+            self.logger.info(f"GARCH vs NN Comparison - MAE improvement: {mae_improvement:.2f}%, MSE improvement: {mse_improvement:.2f}%")
 
-        return {'mae': mae, 'mse': mse, 'relmae': relmae, 'relmse': relmse, 'r2': r2}
+        return {
+            'garch_mae': garch_mae, 
+            'garch_mse': garch_mse, 
+            'garch_relmae': garch_relmae, 
+            'garch_relmse': garch_relmse, 
+            'garch_r2': garch_r2,
+            'nn_mae': nn_mae,
+            'nn_mse': nn_mse,
+            'nn_relmae': nn_relmae,
+            'nn_relmse': nn_relmse,
+            'nn_r2': nn_r2
+        }

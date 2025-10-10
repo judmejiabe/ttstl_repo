@@ -231,7 +231,7 @@ def main():
     cfg.second_stage_mse = True
     
     # Set epochs to 1 for faster testing
-    cfg.epochs = 1
+    cfg.epochs = 0 # No training for test
     
     # Set specific run ID for test
     cfg.run_id = "TEST_BASE_CONFIG_06122024_06132024"
