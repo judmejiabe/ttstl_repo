@@ -99,6 +99,7 @@ class OrchestratorConfig:
     model : str = 'sGARCH'
     archm : bool = False
     update_parameters : dict = field(default_factory=dict)
+    compare_with_cnn_lstm : bool = False  # Whether to compare TTSTL performance with raw CNN-LSTM outputs
 
     # Optional run-id override
     run_id: Optional[str] = None
@@ -358,7 +359,8 @@ class Orchestrator:
                 dist=self.cfg.dist,
                 model=self.cfg.model,
                 archm=self.cfg.archm,
-                parameters={}  # Start with empty parameters
+                parameters={},  # Start with empty parameters
+                compare_with_cnn_lstm=self.cfg.compare_with_cnn_lstm
             )
             
             # Store only the adapter (backbone and interface are accessible through it)

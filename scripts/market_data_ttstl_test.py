@@ -222,6 +222,9 @@ def main():
     # Get base configuration from experiments script
     cfg = get_base_config()
     
+    # Override compare_with_cnn_lstm to False for this test
+    cfg.compare_with_cnn_lstm = True
+    
     # Update configuration with preprocessing components
     cfg.pretrained_scaler = scaler
     cfg.lower_bounds = lower_bounds
@@ -240,8 +243,8 @@ def main():
     log_orchestrator_config(cfg)
 
     # Create runs directory
-    runs_dir = Path('runs_market_data_test')
-    runs_dir.mkdir(exist_ok=True)
+    runs_dir = Path('outputs/runs_market_data_test')
+    runs_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Creating orchestrator with base configuration")
     
