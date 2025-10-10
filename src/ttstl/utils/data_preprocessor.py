@@ -85,10 +85,9 @@ def create_pretrained_scaler(data: pd.DataFrame,
 
 def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame, 
                                  delta : float, 
-                                 quantile: Optional[float] = 0.005,
-                                 pretrained_scaler: Optional[StandardScaler] = None,
-                                 lower_bounds: Optional[dict] = None,
-                                 upper_bounds: Optional[dict] = None) \
+                                 pretrained_scaler: StandardScaler,
+                                 lower_bounds: Dict[str, float],
+                                 upper_bounds: Dict[str, float]) \
                                     -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Preprocesses MBO data for a CNN-LSTM model.
@@ -99,19 +98,16 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
             - 'micro' (numeric): micro price values,
             - order flow features (any column whose name contains 'of').
         delta (float): Time horizon (same unit as 'timestamp') used to compute future micro returns.
-        quantile (Optional[float]): If provided, winsorization is applied to each standardized
-            order flow feature by clipping values below the lower quantile and above the upper
-            quantile. If None, no winsorization is applied.
-        pretrained_scaler (Optional[StandardScaler]): Pre-fitted scaler for order flow features.
+        pretrained_scaler (StandardScaler): Pre-fitted scaler for order flow features.
             REQUIRED to avoid lookahead bias. Use create_pretrained_scaler() to create one
             from historical data.
-        lower_bounds (Optional[dict]): Dictionary mapping feature names to lower quantile bounds
-            for winsorization. REQUIRED when quantile is specified to avoid lookahead bias.
-        upper_bounds (Optional[dict]): Dictionary mapping feature names to upper quantile bounds
-            for winsorization. REQUIRED when quantile is specified to avoid lookahead bias.
+        lower_bounds (Dict[str, float]): Dictionary mapping feature names to lower quantile bounds
+            for winsorization. REQUIRED for consistent preprocessing.
+        upper_bounds (Dict[str, float]): Dictionary mapping feature names to upper quantile bounds
+            for winsorization. REQUIRED for consistent preprocessing.
 
     Returns:
-        standardized_data (pd.DataFrame): Standardized (and optionally winsorized) order flow features.
+        standardized_data (pd.DataFrame): Standardized and winsorized order flow features.
         target (pd.DataFrame): Contains two columns:
             - 'timestamp': original timestamps,
             - 'micro_return': percentage change in 'micro' over the horizon delta,
@@ -120,16 +116,11 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
 
     Notes:
         - Future micro values are selected as the last observation with timestamp <= timestamp + delta.
-        - pretrained_scaler is REQUIRED to prevent lookahead bias in feature standardization.
-        - lower_bounds and upper_bounds are REQUIRED when quantile is specified to prevent
-          lookahead bias in winsorization.
+        - pretrained_scaler, lower_bounds, and upper_bounds are REQUIRED to prevent lookahead bias.
         - Use create_pretrained_scaler() to generate these components from historical data.
     
     Raises:
-        ValueError: If pretrained_scaler is None, or if quantile is specified but lower_bounds
-                   or upper_bounds are None.
-        - If pretrained_scaler is provided, uses it for consistent scaling across time periods.
-        - Winsorization bounds from pretrained data are preferred when available to avoid lookahead bias.
+        ValueError: If any required components are missing or if bounds dictionaries are incomplete.
     """
 
     df = copy.deepcopy(data)
@@ -167,7 +158,7 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
         'micro_return': micro_returns
     })
     
-    # Standardization and quantile winsorization
+    # Standardization and winsorization
 
     # Select order flow columns for standardization
     columns_to_standardize = [col for col in df.columns if 'of' in col]
@@ -175,44 +166,41 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
     if not columns_to_standardize:
         raise ValueError("No order flow columns were provided.")
     
-    # Standardize the order flow columns
+    # Standardize the order flow columns using pretrained scaler
     df_to_standardize = df[columns_to_standardize]
     
-    if pretrained_scaler is not None:
-        # Use pretrained scaler to avoid lookahead bias
-        standardized_data = pd.DataFrame(
-            pretrained_scaler.transform(df_to_standardize),
-            index=df_to_standardize.index,
-            columns=df_to_standardize.columns
-        )
-    else:
-        # Require pretrained scaler to avoid lookahead bias
-        raise ValueError("pretrained_scaler must be provided to avoid lookahead bias. "
-                        "Use create_pretrained_scaler() to create one from historical data.")
+    # Use pretrained scaler (now required)
+    standardized_data = pd.DataFrame(
+        pretrained_scaler.transform(df_to_standardize),
+        index=df_to_standardize.index,
+        columns=df_to_standardize.columns
+    )
 
-    if quantile is not None:
-        if pretrained_scaler is not None and lower_bounds is not None and upper_bounds is not None:
-            # Use pretrained quantile bounds to avoid lookahead bias
-            for col in standardized_data.columns:
-                if col in lower_bounds and col in upper_bounds:
-                    standardized_data[col] = np.clip(standardized_data[col], 
-                                                   lower_bounds[col], upper_bounds[col])
-        else:
-            # Require pretrained bounds to avoid lookahead bias
-            raise ValueError("lower_bounds and upper_bounds must be provided when quantile is specified "
-                           "to avoid lookahead bias. Use create_pretrained_scaler() to create them from historical data.")
+    # Apply winsorization using required bounds
+    # Validate that all required features have bounds
+    missing_lower = [col for col in standardized_data.columns if col not in lower_bounds]
+    missing_upper = [col for col in standardized_data.columns if col not in upper_bounds]
+    
+    if missing_lower:
+        raise ValueError(f"Missing lower bounds for features: {missing_lower}")
+    if missing_upper:
+        raise ValueError(f"Missing upper bounds for features: {missing_upper}")
+    
+    # Apply winsorization to all features
+    for col in standardized_data.columns:
+        standardized_data[col] = np.clip(standardized_data[col], 
+                                       lower_bounds[col], upper_bounds[col])
 
     return standardized_data, target
 
 
 def get_dataset_cnn_lstm(data : pd.DataFrame,
                  delta : float, 
-                 quantile: Optional[float] = 0.005,
+                 pretrained_scaler: StandardScaler,
+                 lower_bounds: Dict[str, float],
+                 upper_bounds: Dict[str, float],
                  train : bool = True, 
-                 window_size : Optional[int] = 100,
-                 pretrained_scaler: Optional[StandardScaler] = None,
-                 lower_bounds: Optional[Dict[str, float]] = None,
-                 upper_bounds: Optional[Dict[str, float]] = None) \
+                 window_size : Optional[int] = 100) \
                     -> CNNLSTMDataset:
         """
         Build a CNN-LSTM PyTorch dataset from preprocessed Market-by-Order (MBO) data.
@@ -227,22 +215,20 @@ def get_dataset_cnn_lstm(data : pd.DataFrame,
                 'timestamp', 'micro', 'BIDofk', 'ASKofk'.
             delta (float): 
                 Time horizon (same unit as 'timestamp') over which to compute micro price returns.
-            quantile (Optional[float], default=0.005): 
-                Winsorization quantile used during feature preprocessing.
+            pretrained_scaler (StandardScaler):
+                Pretrained StandardScaler to use for feature standardization. REQUIRED
+                to avoid lookahead bias by using historical scaling parameters.
+            lower_bounds (Dict[str, float]):
+                Precomputed lower quantile bounds for winsorization. REQUIRED for consistent
+                preprocessing and to avoid lookahead bias.
+            upper_bounds (Dict[str, float]):
+                Precomputed upper quantile bounds for winsorization. REQUIRED for consistent
+                preprocessing and to avoid lookahead bias.
             train (Optional[bool], default=True): 
                 If True, truncate data at the first occurrence of NaN in targets to remove
                 incomplete samples. If False, keep all samples (useful for inference).
             window_size (Optional[int], default=100): 
                 Number of consecutive time steps in each input sequence.
-            pretrained_scaler (Optional[StandardScaler], default=None):
-                Pretrained StandardScaler to use for feature standardization. If provided,
-                avoids lookahead bias by using historical scaling parameters.
-            lower_bounds (Optional[Dict[str, float]], default=None):
-                Precomputed lower quantile bounds for winsorization. Used with pretrained_scaler
-                to avoid lookahead bias.
-            upper_bounds (Optional[Dict[str, float]], default=None):
-                Precomputed upper quantile bounds for winsorization. Used with pretrained_scaler
-                to avoid lookahead bias.
 
         Returns:
             CNNLSTMDataset:
@@ -252,11 +238,12 @@ def get_dataset_cnn_lstm(data : pd.DataFrame,
 
         Raises:
             ValueError:
-                If required columns are missing from the input DataFrame.
+                If required columns are missing from the input DataFrame or if required
+                preprocessing components are missing.
         """
 
         standardized_data, target = preprocess_mbo_data_cnn_lstm(
-            data, delta, quantile, pretrained_scaler, lower_bounds, upper_bounds
+            data, delta, pretrained_scaler, lower_bounds, upper_bounds
         )
 
 

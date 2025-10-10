@@ -534,8 +534,8 @@ class Backbone():
     def extract_neural_covariates(self,
                                    event_driven_data: pd.DataFrame,
                                    physical_time_data: pd.DataFrame,
-                                   quantile: Optional[float] = 0.005,
-                                   batch_size: int = 512) -> pd.DataFrame:
+                                   batch_size: int = 512,
+                                   get_output: bool = False) -> pd.DataFrame:
         """Extract neural network covariates from event-driven data for physical time-driven data.
         
         For each timestamp in the physical time-driven data, find the last row in the event-driven
@@ -545,7 +545,8 @@ class Backbone():
         Args:
             event_driven_data (pd.DataFrame): Event-driven data with timestamps.
             physical_time_data (pd.DataFrame): Physical time-driven data with timestamps.
-            quantile (Optional[float]): Winsorization quantile.
+            batch_size (int): Batch size for processing.
+            get_output (bool): If True, get model output instead of hidden activations. Defaults to False.
             
         Returns:
             dict: DataFrame containing the extracted neural covariates.
@@ -564,11 +565,10 @@ class Backbone():
             event_dataset = get_dataset_cnn_lstm(
                 event_driven_data, 
                 delta=self.delta_sample, 
-                quantile=quantile,
-                train=False,
                 pretrained_scaler=self.pretrained_scaler,
                 lower_bounds=self.lower_bounds,
-                upper_bounds=self.upper_bounds
+                upper_bounds=self.upper_bounds,
+                train=False
             )
             
             # Create a DataLoader for batch processing with larger batch size for efficiency
@@ -591,7 +591,7 @@ class Backbone():
                     inputs = inputs.to(self.device, dtype=torch.float32)
                     
                     # Extract features based on mode
-                    if self.parsimonious_mode:
+                    if self.parsimonious_mode or get_output:
                         # Use forward pass output (1-dimensional)
                         # Shape: (batch_size, 1)
                         rep = self.model(inputs)  
@@ -635,14 +635,16 @@ class Backbone():
             )
 
             # Name the columns according to the model's output layer
-            if self.parsimonious_mode:
-                covariates_df.columns = ['timestamp'] + \
-                    [f'forward_pass_{i}' for i in range(reps.shape[1])]
+            if self.parsimonious_mode or get_output:
+                prefix = 'forward_pass_'
             else:
-                covariates_df.columns = ['timestamp'] + \
-                    [f'hidden_activations_{i}' for i in range(reps.shape[1])]
+                prefix = 'hidden_activations_'
 
-            self.logger.info(f'Created {covariates_df.shape[1] - 1:,} new neural covariates. These will appear with {"forward_pass_" if self.parsimonious_mode else "hidden_activations_"} prefix.')
+            covariates_df.columns = ['timestamp'] + \
+                [f'{prefix}{i}' for i in range(reps.shape[1])]
+
+
+            self.logger.info(f'Created {covariates_df.shape[1] - 1:,} new neural covariates. These will appear with {prefix} prefix.')
 
 
             return covariates_df
@@ -933,7 +935,6 @@ class Backbone():
                                event_driven_data: pd.DataFrame,
                                criterion: nn.modules.loss = nn.MSELoss(reduction='sum'),
                                batch_size: int = 32,
-                               quantile: Optional[float] = 0.005,
                                save_dir: Optional[str] = None) -> float:
         """Evaluate the trained model on out-of-sample data.
         
@@ -941,7 +942,6 @@ class Backbone():
             event_driven_data (pd.DataFrame): Event-driven data for evaluation.
             criterion (nn.modules.loss): Loss function.
             batch_size (int): Batch size for evaluation.
-            quantile (Optional[float]): Winsorization quantile.
             save_dir (Optional[str]): Directory to save test results.
             
         Returns:
@@ -991,11 +991,10 @@ class Backbone():
         test_dataset = get_dataset_cnn_lstm(
             event_driven_data, 
             delta=self.delta_sample, 
-            quantile=quantile, 
-            train=True,  # Filter NaN targets for evaluation
             pretrained_scaler=self.pretrained_scaler,
             lower_bounds=self.lower_bounds,
-            upper_bounds=self.upper_bounds
+            upper_bounds=self.upper_bounds,
+            train=True  # Filter NaN targets for evaluation
         )
         
         # Create data loader
@@ -1032,7 +1031,6 @@ class Backbone():
                       validation_proportion: float = 0.1,
                       buffer_proportion: float = 0.05,
                       batch_size: int = 32,
-                      quantile: Optional[float] = 0.005,
                       adf_rejection_rate_threshold: float = 0.8,
                       kpss_verification_threshold: float = 0.2,
                       na_verification_threshold: float = 0.1,
@@ -1056,7 +1054,6 @@ class Backbone():
             validation_proportion (float, optional): Proportion of data for validation. Defaults to 0.1.
             buffer_proportion (float, optional): Buffer proportion to avoid data leakage. Defaults to 0.05.
             batch_size (int, optional): Batch size for data loaders. Defaults to 32.
-            quantile (Optional[float], optional): Winsorization quantile. Defaults to 0.005.
             adf_rejection_rate_threshold (float, optional): ADF rejection rate threshold for stationarity. Defaults to 0.8.
             kpss_verification_threshold (float, optional): KPSS verification threshold. Defaults to 0.2.
             na_verification_threshold (float, optional): NA verification threshold. Defaults to 0.1.
@@ -1150,21 +1147,19 @@ class Backbone():
         train_dataset = get_dataset_cnn_lstm(
             train_data, 
             delta=self.delta_sample, 
-            quantile=quantile, 
-            train=True,
             pretrained_scaler=self.pretrained_scaler,
             lower_bounds=self.lower_bounds,
-            upper_bounds=self.upper_bounds
+            upper_bounds=self.upper_bounds,
+            train=True
         )
         
         validation_dataset = get_dataset_cnn_lstm(
             validation_data, 
             delta=self.delta_sample, 
-            quantile=quantile, 
-            train=True,
             pretrained_scaler=self.pretrained_scaler,
             lower_bounds=self.lower_bounds,
-            upper_bounds=self.upper_bounds
+            upper_bounds=self.upper_bounds,
+            train=True
         )
         
         # Create data loaders
@@ -1281,8 +1276,7 @@ class Backbone():
             # Extract features from event-driven data using the trained model
             neural_covariates = self.extract_neural_covariates(
                 event_driven_data=data,
-                physical_time_data=physical_time_driven_backbone_time_bar_data,
-                quantile=quantile
+                physical_time_data=physical_time_driven_backbone_time_bar_data
             )
 
             # Add neural covariate columns to the full covariate set

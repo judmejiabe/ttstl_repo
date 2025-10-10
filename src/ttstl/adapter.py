@@ -348,15 +348,13 @@ class Adapter:
                      event_driven_adapter_time_bar_data : pd.DataFrame,
                      physical_time_driven_adapter_time_bar_data : pd.DataFrame,
                      scaler : Optional[StandardScaler] = None,
-                     target_col_name : str = 'micro_return',
-                     quantile : float = 0.005):
+                     target_col_name : str = 'micro_return'):
         """Augments the physical_time_driven_adapter_time_bar_data with neural covariates."""
 
         self.logger.info("Augmenting physical time data with neural covariates")
 
         neural_covariates = self.interface.backbone.extract_neural_covariates(event_driven_adapter_time_bar_data,
-                                                                              physical_time_driven_adapter_time_bar_data,
-                                                                              quantile=quantile)
+                                                                              physical_time_driven_adapter_time_bar_data)
         
         neural_covariates['timestamp'] = neural_covariates['timestamp'].astype(float)
         physical_time_driven_adapter_time_bar_data['timestamp'] = \
@@ -424,7 +422,6 @@ class Adapter:
                        scaler : StandardScaler,
                        adapter_bar_number: int,
                        target_col_name: str = 'micro_return',
-                       quantile: float = 0.005,
                        update_parameters: Optional[dict] = None) -> dict:
         """
         Update adapter parameters by fitting ARMAX-GARCH model on new data from an adapter time bar.
@@ -439,8 +436,6 @@ class Adapter:
             The adapter bar number (used for averaging schemes)
         target_col_name : str, optional
             Name of the target variable column (default: 'micro_return')
-        quantile : float, optional
-            Winsorization quantile for neural covariate extraction
         update_parameters : dict, optional
             Additional parameters for the update method
             
@@ -473,8 +468,7 @@ class Adapter:
                 event_driven_adapter_time_bar_data=event_driven_adapter_time_bar_data,
                 physical_time_driven_adapter_time_bar_data=physical_time_driven_adapter_time_bar_data,
                 scaler=scaler,
-                target_col_name=target_col_name,
-                quantile=quantile
+                target_col_name=target_col_name
             )
             if augmented_data.isnull().any(axis = 1).sum() == 1:
                 self.logger.info(f"Dropping the first sampling time bar due to NaNs")
@@ -650,8 +644,7 @@ class Adapter:
                  out_of_sample_event_df: pd.DataFrame,
                  out_of_sample_phys_df: pd.DataFrame,
                  scaler : StandardScaler,
-                 target_col_name: str = 'micro_return',
-                 quantile: float = 0.005):
+                 target_col_name: str = 'micro_return'):
         """
         Generates a forecast using a previously fitted GARCH model specification.
 
@@ -666,7 +659,6 @@ class Adapter:
             out_of_sample_event_df (pd.DataFrame): Out-of-sample event-driven data.
             out_of_sample_phys_df (pd.DataFrame): Out-of-sample physical time data.
             target_col_name (str): The name of the target variable column.
-            quantile (float): The winsorization quantile for neural covariate extraction.
 
         Returns:
             pd.DataFrame: A DataFrame containing the mean and volatility forecasts.
@@ -694,8 +686,7 @@ class Adapter:
                 event_driven_adapter_time_bar_data=combined_events_df,
                 physical_time_driven_adapter_time_bar_data=combined_phys_df,
                 scaler=scaler,
-                target_col_name=target_col_name,
-                quantile=quantile
+                target_col_name=target_col_name
             )
 
             # Critical. At the start of backbone bars, a NaN might arise in the first row. We drop it for simplicity
@@ -783,8 +774,7 @@ class Adapter:
                           out_of_sample_phys_df: pd.DataFrame,
                           benchmark_forecast: Union[float, pd.Series],
                           scaler : StandardScaler,
-                          target_col_name: str = 'micro_return',
-                          quantile: float = 0.005):
+                          target_col_name: str = 'micro_return'):
         """
         Calculates Mean Absolute Error (MAE) and Mean Squared Error (MSE)
         by leveraging the new forecast method.
@@ -795,7 +785,6 @@ class Adapter:
             out_of_sample_event_df (pd.DataFrame): Out-of-sample event-driven data.
             out_of_sample_phys_df (pd.DataFrame): Out-of-sample physical time data.
             target_col_name (str): The name of the target variable column.
-            quantile (float): The winsorization quantile for neural covariate extraction.
 
         Returns:
             dict: A dictionary containing the calculated 'mae' and 'mse'.
@@ -809,8 +798,7 @@ class Adapter:
             out_of_sample_event_df=out_of_sample_event_df,
             out_of_sample_phys_df=out_of_sample_phys_df,
             scaler=scaler,
-            target_col_name=target_col_name,
-            quantile=quantile
+            target_col_name=target_col_name
         )
 
         # Ensure alignment between actual and predicted values

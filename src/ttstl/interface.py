@@ -100,7 +100,6 @@ class Interface:
     def _create_and_fit_scaler(self,
                                event_driven_backbone_time_bar_data: pd.DataFrame,
                                physical_time_driven_backbone_time_bar_data: pd.DataFrame,
-                               quantile: float = 0.005,
                                target_col_name: str = 'micro_return',
                                n_lags: int = 5) -> StandardScaler:
         """
@@ -112,7 +111,6 @@ class Interface:
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            quantile: Winsorization quantile for neural covariate extraction
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             
@@ -125,7 +123,6 @@ class Interface:
         unscaled_data = self._prepare_data_unscaled(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile,
             target_col_name=target_col_name,
             n_lags=n_lags
         )
@@ -152,8 +149,7 @@ class Interface:
 
     def _prepare_data_unscaled(self, 
                                event_driven_backbone_time_bar_data: pd.DataFrame,
-                               physical_time_driven_backbone_time_bar_data: pd.DataFrame, 
-                               quantile: float = 0.005,
+                               physical_time_driven_backbone_time_bar_data: pd.DataFrame,
                                target_col_name: str = 'micro_return',
                                n_lags: int = 5) -> pd.DataFrame:
         """
@@ -166,7 +162,6 @@ class Interface:
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            quantile: Winsorization quantile for neural covariate extraction
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             
@@ -182,8 +177,7 @@ class Interface:
         # Augment physical_time_data with neural covariates from backbone
         neural_covariates = self.backbone.extract_neural_covariates(
             event_driven_data=event_driven_backbone_time_bar_data,
-            physical_time_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile)
+            physical_time_data=physical_time_driven_backbone_time_bar_data)
 
         # Ensure timestamp columns are float type for proper merging
         neural_covariates['timestamp'] = neural_covariates['timestamp'].astype(float)
@@ -236,7 +230,6 @@ class Interface:
     def _prepare_data(self, 
                       event_driven_backbone_time_bar_data: pd.DataFrame,
                       physical_time_driven_backbone_time_bar_data: pd.DataFrame, 
-                      quantile: float = 0.005,
                       target_col_name: str = 'micro_return',
                       n_lags: int = 5,
                       scaler: StandardScaler = None) -> pd.DataFrame:
@@ -247,7 +240,6 @@ class Interface:
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            quantile: Winsorization quantile for neural covariate extraction
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             scaler: Pre-fitted StandardScaler object. If None, will use self.data_scaler
@@ -259,7 +251,6 @@ class Interface:
         augmented_physical_data = self._prepare_data_unscaled(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile,
             target_col_name=target_col_name,
             n_lags=n_lags
         )
@@ -837,7 +828,6 @@ class Interface:
     def _update_hyperparameters(self, 
                                  event_driven_backbone_time_bar_data: pd.DataFrame,
                                  physical_time_driven_backbone_time_bar_data: pd.DataFrame,
-                                 quantile: float = 0.005,
                                  target_col_name: str = 'micro_return',
                                  n_lags: int = 5,
                                  validation_proportion: float = 0.2,
@@ -856,7 +846,6 @@ class Interface:
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            quantile: Winsorization quantile for neural covariate extraction
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             validation_proportion: Proportion of adapter bars to use for validation
@@ -873,7 +862,6 @@ class Interface:
         scaler = self._create_and_fit_scaler(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile,
             target_col_name=target_col_name,
             n_lags=n_lags
         )
@@ -882,7 +870,6 @@ class Interface:
         augmented_data = self._prepare_data(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile,
             target_col_name=target_col_name,
             n_lags=n_lags,
             scaler=scaler
@@ -1126,7 +1113,6 @@ class Interface:
     def global_update(self, 
                       event_driven_backbone_time_bar_data: pd.DataFrame,
                       physical_time_driven_backbone_time_bar_data: pd.DataFrame,
-                      quantile: float = 0.005,
                       target_col_name: str = 'micro_return',
                       distribution_model : str = 'norm', # If used should fail
                       n_lags: int = 5,
@@ -1147,7 +1133,6 @@ class Interface:
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            quantile: Winsorization quantile for neural covariate extraction
             target_col_name: Name of target variable column
             n_lags: Number of lagged values of target variable to include
             validation_proportion: Proportion of adapter bars to use for validation in hyperparameter tuning
@@ -1182,7 +1167,6 @@ class Interface:
             self._create_and_fit_scaler(
                 event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
                 physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-                quantile=quantile,
                 target_col_name=target_col_name,
                 n_lags=n_lags
             )
@@ -1191,7 +1175,6 @@ class Interface:
             augmented_data = self._prepare_data(
                 event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
                 physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-                quantile=quantile,
                 target_col_name=target_col_name,
                 n_lags=n_lags
             )
@@ -1234,7 +1217,6 @@ class Interface:
         hyperparameter_results = self._update_hyperparameters(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile,
             target_col_name=target_col_name,
             n_lags=n_lags,
             validation_proportion=validation_proportion,
@@ -1280,7 +1262,6 @@ class Interface:
         augmented_data = self._prepare_data(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile,
             target_col_name=target_col_name,
             n_lags=n_lags
         )
@@ -1539,7 +1520,6 @@ class Interface:
     def local_adapt(self, 
                     event_driven_backbone_time_bar_data: pd.DataFrame,
                     physical_time_driven_backbone_time_bar_data: pd.DataFrame,
-                    quantile: float = 0.005,
                     target_col_name: str = 'micro_return',
                     distribution_model: str = 'sstd',
                     n_lags: int = 5,
@@ -1561,7 +1541,6 @@ class Interface:
         Args:
             event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
             physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            quantile: Winsorization quantile for neural covariate extraction
             target_col_name: Name of target variable column
             distribution_model: Distribution model for GARCH ('sstd', 'norm', etc.)
             n_lags: Number of lagged values of target variable to include
@@ -1616,7 +1595,6 @@ class Interface:
         augmented_data = self._prepare_data(
             event_driven_backbone_time_bar_data=event_driven_backbone_time_bar_data,
             physical_time_driven_backbone_time_bar_data=physical_time_driven_backbone_time_bar_data,
-            quantile=quantile,
             target_col_name=target_col_name,
             n_lags=n_lags,
             scaler=self.data_scaler  # Use pre-fitted scaler from global_update

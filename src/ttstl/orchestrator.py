@@ -62,7 +62,6 @@ class OrchestratorConfig:
     batch_size: int = 32
     validation_proportion_backbone: float = 0.1
     buffer_proportion: float = 0.05
-    quantile: float = 0.005 # Windsorization quantile
     adf_rejection_rate_threshold : float = 0.8
     kpss_verification_threshold : float = 0.2
     na_verification_threshold : float = 0.1
@@ -681,8 +680,7 @@ class Orchestrator:
         augmented_df = current_adapter.augment_data(
             event_df, 
             phys_df.drop(columns=['backbone_bar', 'adapter_bar']),
-            target_col_name=self.cfg.target_col_name, 
-            quantile=self.cfg.quantile
+            target_col_name=self.cfg.target_col_name
         )
         
         # Fit scaler on all covariates except timestamp, target, and time bar columns
@@ -733,7 +731,6 @@ class Orchestrator:
                 validation_proportion=self.cfg.validation_proportion_backbone,
                 buffer_proportion=self.cfg.buffer_proportion,
                 batch_size=self.cfg.batch_size,
-                quantile=self.cfg.quantile,
                 adf_rejection_rate_threshold=self.cfg.adf_rejection_rate_threshold,
                 kpss_verification_threshold=self.cfg.kpss_verification_threshold,
                 na_verification_threshold=self.cfg.na_verification_threshold,
@@ -788,7 +785,6 @@ class Orchestrator:
             interface_result = current_interface.global_update(
                 event_driven_backbone_time_bar_data=current_event_df,
                 physical_time_driven_backbone_time_bar_data=current_phys_df,
-                quantile=self.cfg.quantile,
                 target_col_name=self.cfg.target_col_name,
                 distribution_model=self.cfg.dist,
                 n_lags=self.cfg.n_lags,
@@ -960,8 +956,7 @@ class Orchestrator:
                             out_of_sample_phys_df=out_of_sample_phys_df,
                             benchmark_forecast=self.target_scales[f"backbone_{self._bb_idx}"]['mean'],
                             scaler=scaler,
-                            target_col_name=self.cfg.target_col_name,
-                            quantile=self.cfg.quantile
+                            target_col_name=self.cfg.target_col_name
                         )
 
                         metrics['adapter_bar'] = next_adapter_bar  # Log metrics against the bar they were tested on
@@ -1371,7 +1366,6 @@ class Orchestrator:
                 event_driven_data=current_bb_event_df,
                 criterion=criterion,
                 batch_size=self.cfg.batch_size,
-                quantile=self.cfg.quantile,
                 save_dir=str(bb_dir / "backbone")
             )
             
@@ -1427,7 +1421,6 @@ class Orchestrator:
             interface_result = current_interface.local_adapt(
                 event_driven_backbone_time_bar_data=current_event_df,
                 physical_time_driven_backbone_time_bar_data=current_phys_df,
-                quantile=self.cfg.quantile,
                 target_col_name=self.cfg.target_col_name,
                 distribution_model=self.cfg.dist,
                 n_lags=self.cfg.n_lags,
