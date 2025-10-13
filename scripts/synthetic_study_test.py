@@ -8,6 +8,7 @@ import pandas as pd
 from ttstl import orchestrator
 from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 from ttstl.utils.data_downloader import import_to_pandas
+from ttstl.utils.data_preprocessor import create_pretrained_scaler
 
 
 def setup_logging():
@@ -130,6 +131,22 @@ def main():
     ed_df_0, ptd_df_0 = load_synthetic_data(0)
     ed_df_1, ptd_df_1 = load_synthetic_data(1)
 
+    logger.info("Creating preprocessing components from synthetic data")
+    
+    # Create preprocessing components from the first dataset to avoid lookahead bias
+    # Use ed_df_0 as the "historical" data for creating scaler and bounds
+    try:
+        scaler, lower_bounds, upper_bounds = create_pretrained_scaler(
+            ed_df_0, quantile=0.005
+        )
+        logger.info("Successfully created preprocessing components from synthetic data")
+        logger.info(f"Scaler fitted on {len([col for col in ed_df_0.columns if 'of' in col])} order flow features")
+        logger.info(f"Bounds computed for winsorization: {len(lower_bounds) if lower_bounds else 0} features")
+    except Exception as e:
+        logger.error(f"Failed to create preprocessing components: {str(e)}")
+        logger.info("Continuing without preprocessing components (may cause issues)")
+        scaler, lower_bounds, upper_bounds = None, None, None
+
     logger.info("Setting up orchestrator class")
 
     cfg = OrchestratorConfig(
@@ -154,12 +171,16 @@ def main():
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
-        quantile=0.005, # Windsorization quantile
         adf_rejection_rate_threshold=0.8,
         kpss_verification_threshold=0.2,
         na_verification_threshold=0.1,
         learning_rate=0.0001,
         correlation_threshold=0.95,
+        
+        # Preprocessing components (created from synthetic data)
+        pretrained_scaler=scaler,       # Created from ed_df_0
+        lower_bounds=lower_bounds,      # Created from ed_df_0
+        upper_bounds=upper_bounds,      # Created from ed_df_0
 
         # Interface knobs
         #user_defined_variables=[],  # Test user-defined variables bypass with consistently available names
@@ -185,11 +206,12 @@ def main():
         dist='sstd',
         model='sGARCH',
         archm=False,
-        update_parameters={'alpha' : 3.0}
+        update_parameters={'alpha' : 3.0},
+        compare_with_cnn_lstm=True  # Enable comparison with raw CNN-LSTM outputs
     )
     
-    runs_dir = Path('runs_synthetic_study_test')
-    runs_dir.mkdir(exist_ok=True)
+    runs_dir = Path('outputs/runs_synthetic_study_test')
+    runs_dir.mkdir(parents=True, exist_ok=True)
 
     orchestrator = Orchestrator(runs_dir, cfg)
 
