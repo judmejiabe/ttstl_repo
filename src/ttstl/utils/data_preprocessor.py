@@ -87,7 +87,8 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
                                  delta : float, 
                                  pretrained_scaler: StandardScaler,
                                  lower_bounds: Dict[str, float],
-                                 upper_bounds: Dict[str, float]) \
+                                 upper_bounds: Dict[str, float],
+                                 past_returns: bool = False) \
                                     -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Preprocesses MBO data for a CNN-LSTM model.
@@ -97,7 +98,9 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
             - 'timestamp' (numeric): time of each observation,
             - 'micro' (numeric): micro price values,
             - order flow features (any column whose name contains 'of').
-        delta (float): Time horizon (same unit as 'timestamp') used to compute future micro returns.
+        delta (float): Time horizon (same unit as 'timestamp') used to compute micro returns.
+            For future returns: future timestamp = current + delta.
+            For past returns: past timestamp = current - delta.
         pretrained_scaler (StandardScaler): Pre-fitted scaler for order flow features.
             REQUIRED to avoid lookahead bias. Use create_pretrained_scaler() to create one
             from historical data.
@@ -105,17 +108,22 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
             for winsorization. REQUIRED for consistent preprocessing.
         upper_bounds (Dict[str, float]): Dictionary mapping feature names to upper quantile bounds
             for winsorization. REQUIRED for consistent preprocessing.
+        past_returns (bool, default=False): If True, compute returns from past micro values
+            (concurrent/observed returns). If False, compute returns from future micro values
+            (forecasting returns).
 
     Returns:
         standardized_data (pd.DataFrame): Standardized and winsorized order flow features.
         target (pd.DataFrame): Contains two columns:
             - 'timestamp': original timestamps,
-            - 'micro_return': percentage change in 'micro' over the horizon delta,
-              computed as (future_micro / current_micro - 1) * 1e3. Observations without a
-              future timestamp are assigned NaN.
+            - 'micro_return': percentage change in 'micro' over the horizon delta.
+              If past_returns=True: (current_micro / past_micro - 1) * 1e3
+              If past_returns=False: (future_micro / current_micro - 1) * 1e3
+              Observations without a corresponding past/future timestamp are assigned NaN.
 
     Notes:
-        - Future micro values are selected as the last observation with timestamp <= timestamp + delta.
+        - For future returns: Future micro values are selected as the last observation with timestamp <= timestamp + delta.
+        - For past returns: Past micro values are selected as the last observation with timestamp <= timestamp - delta.
         - pretrained_scaler, lower_bounds, and upper_bounds are REQUIRED to prevent lookahead bias.
         - Use create_pretrained_scaler() to generate these components from historical data.
     
@@ -129,28 +137,55 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
     timestamps = df['timestamp'].values
     micro_values = df['micro'].values
     
-    # Calculate future timestamps vectorized
-    future_timestamps = timestamps + delta
-    max_ts = timestamps[-1]  
-    
-    # Use searchsorted for all lookups at once (vectorized)
-    indices = np.searchsorted(timestamps, future_timestamps, side='right')
-    
-    # Handle edge cases vectorized
-    valid_mask = future_timestamps <= max_ts
-    indices = np.where(valid_mask, indices - 1, -1)
-    
-    # Get future micro values vectorized
-    future_micro = np.full(len(micro_values), np.nan)
-    valid_indices = indices[valid_mask]
-    future_micro[valid_mask] = micro_values[valid_indices]
-    
-    # Calculate micro returns vectorized
-    micro_returns = np.where(
-        ~np.isnan(future_micro) & (micro_values != 0),
-        (future_micro / micro_values - 1) * 1e3,
-        np.nan
-    )
+    if past_returns:
+        # Calculate past returns: (current_micro / past_micro - 1) * 1e3
+        # Calculate past timestamps vectorized
+        past_timestamps = timestamps - delta
+        min_ts = timestamps[0]
+        
+        # Use searchsorted for all lookups at once (vectorized)
+        indices = np.searchsorted(timestamps, past_timestamps, side='right')
+        
+        # Handle edge cases vectorized - for past returns, valid when past_timestamps >= min_ts
+        valid_mask = past_timestamps >= min_ts
+        indices = np.where(valid_mask, indices - 1, 0)
+        
+        # Get past micro values vectorized
+        past_micro = np.full(len(micro_values), np.nan)
+        valid_indices = indices[valid_mask]
+        past_micro[valid_mask] = micro_values[valid_indices]
+        
+        # Calculate micro returns vectorized: current / past - 1
+        micro_returns = np.where(
+            ~np.isnan(past_micro) & (past_micro != 0),
+            (micro_values / past_micro - 1) * 1e3,
+            np.nan
+        )
+        
+    else:
+        # Calculate future returns: (future_micro / current_micro - 1) * 1e3
+        # Calculate future timestamps vectorized
+        future_timestamps = timestamps + delta
+        max_ts = timestamps[-1]  
+        
+        # Use searchsorted for all lookups at once (vectorized)
+        indices = np.searchsorted(timestamps, future_timestamps, side='right')
+        
+        # Handle edge cases vectorized
+        valid_mask = future_timestamps <= max_ts
+        indices = np.where(valid_mask, indices - 1, -1)
+        
+        # Get future micro values vectorized
+        future_micro = np.full(len(micro_values), np.nan)
+        valid_indices = indices[valid_mask]
+        future_micro[valid_mask] = micro_values[valid_indices]
+        
+        # Calculate micro returns vectorized: future / current - 1
+        micro_returns = np.where(
+            ~np.isnan(future_micro) & (micro_values != 0),
+            (future_micro / micro_values - 1) * 1e3,
+            np.nan
+        )
     
     # Create target DataFrame
     target = pd.DataFrame({
@@ -200,7 +235,8 @@ def get_dataset_cnn_lstm(data : pd.DataFrame,
                  lower_bounds: Dict[str, float],
                  upper_bounds: Dict[str, float],
                  train : bool = True, 
-                 window_size : Optional[int] = 100) \
+                 window_size : Optional[int] = 100,
+                 past_returns : bool = False) \
                     -> CNNLSTMDataset:
         """
         Build a CNN-LSTM PyTorch dataset from preprocessed Market-by-Order (MBO) data.
@@ -225,10 +261,15 @@ def get_dataset_cnn_lstm(data : pd.DataFrame,
                 Precomputed upper quantile bounds for winsorization. REQUIRED for consistent
                 preprocessing and to avoid lookahead bias.
             train (Optional[bool], default=True): 
-                If True, truncate data at the first occurrence of NaN in targets to remove
-                incomplete samples. If False, keep all samples (useful for inference).
+                If True, truncate data to remove incomplete samples with NaN targets.
+                For future returns, truncates at the end. For past returns, truncates at the beginning.
+                If False, keep all samples (useful for inference).
             window_size (Optional[int], default=100): 
                 Number of consecutive time steps in each input sequence.
+            past_returns (Optional[bool], default=False):
+                If True, compute returns as (current_micro / past_micro - 1) * 1e3.
+                If False, compute returns as (future_micro / current_micro - 1) * 1e3.
+                Affects where NaN values appear and how truncation is handled in train mode.
 
         Returns:
             CNNLSTMDataset:
@@ -243,16 +284,29 @@ def get_dataset_cnn_lstm(data : pd.DataFrame,
         """
 
         standardized_data, target = preprocess_mbo_data_cnn_lstm(
-            data, delta, pretrained_scaler, lower_bounds, upper_bounds
+            data, delta, pretrained_scaler, lower_bounds, upper_bounds, past_returns
         )
 
-
-        max_index = target[target.isna().any(axis=1)].index.min()
         target.drop('timestamp', axis=1, inplace=True)
 
         if train:
-            inputs = torch.from_numpy(np.array(standardized_data.iloc[:max_index])).float()
-            targets = torch.from_numpy(np.array(target.iloc[:max_index])).float()
+            if past_returns:
+                # For past returns, NaN values appear at the beginning of the dataset
+                # Find the first valid (non-NaN) index
+                min_index = target.dropna().index.min()
+                if pd.isna(min_index):
+                    raise ValueError("No valid targets found in the dataset")
+                inputs = torch.from_numpy(np.array(standardized_data.iloc[min_index:])).float()
+                targets = torch.from_numpy(np.array(target.iloc[min_index:])).float()
+            else:
+                # For future returns, NaN values appear at the end of the dataset
+                # Find the first NaN index to truncate
+                max_index = target[target.isna().any(axis=1)].index.min()
+                if pd.isna(max_index):
+                    # No NaN values found, use all data
+                    max_index = len(target)
+                inputs = torch.from_numpy(np.array(standardized_data.iloc[:max_index])).float()
+                targets = torch.from_numpy(np.array(target.iloc[:max_index])).float()
         else:
             inputs = torch.from_numpy(np.array(standardized_data)).float()
             targets = torch.from_numpy(np.array(target)).float()

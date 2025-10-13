@@ -21,16 +21,17 @@ from ttstl.utils.data_downloader import import_to_pandas
 from ttstl.utils.data_preprocessor import get_dataset_cnn_lstm, create_pretrained_scaler
 
 
-def setup_logging():
+def setup_logging(past_returns=False):
     """Setup logging to see pretraining operations."""
     
     # Create logs directory
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
-    # Create log filename with timestamp
+    # Create log filename with timestamp and experiment type
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"cnn_lstm_pretraining_{timestamp}.log"
+    experiment_suffix = "_concurrent" if past_returns else "_future"
+    log_file = log_dir / f"cnn_lstm_pretraining{experiment_suffix}_{timestamp}.log"
     
     # Configure logging to both console and file
     logging.basicConfig(
@@ -42,7 +43,8 @@ def setup_logging():
         ]
     )
     
-    print(f"📝 Logs will be saved to: {log_file}")
+    experiment_type = "CONCURRENT RETURNS" if past_returns else "FUTURE RETURNS"
+    print(f"📝 {experiment_type} logs will be saved to: {log_file}")
 
 def select_random_gpu():
     """Select a random GPU if available, otherwise use CPU."""
@@ -174,7 +176,7 @@ def load_may_training_data():
     
     return train_ed_dfs, val_ed_dfs
 
-def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_000.0, quantile=0.005, batch_size=32):
+def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_000.0, batch_size=32, past_returns=False):
     """
     Prepare training data for CNN-LSTM using pretrained scaler approach to avoid lookahead bias.
     
@@ -186,8 +188,8 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
         train_ed_dfs: List of training event-driven DataFrames (individual days)
         val_ed_dfs: List of validation event-driven DataFrames (individual days)
         delta: Time horizon for target computation (same as backbone's sdelta)
-        quantile: Winsorization quantile
         batch_size: Batch size for data loaders
+        past_returns: If True, compute past returns instead of future returns
         
     Returns:
         Tuple of (train_loader, val_loader, feature_names, device, pretrained_scaler, lower_bounds, upper_bounds)
@@ -196,11 +198,12 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
         - feature_names: List of order flow feature names
         - device: PyTorch device being used
         - pretrained_scaler: Fitted StandardScaler for future use
-        - lower_bounds: Lower quantile bounds for winsorization
-        - upper_bounds: Upper quantile bounds for winsorization
+        - lower_bounds: Lower bounds for winsorization
+        - upper_bounds: Upper bounds for winsorization
     """
     logger = logging.getLogger(__name__)
-    logger.info("Preparing training data using day-by-day preprocessing with pretrained scaler approach")
+    returns_type = "CONCURRENT RETURNS" if past_returns else "FUTURE RETURNS"
+    logger.info(f"Preparing {returns_type} training data using day-by-day preprocessing with pretrained scaler approach")
     
     # Step 1: Create pretrained scaler from all training data to avoid lookahead bias
     logger.info("Creating pretrained scaler from all training data...")
@@ -216,7 +219,7 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
     
     # Create pretrained scaler from combined training data
     pretrained_scaler, lower_bounds, upper_bounds = create_pretrained_scaler(
-        combined_train_data, quantile=quantile
+        combined_train_data, quantile=0.005
     )
     logger.info(f"Pretrained scaler created with bounds for {len(lower_bounds)} features")
     
@@ -225,7 +228,8 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
     total_train_samples_before = 0
     total_train_samples_after = 0
     
-    logger.info("Processing training days individually with pretrained scaler...")
+    returns_desc = "PAST RETURNS" if past_returns else "FUTURE RETURNS"
+    logger.info(f"Processing training days individually with pretrained scaler ({returns_desc})...")
     for i, train_ed_df in enumerate(train_ed_dfs):
         day = train_ed_df['trading_day'].iloc[0]
         logger.info(f"Processing training day {day} ({i+1}/{len(train_ed_dfs)}): {len(train_ed_df)} samples")
@@ -238,11 +242,11 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
             train_dataset = get_dataset_cnn_lstm(
                 df_clean, 
                 delta=delta, 
-                quantile=quantile, 
-                train=True,
                 pretrained_scaler=pretrained_scaler,
                 lower_bounds=lower_bounds,
-                upper_bounds=upper_bounds
+                upper_bounds=upper_bounds,
+                train=True,
+                past_returns=past_returns
             )
             train_datasets.append(train_dataset)
             total_train_samples_after += len(train_dataset)
@@ -256,7 +260,7 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
     total_val_samples_before = 0
     total_val_samples_after = 0
     
-    logger.info("Processing validation days individually with SAME pretrained scaler...")
+    logger.info(f"Processing validation days individually with SAME pretrained scaler ({returns_desc})...")
     for i, val_ed_df in enumerate(val_ed_dfs):
         day = val_ed_df['trading_day'].iloc[0]
         logger.info(f"Processing validation day {day} ({i+1}/{len(val_ed_dfs)}): {len(val_ed_df)} samples")
@@ -269,11 +273,11 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
             val_dataset = get_dataset_cnn_lstm(
                 df_clean, 
                 delta=delta, 
-                quantile=quantile, 
-                train=True,
                 pretrained_scaler=pretrained_scaler,  # Use SAME scaler as training
                 lower_bounds=lower_bounds,            # Use SAME bounds as training
-                upper_bounds=upper_bounds             # Use SAME bounds as training
+                upper_bounds=upper_bounds,            # Use SAME bounds as training
+                train=True,
+                past_returns=past_returns
             )
             val_datasets.append(val_dataset)
             total_val_samples_after += len(val_dataset)
@@ -295,8 +299,8 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
     train_retention = total_train_samples_after / total_train_samples_before * 100
     val_retention = total_val_samples_after / total_val_samples_before * 100
     
-    logger.info(f"OVERALL TRAINING: {total_train_samples_before} → {total_train_samples_after} samples ({train_retention:.2f}% retention)")
-    logger.info(f"OVERALL VALIDATION: {total_val_samples_before} → {total_val_samples_after} samples ({val_retention:.2f}% retention)")
+    logger.info(f"OVERALL TRAINING ({returns_type}): {total_train_samples_before} → {total_train_samples_after} samples ({train_retention:.2f}% retention)")
+    logger.info(f"OVERALL VALIDATION ({returns_type}): {total_val_samples_before} → {total_val_samples_after} samples ({val_retention:.2f}% retention)")
     
     # Create data loaders using backbone's configuration
     device = select_random_gpu()
@@ -319,7 +323,7 @@ def prepare_daily_training_data(train_ed_dfs, val_ed_dfs, delta=0.5 * 1_000_000_
     # Get feature names from the first day's data (order flow features contain 'of')
     feature_names = [col for col in train_ed_dfs[0].columns if 'of' in col]
     
-    logger.info(f"Using {len(feature_names)} order flow features for training")
+    logger.info(f"Using {len(feature_names)} order flow features for {returns_type} training")
     logger.info(f"Final dataset sizes: Training {len(combined_train_dataset)}, Validation {len(combined_val_dataset)}")
     
     return train_loader, val_loader, feature_names, device, pretrained_scaler, lower_bounds, upper_bounds
@@ -468,7 +472,7 @@ def train_cnn_lstm_model(train_loader, val_loader, device, num_epochs=10, learni
     return model
 
 def save_pretrained_model(model, experiments_dir, model_name="pretrained_cnnlstm", 
-                         pretrained_scaler=None, lower_bounds=None, upper_bounds=None):
+                         pretrained_scaler=None, lower_bounds=None, upper_bounds=None, past_returns=False):
     """
     Save the pretrained CNN-LSTM model, its training history, and preprocessing components.
     
@@ -479,6 +483,7 @@ def save_pretrained_model(model, experiments_dir, model_name="pretrained_cnnlstm
         pretrained_scaler: StandardScaler fitted on training data
         lower_bounds: Dictionary of lower quantile bounds for winsorization
         upper_bounds: Dictionary of upper quantile bounds for winsorization
+        past_returns: Whether this model was trained on past returns (concurrent) or future returns
     """
     logger = logging.getLogger(__name__)
     
@@ -524,6 +529,7 @@ def save_pretrained_model(model, experiments_dir, model_name="pretrained_cnnlstm
     metadata = {
         'model_type': 'CNN-LSTM',
         'architecture': 'CNNLSTM',
+        'experiment_type': 'concurrent_returns' if past_returns else 'future_returns',
         'training_completed': datetime.now().isoformat(),
         'has_pretrained_scaler': pretrained_scaler is not None,
         'has_winsorization_bounds': lower_bounds is not None and upper_bounds is not None,
@@ -532,7 +538,9 @@ def save_pretrained_model(model, experiments_dir, model_name="pretrained_cnnlstm
         'best_validation_loss': model.training_history_df['validation_loss'].min() if hasattr(model, 'training_history_df') and model.training_history_df is not None and len(model.training_history_df) > 0 else None,
         'best_epoch': (model.training_history_df['validation_loss'].idxmin() + 1) if hasattr(model, 'training_history_df') and model.training_history_df is not None and len(model.training_history_df) > 0 else None,
         'final_train_loss': model.training_history_df['train_loss'].iloc[-1] if hasattr(model, 'training_history_df') and model.training_history_df is not None and len(model.training_history_df) > 0 else None,
-        'final_validation_loss': model.training_history_df['validation_loss'].iloc[-1] if hasattr(model, 'training_history_df') and model.training_history_df is not None and len(model.training_history_df) > 0 else None
+        'final_validation_loss': model.training_history_df['validation_loss'].iloc[-1] if hasattr(model, 'training_history_df') and model.training_history_df is not None and len(model.training_history_df) > 0 else None,
+        'past_returns': past_returns,
+        'returns_direction': 'past' if past_returns else 'future'
     }
     
     metadata_path = experiments_dir / f"{model_name}_metadata.json"
@@ -651,15 +659,21 @@ def load_full_pretrained_setup(experiments_dir, model_name, device=None):
     logger.info("Successfully loaded complete pretrained setup")
     return model, pretrained_scaler, lower_bounds, upper_bounds
 
-def main():
+def main(num_epochs=50, past_returns=False):
     """
     Main function to train and save CNN-LSTM model using May 2024 data.
+    
+    Args:
+        past_returns: If True, train on concurrent returns instead of future returns
     """
-    print("🚀 Starting CNN-LSTM pretraining with May 2024 data...")
+    experiment_type = "CONCURRENT RETURNS" if past_returns else "FUTURE RETURNS"
+    print(f"🚀 Starting CNN-LSTM {experiment_type} pretraining with May 2024 data...")
+    if past_returns:
+        print("📊 This experiment trains on past/concurrent returns instead of future returns")
     print("="*100)
 
     # Set global random seeds for reproducibility
-    SEED = 19991810  # Same seed as in config
+    SEED = 19931002  # Same seed as in config
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
@@ -670,53 +684,60 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    setup_logging()
+    setup_logging(past_returns=past_returns)
     logger = logging.getLogger(__name__)
-    logger.info("Starting CNN-LSTM pretraining for INTC with May 2024 data")
+    logger.info(f"Starting CNN-LSTM {experiment_type} pretraining for INTC with May 2024 data")
     logger.info(f"Global random seed set to: {SEED}")
+    if past_returns:
+        logger.info("📊 EXPERIMENT TYPE: CONCURRENT RETURNS (regression on observed returns)")
 
     # Load training data (May 2024 event-driven only)
-    logger.info("Loading May 2024 event-driven data for neural network training...")
+    logger.info(f"Loading May 2024 event-driven data for {experiment_type} neural network training...")
     train_ed_dfs, val_ed_dfs = load_may_training_data()
 
     # Prepare training data using pretrained scaler approach to avoid lookahead bias
     train_loader, val_loader, feature_names, device, pretrained_scaler, lower_bounds, upper_bounds = prepare_daily_training_data(
         train_ed_dfs, val_ed_dfs,
         delta=2 * 1_000_000_000.0,  # Same as sdelta in TTSTL config
-        quantile=0.005,  # Same as TTSTL config
-        batch_size=32    # Same as TTSTL config
+        batch_size=32,    # Same as TTSTL config
+        past_returns=past_returns
     )
     
     # Train the model using backbone's training logic
     trained_model = train_cnn_lstm_model(
         train_loader, val_loader, device,
-        num_epochs=1,  # Set to desired number of epochs
+        num_epochs=num_epochs,  # Set to desired number of epochs
         learning_rate=0.0001,  # Same as backbone
         seed=SEED  # Use global seed for reproducibility
     )
     
-    logger.info("Neural network training completed successfully")
+    logger.info(f"{experiment_type} neural network training completed successfully")
     
     # Create experiments directory and save the pretrained model with preprocessing components
-    experiments_dir = Path('cnn_lstm_pretraining_market_data')
-    logger.info("Saving pretrained CNN-LSTM model, scaler, bounds, and training history...")
+    dir_suffix = "_concurrent" if past_returns else ""
+    experiments_dir = Path(f'outputs/cnn_lstm_pretraining_market_data{dir_suffix}')
+    logger.info(f"Saving pretrained CNN-LSTM {experiment_type} model, scaler, bounds, and training history...")
     
+    model_suffix = "_concurrent" if past_returns else ""
     saved_paths = save_pretrained_model(
         trained_model, 
         experiments_dir, 
-        model_name=f"cnnlstm_may2024_trained_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        model_name=f"cnnlstm{model_suffix}_may2024_trained_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         pretrained_scaler=pretrained_scaler,
         lower_bounds=lower_bounds,
-        upper_bounds=upper_bounds
+        upper_bounds=upper_bounds,
+        past_returns=past_returns
     )
     
-    logger.info("Pretrained model saved successfully")
+    logger.info(f"Pretrained {experiment_type} model saved successfully")
     for path_type, path in saved_paths.items():
         if path is not None:
             logger.info(f"  {path_type}: {path}")
     
-    logger.info("CNN-LSTM pretraining completed successfully!")
+    logger.info(f"CNN-LSTM {experiment_type} pretraining completed successfully!")
     logger.info(f"Model artifacts saved to: {experiments_dir}")
+    if past_returns:
+        logger.info("📊 This model is trained for regression on concurrent/observed returns")
     
     return saved_paths
 
