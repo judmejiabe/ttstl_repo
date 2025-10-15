@@ -20,7 +20,7 @@ def main():
     This function simply calls the original main() function with past_returns=True
     to enable concurrent returns training instead of future returns.
     """
-    return main_pretraining(num_epochs=1, past_returns=True)
+    return main_pretraining(num_epochs=50, past_returns=True)
 
 if __name__ == "__main__":
     main()
