@@ -856,20 +856,31 @@ class Adapter:
 
         # Conditionally get raw neural network outputs for out-of-sample period
         if self.compare_with_cnn_lstm:
-            self.logger.info("Extracting raw neural network outputs for performance comparison")
-            nn_outputs = self.get_nn_output(
-                event_driven_adapter_time_bar_data=out_of_sample_event_df,
-                physical_time_driven_adapter_time_bar_data=out_of_sample_phys_df,
+            self.logger.info("Extracting raw neural network outputs using concatenated in-sample and out-of-sample data")
+            
+            # Concatenate in-sample and out-of-sample data for better NN output extraction
+            concatenated_event_df = pd.concat([in_sample_event_df, out_of_sample_event_df], ignore_index=True)
+            concatenated_phys_df = pd.concat([in_sample_phys_df, out_of_sample_phys_df], ignore_index=True)
+            
+            # Extract NN outputs from concatenated data
+            full_nn_outputs = self.get_nn_output(
+                event_driven_adapter_time_bar_data=concatenated_event_df,
+                physical_time_driven_adapter_time_bar_data=concatenated_phys_df,
                 batch_size=512
             )
-
-            # Handle NaN values in nn_outputs - replace with zeros and report
+            
+            # Extract the last N observations to match out_of_sample_phys_df shape
+            out_sample_length = len(out_of_sample_phys_df)
+            nn_outputs = full_nn_outputs.tail(out_sample_length).copy().reset_index(drop=True)
+            
+            self.logger.info(f"Extracted last {out_sample_length} NN outputs from {len(full_nn_outputs)} total observations")
+            
+            # Check for remaining NaN values after improved extraction
             nan_count = nn_outputs.isna().sum().sum()
             if nan_count > 0:
-                nn_outputs = nn_outputs.fillna(0)
-                self.logger.warning(f"Replaced {nan_count} NaN values with zeros in neural network outputs")
+                self.logger.warning(f"Found {nan_count} remaining NaN values in neural network outputs after concatenated extraction")
             else:
-                self.logger.info("No NaN values found in neural network outputs")
+                self.logger.info("No NaN values found in neural network outputs after concatenated extraction")
         else:
             self.logger.info("Skipping neural network output extraction (compare_with_cnn_lstm=False)")
             nn_outputs = None
@@ -907,21 +918,41 @@ class Adapter:
         garch_actual_values = garch_forecast_with_actual[target_col_name]
         garch_predicted_values = garch_forecast_with_actual['mean']
         
-        # Conditionally extract aligned data for NN outputs
+        # Conditionally extract aligned data for NN outputs with improved NaN handling
         if self.compare_with_cnn_lstm and nn_output_with_actual is not None:
             nn_output_cols = [col for col in nn_output_with_actual.columns if col.startswith('forward_pass_')]
             if len(nn_output_cols) == 0:
                 self.logger.warning("No forward_pass columns found in NN outputs. Skipping NN performance metrics.")
                 nn_actual_values = None
                 nn_predicted_values = None
+                valid_nn_mask = None
             else:
                 nn_prediction_col = nn_output_cols[0]  # Use first output as prediction
-                nn_actual_values = nn_output_with_actual[target_col_name]
-                nn_predicted_values = nn_output_with_actual[nn_prediction_col]
+                
+                # Extract raw values
+                raw_nn_actual = nn_output_with_actual[target_col_name]
+                raw_nn_predicted = nn_output_with_actual[nn_prediction_col]
+                
+                # Create mask for valid (non-NaN) positions
+                valid_nn_mask = ~(pd.isna(raw_nn_actual) | pd.isna(raw_nn_predicted))
+                
+                # Filter out NaN positions
+                nn_actual_values = raw_nn_actual[valid_nn_mask]
+                nn_predicted_values = raw_nn_predicted[valid_nn_mask]
+                
+                # Log NaN filtering results
+                nan_filtered_count = len(raw_nn_actual) - len(nn_actual_values)
+                if nan_filtered_count > 0:
+                    self.logger.info(f"Filtered out {nan_filtered_count} NaN positions from NN outputs")
+                    self.logger.info(f"NN data reduced from {len(raw_nn_actual)} to {len(nn_actual_values)} valid observations")
+                else:
+                    self.logger.info("No NaN positions found in NN outputs")
+                
                 self.logger.info(f"Using NN output column '{nn_prediction_col}' as prediction")
         else:
             nn_actual_values = None
             nn_predicted_values = None
+            valid_nn_mask = None
         
         self.logger.info(f"GARCH aligned data: {len(garch_actual_values)} observations (forecast: {len(garch_forecast_df)}, original: {len(out_of_sample_phys_df)})")
         if self.compare_with_cnn_lstm and nn_actual_values is not None:
@@ -960,16 +991,25 @@ class Adapter:
             garch_relmse = garch_mse / benchmark_mse if benchmark_mse != 0 else None
             garch_r2 = 1 - garch_relmse if garch_relmse is not None else None
             
-            # Conditionally calculate relative metrics for NN outputs
+            # Conditionally calculate relative metrics for NN outputs with NaN-aware benchmark alignment
             if self.compare_with_cnn_lstm and nn_actual_values is not None and len(nn_actual_values) > 0:
-                # Use same benchmark but align with NN data
+                # Handle benchmark alignment with filtered NN data
                 if isinstance(benchmark_forecast, (pd.Series, np.ndarray)):
-                    if len(benchmark_forecast) != len(nn_actual_values):
-                        self.logger.warning(f"Benchmark length mismatch for NN data. Using scalar benchmark.")
-                        nn_benchmark_value = np.mean(benchmark_forecast) if hasattr(benchmark_forecast, '__len__') else benchmark_forecast
-                    else:
+                    # If we have a mask for valid NN positions, apply it to the benchmark
+                    if valid_nn_mask is not None and len(benchmark_forecast) == len(valid_nn_mask):
+                        # Filter benchmark to match valid NN positions
+                        nn_benchmark_value = np.array(benchmark_forecast)[valid_nn_mask]
+                        self.logger.info(f"Applied NaN filtering to benchmark: {len(benchmark_forecast)} -> {len(nn_benchmark_value)} observations")
+                    elif len(benchmark_forecast) == len(nn_actual_values):
+                        # Benchmark already matches filtered NN data length
                         nn_benchmark_value = benchmark_forecast
+                        self.logger.info("Benchmark length matches filtered NN data")
+                    else:
+                        # Length mismatch - use scalar benchmark
+                        self.logger.warning(f"Benchmark length mismatch for filtered NN data ({len(benchmark_forecast)} vs {len(nn_actual_values)}). Using scalar benchmark.")
+                        nn_benchmark_value = np.mean(benchmark_forecast) if hasattr(benchmark_forecast, '__len__') else benchmark_forecast
                 else:
+                    # Scalar benchmark - will broadcast correctly
                     nn_benchmark_value = benchmark_forecast
                 
                 nn_benchmark_errors = np.abs(nn_actual_values - nn_benchmark_value)
