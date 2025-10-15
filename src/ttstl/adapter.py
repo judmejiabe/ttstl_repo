@@ -1006,8 +1006,8 @@ class Adapter:
                         self.logger.info("Benchmark length matches filtered NN data")
                     else:
                         # Length mismatch - use scalar benchmark
-                        self.logger.warning(f"Benchmark length mismatch for filtered NN data ({len(benchmark_forecast)} vs {len(nn_actual_values)}). Using scalar benchmark.")
-                        nn_benchmark_value = np.mean(benchmark_forecast) if hasattr(benchmark_forecast, '__len__') else benchmark_forecast
+                        self.logger.error(f"Benchmark length mismatch for filtered NN data ({len(benchmark_forecast)} vs {len(nn_actual_values)}). Using scalar benchmark.")
+                        raise ValueError(f"Benchmark length mismatch for filtered NN data ({len(benchmark_forecast)} vs {len(nn_actual_values)}). Using scalar benchmark.")
                 else:
                     # Scalar benchmark - will broadcast correctly
                     nn_benchmark_value = benchmark_forecast
