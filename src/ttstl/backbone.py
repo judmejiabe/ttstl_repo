@@ -48,7 +48,8 @@ class Backbone():
                  manual_covariates_only : bool = False,
                  pretrained_scaler: Optional[StandardScaler] = None,
                  lower_bounds: Optional[Dict[str, float]] = None,
-                 upper_bounds: Optional[Dict[str, float]] = None) -> None:
+                 upper_bounds: Optional[Dict[str, float]] = None,
+                 past_returns: bool = False) -> None:
         """Initialize the Backbone with a model and delta adapter.
         Args:
             model (nn.Module): The neural network model to be used.
@@ -60,6 +61,7 @@ class Backbone():
             pretrained_scaler (Optional[StandardScaler], optional): Pretrained scaler for consistent preprocessing.
             lower_bounds (Optional[Dict[str, float]], optional): Lower quantile bounds for winsorization.
             upper_bounds (Optional[Dict[str, float]], optional): Upper quantile bounds for winsorization.
+            past_returns (bool, optional): Whether to use past returns (concurrent returns) instead of future returns. Defaults to False.
         """
         self.model = model
         self.device = next(self.model.parameters()).device
@@ -68,6 +70,7 @@ class Backbone():
         self.parsimonious_mode = parsimonious_mode if not manual_covariates_only else True
         self.neural_covariates_only = neural_covariates_only
         self.manual_covariates_only = manual_covariates_only
+        self.past_returns = past_returns
         self.full_covariate_list = None
         self.dropped_pairs = dict()
         
@@ -568,7 +571,8 @@ class Backbone():
                 pretrained_scaler=self.pretrained_scaler,
                 lower_bounds=self.lower_bounds,
                 upper_bounds=self.upper_bounds,
-                train=False
+                train=False,
+                past_returns=self.past_returns
             )
             
             # Create a DataLoader for batch processing with larger batch size for efficiency
@@ -994,7 +998,8 @@ class Backbone():
             pretrained_scaler=self.pretrained_scaler,
             lower_bounds=self.lower_bounds,
             upper_bounds=self.upper_bounds,
-            train=True  # Filter NaN targets for evaluation
+            train=True,  # Filter NaN targets for evaluation
+            past_returns=self.past_returns
         )
         
         # Create data loader
@@ -1150,7 +1155,8 @@ class Backbone():
             pretrained_scaler=self.pretrained_scaler,
             lower_bounds=self.lower_bounds,
             upper_bounds=self.upper_bounds,
-            train=True
+            train=True,
+            past_returns=self.past_returns
         )
         
         validation_dataset = get_dataset_cnn_lstm(
@@ -1159,7 +1165,8 @@ class Backbone():
             pretrained_scaler=self.pretrained_scaler,
             lower_bounds=self.lower_bounds,
             upper_bounds=self.upper_bounds,
-            train=True
+            train=True,
+            past_returns=self.past_returns
         )
         
         # Create data loaders

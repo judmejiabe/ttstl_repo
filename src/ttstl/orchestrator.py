@@ -58,6 +58,7 @@ class OrchestratorConfig:
     parsimonious_mode: bool = False
     neural_covariates_only: bool = False  # Use only neural covariates (no manual/stationary features)
     manual_covariates_only: bool = False  # Use only manual/stationary covariates (no neural features)
+    past_returns: bool = False           # Whether to use past returns (concurrent returns) instead of future returns
     epochs: int = 12 
     batch_size: int = 32
     validation_proportion_backbone: float = 0.1
@@ -336,7 +337,8 @@ class Orchestrator:
                 manual_covariates_only=self.cfg.manual_covariates_only,
                 pretrained_scaler=self.cfg.pretrained_scaler,
                 lower_bounds=self.cfg.lower_bounds,
-                upper_bounds=self.cfg.upper_bounds
+                upper_bounds=self.cfg.upper_bounds,
+                past_returns=self.cfg.past_returns
             )
             
             # Initialize Interface with backbone module and hyperparameter grids
