@@ -457,7 +457,8 @@ class Adapter:
             else:
                 # Fallback for older scikit-learn versions without feature_names_in_
                 self.logger.warning("Scaler does not have feature_names_in_ attribute.")
-                self.logger.warning("Using original column order - this may cause scaling errors!")
+                self.logger.warning("Cannot guarantee correct column ordering for scaling.")
+                # Apply scaling in the order of covariate_names (may be incorrect!)
                 augmented_physical_data[covariate_names] = scaler.transform(augmented_physical_data[covariate_names])
 
         self.logger.info(f"Merged neural covariates")
@@ -699,17 +700,41 @@ class Adapter:
         This method prepares the combined in-sample and out-of-sample data by
         augmenting it with neural covariates, then uses the stored GARCH
         specification and parameters to perform a rolling forecast on the
-        out-of-sample data.
+        out-of-sample data. Also computes relative contributions (coefficient × feature_value)
+        for each selected variable to enable SHAP-style interpretability.
 
         Args:
             in_sample_event_df (pd.DataFrame): In-sample event-driven data.
             in_sample_phys_df (pd.DataFrame): In-sample physical time data.
             out_of_sample_event_df (pd.DataFrame): Out-of-sample event-driven data.
             out_of_sample_phys_df (pd.DataFrame): Out-of-sample physical time data.
-            target_col_name (str): The name of the target variable column.
+            scaler (StandardScaler): Fitted scaler for preprocessing.
+            target_col_name (str): The name of the target variable column (default: 'micro_return').
 
         Returns:
-            pd.DataFrame: A DataFrame containing the mean and volatility forecasts.
+            dict: A dictionary containing:
+                - 'forecast_df': pd.DataFrame
+                    Forecast results with columns ['timestamp', 'mean', 'vol'] where:
+                    * 'timestamp': Time index for each forecast
+                    * 'mean': Predicted mean (conditional expected return)
+                    * 'vol': Predicted volatility (conditional standard deviation)
+                - 'relative_contributions_df': pd.DataFrame
+                    Relative contributions with columns ['timestamp', var1, var2, ...] where:
+                    * 'timestamp': Time index matching forecast_df
+                    * var1, var2, ...: Each selected variable's contribution (coefficient × feature_value)
+                    
+        Note:
+            The returned DataFrames are independent objects. Changes to self.interface.selected_variables
+            after this call will NOT affect the returned DataFrames, but subsequent calls to forecast()
+            will use the updated selected_variables.
+            
+        Example:
+            >>> result = adapter.forecast(in_sample_event, in_sample_phys, 
+            ...                           out_sample_event, out_sample_phys, scaler)
+            >>> forecast_df = result['forecast_df']
+            >>> contributions_df = result['relative_contributions_df']
+            >>> print(forecast_df.head())
+            >>> print(contributions_df.head())
         """
         self.logger.info("Starting forecast generation with full data preparation.")
 
@@ -802,7 +827,7 @@ class Adapter:
             external_forecasts=external_forecasts_r
         )
 
-        # Process and return results
+        # Process forecast results
         fore_mean = rugarch.fitted(garch_forecast)
         fore_vol = rugarch.sigma(garch_forecast)
 
@@ -812,8 +837,58 @@ class Adapter:
             'vol': np.array(fore_vol).flatten()
         })
         
+        # Compute relative contributions (vectorized)
+        self.logger.info("Computing relative contributions for out-of-sample period")
+        
+        # Filter parameters to only mxreg coefficients
+        mxreg_params = {k: v for k, v in self.parameters.items() if k.startswith('mxreg')}
+        
+        # Validate: number of mxreg parameters must match number of selected variables
+        n_mxreg = len(mxreg_params)
+        n_selected = len(selected_vars)
+        if n_mxreg != n_selected:
+            self.logger.error(f"Mismatch between mxreg parameters ({n_mxreg}) and selected variables ({n_selected}).")
+            raise ValueError(
+                f"Mismatch between mxreg parameters ({n_mxreg}) and selected variables ({n_selected}). ")
+        
+        # Validate: all selected variables must exist in augmented data
+        missing_vars = [var for var in selected_vars if var not in out_of_sample_augmented.columns]
+        if missing_vars:
+            raise ValueError(f"Selected variables not found in augmented data: {missing_vars}")
+        
+        # Extract feature matrix (create copy to avoid mutability issues)
+        X = out_of_sample_augmented[selected_vars].copy()
+        
+        # Create coefficient vector in same order as selected_vars
+        # mxreg1 corresponds to selected_vars[0], mxreg2 to selected_vars[1], etc.
+        coeffs = np.array([mxreg_params[f'mxreg{i+1}'] for i in range(n_selected)])
+        
+        # Vectorized computation: element-wise multiplication with broadcasting
+        # X.shape = (n_samples, n_features), coeffs.shape = (n_features,)
+        # Result.shape = (n_samples, n_features)
+        contributions = X.values * coeffs  # Use .values to work with NumPy array
+        
+        # Create result DataFrame with explicit copy to ensure immutability
+        relative_contributions_df = pd.DataFrame(
+            contributions,
+            columns=selected_vars.copy(),  # Copy column names to avoid reference issues
+            index=out_of_sample_augmented.index
+        )
+        
+        # Add timestamp as first column (use .values to avoid index alignment issues)
+        relative_contributions_df.insert(0, 'timestamp', out_of_sample_augmented['timestamp'].values.copy())
+        
+        self.logger.info(f"Computed relative contributions for {n_selected} variables across {len(relative_contributions_df)} observations (vectorized)")
+        
         self.logger.info("Forecast generation complete.")
-        return forecast_df
+        
+        # Return both forecast and relative contributions
+        result = {
+            'forecast_df': forecast_df,
+            'scaled_features_df': X,
+            'relative_contributions_df': relative_contributions_df
+        }
+        return copy.deepcopy(result)
     
     def calculate_performance_metrics(self,
                           in_sample_event_df: pd.DataFrame,
@@ -824,20 +899,57 @@ class Adapter:
                           scaler : StandardScaler,
                           target_col_name: str = 'micro_return'):
         """
-        Calculates Mean Absolute Error (MAE) and Mean Squared Error (MSE)
-        by leveraging the new forecast method and optionally comparing with raw neural network outputs.
+        Calculates performance metrics (MAE, MSE, R²) for GARCH forecasts and optionally
+        compares with raw neural network outputs. Also returns relative contributions for
+        interpretability analysis.
+
+        This method calls the forecast() method internally to generate predictions and
+        relative contributions, then computes error metrics by comparing forecasts against
+        actual values and a benchmark.
 
         Args:
             in_sample_event_df (pd.DataFrame): In-sample event-driven data.
             in_sample_phys_df (pd.DataFrame): In-sample physical time data.
             out_of_sample_event_df (pd.DataFrame): Out-of-sample event-driven data.
             out_of_sample_phys_df (pd.DataFrame): Out-of-sample physical time data.
-            benchmark_forecast (Union[float, pd.Series]): Benchmark forecast values.
+            benchmark_forecast (Union[float, pd.Series]): Benchmark forecast values for 
+                relative metric calculation. Can be a scalar (constant forecast) or a 
+                Series matching the length of out-of-sample data.
             scaler (StandardScaler): Fitted scaler for data preprocessing.
-            target_col_name (str): The name of the target variable column.
+            target_col_name (str): The name of the target variable column (default: 'micro_return').
 
         Returns:
-            dict: A dictionary containing the calculated metrics for GARCH model and optionally for raw NN outputs.
+            dict: A dictionary containing:
+                - 'metrics': dict
+                    Performance metrics dictionary with the following keys:
+                    * 'garch_mae': float - Mean Absolute Error (always present)
+                    * 'garch_mse': float - Mean Squared Error (always present)
+                    * 'garch_relmae': float - Relative MAE vs benchmark (always present)
+                    * 'garch_relmse': float - Relative MSE vs benchmark (always present)
+                    * 'garch_r2': float - R² score (1 - relmse) (always present)
+                    * 'nn_mae': float - NN MAE (only if compare_with_cnn_lstm=True)
+                    * 'nn_mse': float - NN MSE (only if compare_with_cnn_lstm=True)
+                    * 'nn_relmae': float - NN Relative MAE (only if compare_with_cnn_lstm=True)
+                    * 'nn_relmse': float - NN Relative MSE (only if compare_with_cnn_lstm=True)
+                    * 'nn_r2': float - NN R² score (only if compare_with_cnn_lstm=True)
+                - 'relative_contributions': pd.DataFrame
+                    DataFrame with columns ['timestamp', var1, var2, ...] containing
+                    coefficient × feature_value for each selected variable across the
+                    out-of-sample period.
+                    
+        Example:
+            >>> result = adapter.calculate_performance_metrics(
+            ...     in_event, in_phys, out_event, out_phys, 
+            ...     benchmark_forecast=0.0, scaler=scaler)
+            >>> 
+            >>> # Access metrics
+            >>> metrics = result['metrics']
+            >>> print(f"GARCH MAE: {metrics['garch_mae']:.6f}")
+            >>> print(f"GARCH R²: {metrics['garch_r2']:.6f}")
+            >>> 
+            >>> # Access relative contributions
+            >>> contributions = result['relative_contributions']
+            >>> print(contributions.head())
         """
         if self.compare_with_cnn_lstm:
             self.logger.info("Calculating MAE and MSE using the forecast method and raw neural network outputs.")
@@ -845,7 +957,7 @@ class Adapter:
             self.logger.info("Calculating MAE and MSE using the forecast method only (CNN-LSTM comparison disabled).")
 
         # Call the GARCH forecast method to get predictions
-        garch_forecast_df = self.forecast(
+        garch_forecast_all = self.forecast(
             in_sample_event_df=in_sample_event_df,
             in_sample_phys_df=in_sample_phys_df,
             out_of_sample_event_df=out_of_sample_event_df,
@@ -853,6 +965,10 @@ class Adapter:
             scaler=scaler,
             target_col_name=target_col_name
         )
+
+        garch_forecast_df = garch_forecast_all['forecast_df']
+        scaled_features_df = garch_forecast_all['scaled_features_df']
+        garch_forecast_relative_contributions_df = garch_forecast_all['relative_contributions_df']
 
         # Conditionally get raw neural network outputs for out-of-sample period
         if self.compare_with_cnn_lstm:
@@ -1065,4 +1181,6 @@ class Adapter:
                 'nn_r2': nn_r2
             })
         
-        return result
+        return {'metrics': result,
+                'scaled_features_df': scaled_features_df,
+                'relative_contributions_df': garch_forecast_relative_contributions_df}

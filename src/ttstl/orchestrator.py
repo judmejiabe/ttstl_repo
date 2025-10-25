@@ -41,7 +41,74 @@ from ttstl.architectures.cnn_lstm import CNNLSTM
 
 @dataclass
 class OrchestratorConfig:
-    """Configuration for the TTSTL Orchestrator."""
+    """
+    Configuration for the TTSTL Orchestrator.
+    
+    This dataclass contains all configuration parameters for the Two Time-Scale Transfer
+    Learning framework, including backbone neural network training, interface variable
+    selection, and adapter ARMAX-GARCH modeling.
+    
+    Attributes:
+        Identity & Timing:
+            ticker: Asset identifier (e.g., "MSFT", "AAPL")
+            bdelta: Backbone time bar duration in seconds
+            adelta: Adapter time bar duration in seconds
+            sdelta: Sampling time bar duration in seconds
+            seed: Random number generator seed for reproducibility
+            session_start: Trading session start timestamp
+            session_finish: Trading session end timestamp
+            target_col_name: Name of target variable column (default: 'micro_return')
+            
+        Backbone Configuration:
+            architecture: Neural network architecture ('cnn_lstm' supported)
+            parsimonious_mode: Use reduced feature set for backbone
+            neural_covariates_only: Exclude manual/stationary features
+            manual_covariates_only: Exclude neural network features
+            past_returns: Use concurrent returns instead of forward-looking returns
+            epochs: Number of training epochs
+            batch_size: Training batch size
+            validation_proportion_backbone: Validation split proportion
+            buffer_proportion: Buffer zone proportion for temporal splits
+            adf_rejection_rate_threshold: Minimum ADF test rejection rate for stationarity
+            kpss_verification_threshold: Maximum KPSS test rejection rate
+            na_verification_threshold: Maximum proportion of missing values allowed
+            learning_rate: Optimizer learning rate
+            correlation_threshold: Maximum correlation for feature redundancy filtering
+            
+        Preprocessing:
+            pretrained_scaler: Pre-fitted StandardScaler (prevents lookahead bias)
+            lower_bounds: Windsorization lower bounds per feature
+            upper_bounds: Windsorization upper bounds per feature
+            
+        Interface Configuration:
+            alpha_enet_grid: Elastic net alpha values (0=ridge, 1=lasso)
+            lambda_enet_grid: Elastic net regularization strengths
+            tau_adalasso_grid: Adaptive lasso tau exponents
+            lambda_adalasso_grid: Adaptive lasso regularization strengths
+            user_defined_variables: Bypass variable selection with fixed list
+            second_stage_mse: Use MSE instead of BIC for hyperparameter selection
+            validation_proportion_interface: Validation split for variable selection
+            selection_threshold: Minimum coefficient magnitude for variable retention
+            tolerance_threshold: Convergence tolerance for optimization
+            ols_significance_level: P-value threshold for OLS coefficient testing
+            wald_significance_level: P-value threshold for Wald testing
+            n_lags: Number of autoregressive lags
+            
+        Adapter Configuration:
+            update_method: Parameter update rule ('myopic', 'simple_average', 'power_law',
+                          'exponential_smoothing', 'newton_raphson', 'fischer_scoring',
+                          'gradient_ascent')
+            arma_order: ARMA(p,q) order for mean equation
+            garch_order: GARCH(m,s) order for volatility equation
+            dist: Error distribution ('norm', 'std', 'ged', 'snorm', 'sstd', 'sged')
+            model: GARCH variant ('sGARCH', 'eGARCH', 'gjrGARCH', etc.)
+            archm: Include ARCH-in-mean term
+            update_parameters: Additional parameters for update method (e.g., alpha, regularization)
+            compare_with_cnn_lstm: Generate CNN-LSTM benchmark comparison metrics
+            
+        Optional:
+            run_id: Override auto-generated run identifier
+    """
     
     # Identity & timing
     ticker: str                      # e.g. "MSFT"
@@ -114,10 +181,44 @@ class Orchestrator:
     
     Manages the execution flow of the Two Time-Scale Transfer Learning framework,
     including:
-    - Training neural network backbone models
-    - Variable selection through interface module
-    - Adaptive parameter estimation via adapter module
+    - Training neural network backbone models on event-driven data
+    - Variable selection through interface module using adaptive lasso
+    - Adaptive ARMAX-GARCH parameter estimation via adapter module
     - Artifact persistence and provenance tracking
+    - Model interpretability through SHAP-style contribution visualizations
+    
+    The orchestrator operates in two primary modes:
+    
+    1. Global Update Mode:
+       - Trains backbone neural networks on in-sample data
+       - Selects relevant features via interface
+       - Fits ARMAX-GARCH models across adapter bars
+       - Generates performance metrics and interpretability plots
+       - Saves all artifacts to structured directories
+       
+    2. Local Adaptation Mode:
+       - Uses frozen backbone models for out-of-sample evaluation
+       - Applies pre-fitted scalers and target statistics from global update
+       - Updates adapter parameters on new data
+       - Generates forecasts and performance metrics
+       - Prevents lookahead bias through consistent preprocessing
+    
+    Key Features:
+    - Multi-scale temporal decomposition (backbone, adapter, sampling bars)
+    - Reproducible random seeding across Python, NumPy, and PyTorch
+    - Automatic GPU selection when CUDA is available
+    - Comprehensive artifact generation (plots, data, metadata)
+    - JSON manifest tracking for provenance
+    
+    Attributes:
+        runs_root (Path): Root directory for all experiment runs
+        cfg (OrchestratorConfig): Configuration object with all parameters
+        run_slug (str): Auto-generated unique identifier for this run
+        run_dir (Path): Directory for this specific run's artifacts
+        stacks (Dict): Dictionary of Adapter instances (one per backbone bar)
+        scalers (Dict): Pre-fitted StandardScalers for each backbone bar
+        target_scales (Dict): Target variable statistics for each backbone bar
+        logger (Logger): Logging instance for orchestrator
     """
 
     def __init__(self, runs_root: Path = None, cfg: OrchestratorConfig = None) -> None:
@@ -817,7 +918,41 @@ class Orchestrator:
                                    event_df: pd.DataFrame, 
                                    phys_df: pd.DataFrame, 
                                    bb_dir: Path) -> Dict[str, Any]:
-        """Run adapter global update step."""
+        """
+        Run adapter global update step.
+        
+        This method performs ARMAX-GARCH model fitting across all adapter bars within
+        a backbone bar, evaluates forecast performance, and generates interpretability
+        visualizations.
+        
+        Args:
+            event_df: Event-driven data for the current backbone bar
+            phys_df: Physical time data for the current backbone bar
+            bb_dir: Directory for saving artifacts
+            
+        Returns:
+            Dict containing adapter global update results with keys:
+                - 'status': 'completed' or 'failed'
+                - 'total_adapter_bars': Number of adapter bars processed
+                - 'successful_updates': Number of successful adapter updates
+                - 'failed_updates': Number of failed updates
+                - 'success_rate': Ratio of successful to total updates
+                - 'parameters_by_bar': Dict mapping adapter_bar to parameter dict
+                - 'processing_stats': Processing statistics for each bar
+                - 'artifacts_created': Number of artifacts generated
+                
+        Artifacts Generated:
+            - param_series.png: Time series plot of all adapter parameters
+            - armax_garch_corridor.png: Significance corridor plot for ARMAX-GARCH coefficients
+            - model_validity_corridor.png: GARCH diagnostic test results (if available)
+            - param_series.parquet: Parameter series data
+            - performance.parquet: Forecast performance metrics
+            - shap_summary.png: SHAP-style feature contribution visualization
+            
+        Note:
+            Relative contribution values are computed for visualization but not stored
+            as parquet files. Only the SHAP-style summary plot is saved for interpretability.
+        """
         
         
         try:
@@ -854,6 +989,8 @@ class Orchestrator:
             all_adapter_bar_specific_p_values = {}
             all_garch_diagnostics = {}  # Track GARCH model validity tests
             processing_stats = {}
+            relative_contributions = []
+            scaled_features = []
             performance_metrics = []
             
             # Process each adapter bar
@@ -953,7 +1090,7 @@ class Orchestrator:
                             continue
 
                         self.logger.info(f"Calculating forecast performance using the carried estimates from {bar_logger_prefix} on adapter time bar {next_adapter_bar}")
-                        metrics = current_adapter.calculate_performance_metrics(
+                        metrics_all = current_adapter.calculate_performance_metrics(
                             in_sample_event_df=bar_edlob,
                             in_sample_phys_df=bar_ptdata,
                             out_of_sample_event_df=out_of_sample_event_df,
@@ -962,6 +1099,17 @@ class Orchestrator:
                             scaler=scaler,
                             target_col_name=self.cfg.target_col_name
                         )
+                        metrics = metrics_all['metrics']
+                        
+                        # Collect relative contributions
+                        contrib_df = metrics_all['relative_contributions_df'].copy()
+                        contrib_df['adapter_bar'] = next_adapter_bar
+                        relative_contributions.append(contrib_df)
+                        
+                        # Collect scaled features for SHAP-style plotting
+                        features_df = metrics_all['scaled_features_df'].copy()
+                        features_df['adapter_bar'] = next_adapter_bar
+                        scaled_features.append(features_df)
 
                         metrics['adapter_bar'] = next_adapter_bar  # Log metrics against the bar they were tested on
                         performance_metrics.append(metrics)
@@ -974,6 +1122,9 @@ class Orchestrator:
                                                                                 copy.deepcopy(adapter_result['coefficients'])))
                     all_adapter_bar_specific_p_values[adapter_bar] = dict(zip(copy.deepcopy(adapter_result['coefficient_names']), 
                                                                                 copy.deepcopy(adapter_result['p_values'])))
+                    
+                    # Compute relative contributions (still need to rescale the covariates properly)
+
                     
                     # Store GARCH diagnostic test results
                     garch_diagnostics = {}
@@ -1148,6 +1299,17 @@ class Orchestrator:
                 performance_file = artifacts_dir / "performance.parquet"
                 performance_df.to_parquet(performance_file)
                 self.logger.info(f"Saved performance metrics to {performance_file}")
+            
+            # Generate SHAP-style summary plot
+            if relative_contributions and scaled_features:
+                contributions_df = pd.concat(relative_contributions, ignore_index=False)
+                features_df = pd.concat(scaled_features, ignore_index=False)
+                shap_plot_path = artifacts_dir / "shap_summary.png"
+                self._plot_shap_style_summary(
+                    contributions_df=contributions_df,
+                    scaled_features_df=features_df,
+                    save_path=shap_plot_path
+                )
             
             return adapter_global_results
             
@@ -1461,8 +1623,10 @@ class Orchestrator:
         """
         Run adapter local adaptation step.
 
-        This method has exactly the same logic as _run_adapter_global_update. Notice that the covariate 
-        scalers and target variable scales are not computed but used from the global update phase.
+        This method has exactly the same logic as _run_adapter_global_update, but uses
+        pre-fitted scalers and target variable scales from the global update phase rather
+        than recomputing them. This ensures consistent preprocessing between training
+        (global update) and testing (local adaptation).
 
         Args:
             event_df: Event-driven data for the current backbone bar
@@ -1470,9 +1634,112 @@ class Orchestrator:
             bb_dir: Directory for saving artifacts
             
         Returns:
-            Dict containing adapter local adaptation results
+            Dict containing adapter local adaptation results (same structure as
+            _run_adapter_global_update)
+            
+        Note:
+            The covariate scalers (self.scalers) and target variable statistics
+            (self.target_scales) are retrieved from global update, not recomputed.
+            This prevents lookahead bias in local adaptation.
         """
         return self._run_adapter_global_update(event_df, phys_df, bb_dir)
+
+    def _plot_shap_style_summary(self,
+                                  contributions_df: pd.DataFrame,
+                                  scaled_features_df: pd.DataFrame,
+                                  save_path: Path) -> None:
+        """
+        Create and save a SHAP-style summary plot showing relative contributions.
+        
+        This plot displays feature contributions (coefficient × feature_value) with:
+        - One horizontal strip per feature (y-axis)
+        - Contribution values on x-axis
+        - Point colors representing feature values (blue=low, red=high)
+        - Vertical jitter for visibility when many points overlap
+        
+        Args:
+            contributions_df: DataFrame with columns ['timestamp', 'adapter_bar', var1, var2, ...]
+                containing relative contributions (coefficient × feature_value)
+            scaled_features_df: DataFrame with columns ['timestamp', 'adapter_bar', var1, var2, ...]
+                containing scaled feature values for color mapping
+            save_path: Path to save the plot
+        """
+        self.logger.info(f"Generating SHAP-style summary plot and saving to {save_path}")
+        
+        # Ensure the save directory exists
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Get feature columns (exclude timestamp and adapter_bar)
+        feature_cols = [col for col in contributions_df.columns 
+                       if col not in ['timestamp', 'adapter_bar']]
+        
+        if len(feature_cols) == 0:
+            self.logger.warning("No feature columns found in contributions_df. Skipping SHAP plot.")
+            return
+        
+        # Set up the plot style
+        plt.style.use('seaborn-v0_8-whitegrid')
+        
+        # Create figure with appropriate height based on number of features
+        fig_height = max(6, len(feature_cols) * 0.6)
+        fig, ax = plt.subplots(figsize=(10, fig_height))
+        
+        # Prepare data for plotting
+        y_positions = np.arange(len(feature_cols))
+        
+        # Use a colormap similar to the SHAP example (blue to red)
+        cmap = plt.cm.coolwarm
+        
+        # Process each feature
+        for i, feature in enumerate(feature_cols):
+            # Get contribution values (SHAP values)
+            shap_values = contributions_df[feature].values
+            
+            # Get corresponding feature values for coloring
+            feature_values = scaled_features_df[feature].values
+            
+            # Add vertical jitter to avoid overplotting
+            np.random.seed(42)  # For reproducibility
+            y_jitter = np.random.normal(0, 0.1, size=len(shap_values))
+            y_coords = np.full(len(shap_values), y_positions[i]) + y_jitter
+            
+            # Create scatter plot with colors based on feature values
+            scatter = ax.scatter(
+                shap_values,
+                y_coords,
+                c=feature_values,
+                cmap=cmap,
+                alpha=0.2,
+                s=20,
+                edgecolors='none',
+                rasterized=True  # For better performance with many points
+            )
+        
+        # Customize plot
+        ax.set_yticks(y_positions)
+        ax.set_yticklabels(feature_cols)
+        ax.set_xlabel('Relative Contribution (Coefficient × Feature Value)', fontsize=12)
+        ax.set_title('Feature Contribution Summary (SHAP-style)', fontsize=14, fontweight='bold')
+        ax.axvline(x=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # Add colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(
+            vmin=scaled_features_df[feature_cols].values.min(),
+            vmax=scaled_features_df[feature_cols].values.max()
+        ))
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax, pad=0.02)
+        cbar.set_label('Standardized Feature Value', fontsize=10)
+        cbar.ax.tick_params(labelsize=9)
+        
+        # Adjust layout to prevent label cutoff
+        plt.tight_layout()
+        
+        # Save the figure
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        self.logger.info(f"SHAP-style summary plot saved to {save_path}")
+        plt.close(fig)
 
     def _plot_parameter_series(self, 
                                all_parameters_df: pd.DataFrame, 
