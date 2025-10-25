@@ -184,6 +184,7 @@ def main():
 
         # Interface knobs
         #user_defined_variables=[],  # Test user-defined variables bypass with consistently available names
+        second_stage_mse=False,  # Use MSE instead of BIC for adalasso hyperparameter selection
         alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
         #alpha_enet_grid=[0.0],  # For testing purposes
         lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
