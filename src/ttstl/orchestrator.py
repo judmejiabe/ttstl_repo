@@ -1079,6 +1079,10 @@ class Orchestrator:
                         update_parameters=self.cfg.update_parameters
                     )
                     
+                    # Raise value error if saddle_point_indicator is 1
+                    if adapter_result['saddle_point_indicator'] == 1:
+                        raise RuntimeError(f"Saddle point detected in adapter fitting for {bar_logger_prefix}")
+
                     if i < len(adapter_bars) - 1:
                         next_adapter_bar = adapter_bars[i+1]
                     
