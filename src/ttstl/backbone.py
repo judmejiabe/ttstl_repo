@@ -1244,32 +1244,10 @@ class Backbone():
                 self.save_model_weights(save_dir=str(architecture_dir))
                 self.save_nn_weights(save_dir=str(architecture_dir))
 
-        # Apply stationarity analysis to the physical time-driven data
-        if physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
-            
-            # Construct save directory for stationarity results
-
-            stationarity_save_dir = None
-            if save_dir:
-                stationarity_save_dir = Path(save_dir) / "stationarity"
-
-            # Run stationarity tests on the augmented physical time-driven data
-            stationary_vars = self.select_stationary_variables(
-                data=physical_time_driven_backbone_time_bar_data,
-                adf_rejection_rate_threshold=adf_rejection_rate_threshold,
-                kpss_verification_threshold=kpss_verification_threshold,
-                na_verification_threshold=na_verification_threshold,
-                kpss_drop=kpss_drop,
-                target_col_name=target_col_name,
-                save_dir=stationarity_save_dir,
-                session_start=session_start
-            )
+        # ========================================================================
+        # STEP 1: Extract neural network covariates FIRST (before stationarity tests)
+        # ========================================================================
         
-        else:
-            self.logger.error("No physical time-driven data provided for stationarity analysis")
-            raise ValueError("No physical time-driven data provided for stationarity analysis")
-            
-
         # Extract neural network covariates from the trained model (skip if manual_covariates_only)
         if self.manual_covariates_only:
             self.logger.info("=" * 80)
@@ -1280,18 +1258,20 @@ class Backbone():
             neural_covariate_columns = []  # No neural covariates
         elif physical_time_driven_backbone_time_bar_data is not None and not physical_time_driven_backbone_time_bar_data.empty:
             
+            self.logger.info("=" * 80)
+            self.logger.info("EXTRACTING NEURAL COVARIATES")
+            self.logger.info("=" * 80)
+            
             # Extract features from event-driven data using the trained model
             neural_covariates = self.extract_neural_covariates(
                 event_driven_data=data,
                 physical_time_data=physical_time_driven_backbone_time_bar_data
             )
 
-            # Add neural covariate columns to the full covariate set
+            # Get neural covariate column names
             neural_covariate_columns = [col for col in \
                                         neural_covariates.columns\
                                               if col != 'timestamp']
-            self._add_covariate_set(neural_covariate_columns)
-
             
             # Add neural network covariates to physical data
             if neural_covariates is not None and len(neural_covariates) > 0:
@@ -1302,15 +1282,13 @@ class Backbone():
                 neural_covariates['timestamp'] = \
                     neural_covariates['timestamp'].astype(float)
                 # Merge the neural covariates with physical data
-                self.logger.info('Extending physical time driven data with neural covariates')
+                self.logger.info('Merging neural covariates with physical time data')
                 augmented_physical_data = pd.merge_asof(physical_time_driven_backbone_time_bar_data,
                                                         neural_covariates,
                                                         on='timestamp',
                                                         direction = 'nearest',
                                                         tolerance = 1e-6)
-                self.logger.info(f'Extended physical time driven data resulted in {augmented_physical_data.shape[0]:,} rows and {augmented_physical_data.shape[1]:,} columns.')
-                #print(augmented_physical_data.info()) # Debugging output
-                #print(f"Augmented physical data shape: {augmented_physical_data.shape}") # Debugging output
+                self.logger.info(f'Augmented data: {augmented_physical_data.shape[0]:,} rows, {augmented_physical_data.shape[1]:,} columns')
                 
             else:
                 self.logger.error("No neural covariates extracted from the model")
@@ -1318,6 +1296,43 @@ class Backbone():
         else:
             self.logger.error("No physical time-driven data provided for neural covariate extraction")
             raise ValueError("No physical time-driven data provided for neural covariate extraction")
+
+        # ========================================================================
+        # STEP 2: Run stationarity tests on AUGMENTED data (includes neural covariates)
+        # ========================================================================
+        
+        # Apply stationarity analysis to the augmented physical time-driven data
+        if augmented_physical_data is not None and not augmented_physical_data.empty:
+            
+            # Construct save directory for stationarity results
+            stationarity_save_dir = None
+            if save_dir:
+                stationarity_save_dir = Path(save_dir) / "stationarity"
+
+            self.logger.info("=" * 80)
+            self.logger.info("RUNNING STATIONARITY TESTS ON AUGMENTED DATA")
+            if not self.manual_covariates_only and neural_covariate_columns:
+                self.logger.info("Testing BOTH manual covariates AND neural covariates")
+            else:
+                self.logger.info("Testing ONLY manual covariates")
+            self.logger.info("=" * 80)
+
+            # Run stationarity tests on the augmented physical time-driven data
+            # This now includes both manual and neural covariates
+            stationary_vars = self.select_stationary_variables(
+                data=augmented_physical_data,
+                adf_rejection_rate_threshold=adf_rejection_rate_threshold,
+                kpss_verification_threshold=kpss_verification_threshold,
+                na_verification_threshold=na_verification_threshold,
+                kpss_drop=kpss_drop,
+                target_col_name=target_col_name,
+                save_dir=stationarity_save_dir,
+                session_start=session_start
+            )
+        
+        else:
+            self.logger.error("No data available for stationarity analysis")
+            raise ValueError("No data available for stationarity analysis")
 
 
         if self.full_covariate_list and len(self.full_covariate_list) > 1:
