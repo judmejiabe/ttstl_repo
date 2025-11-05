@@ -427,26 +427,18 @@ class Backbone():
         else:
             self.logger.warning(f"Target column '{target_col_name}' does not pass stationarity tests.")
 
-        # Initialize covariate list based on mode
-        if self.neural_covariates_only:
-            # Neural covariates only mode - start with empty list, neural covariates will be added later
-            self.full_covariate_list = []
-            self.logger.info("=" * 80)
-            self.logger.info("Neural covariates only mode - manual features will be excluded")
-            self.logger.info("=" * 80)
-        else:
-            # Standard mode - include stationary variables  
-            self.full_covariate_list = [var for var in stationary_variables \
-                                        if var not in {'timestamp', target_col_name}]
+        # Populate covariate list from stationary variables
+        self.full_covariate_list = [var for var in stationary_variables \
+                                    if var not in {'timestamp', target_col_name}]
 
-            self.logger.info("=" * 80)
-            self.logger.info("Stationary covariates found")
-            self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("Stationary covariates found")
+        self.logger.info("=" * 80)
 
-            for i, var in enumerate(self.full_covariate_list):
-                self.logger.info(f"{i + 1}. {var}")
+        for i, var in enumerate(self.full_covariate_list):
+            self.logger.info(f"{i + 1}. {var}")
 
-            self.logger.info("=" * 80)
+        self.logger.info("=" * 80)
 
         # Issue warnings
         if warning_variables:
@@ -1273,21 +1265,26 @@ class Backbone():
                                         neural_covariates.columns\
                                               if col != 'timestamp']
             
-            # Add neural network covariates to physical data
+            # Verify neural covariates extraction
             if neural_covariates is not None and len(neural_covariates) > 0:
                 # Set timestamp columns as float to avoid incompatible types during merging
-                physical_time_driven_backbone_time_bar_data['timestamp'] = \
-                    physical_time_driven_backbone_time_bar_data['timestamp']\
-                        .astype(float)
-                neural_covariates['timestamp'] = \
-                    neural_covariates['timestamp'].astype(float)
-                # Merge the neural covariates with physical data
-                self.logger.info('Merging neural covariates with physical time data')
-                augmented_physical_data = pd.merge_asof(physical_time_driven_backbone_time_bar_data,
-                                                        neural_covariates,
-                                                        on='timestamp',
-                                                        direction = 'nearest',
-                                                        tolerance = 1e-6)
+                neural_covariates['timestamp'] = neural_covariates['timestamp'].astype(float)
+                
+                if self.neural_covariates_only:
+                    # Neural covariates only mode - use neural covariates directly without merging
+                    self.logger.info('Neural covariates only mode - using neural covariates without manual features')
+                    augmented_physical_data = neural_covariates.copy()
+                else:
+                    # Standard mode - merge neural covariates with physical data
+                    physical_time_driven_backbone_time_bar_data['timestamp'] = \
+                        physical_time_driven_backbone_time_bar_data['timestamp'].astype(float)
+                    self.logger.info('Merging neural covariates with physical time data')
+                    augmented_physical_data = pd.merge_asof(physical_time_driven_backbone_time_bar_data,
+                                                            neural_covariates,
+                                                            on='timestamp',
+                                                            direction = 'nearest',
+                                                            tolerance = 1e-6)
+                
                 self.logger.info(f'Augmented data: {augmented_physical_data.shape[0]:,} rows, {augmented_physical_data.shape[1]:,} columns')
                 
             else:
