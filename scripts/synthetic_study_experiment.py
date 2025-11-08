@@ -9,6 +9,7 @@ import pandas as pd
 from ttstl import orchestrator
 from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 from ttstl.utils.data_downloader import import_to_pandas
+from ttstl.utils.data_preprocessor import create_pretrained_scaler
 
 
 def setup_logging():
@@ -129,15 +130,20 @@ def get_base_config():
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
-        quantile=0.005,
         adf_rejection_rate_threshold=0.8,
         kpss_verification_threshold=0.2,
         na_verification_threshold=0.1,
         learning_rate=0.0001,
         correlation_threshold=0.95,
+        
+        # Preprocessing components (will be set in main from synthetic data)
+        pretrained_scaler=None,  # Will be set from synthetic data  
+        lower_bounds=None,       # Will be set from synthetic data
+        upper_bounds=None,       # Will be set from synthetic data
 
         # Interface knobs (will be modified per experiment)
         user_defined_variables=None,  # Default, will be overridden
+        second_stage_mse=False,  # Use MSE instead of BIC for adalasso hyperparameter selection if true
         alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
         lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
         tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
@@ -156,7 +162,8 @@ def get_base_config():
         dist='sstd',
         model='sGARCH',
         archm=False,
-        update_parameters={'alpha': 3.0}  # Will be overridden for different methods
+        update_parameters={'alpha': 3.0},  # Will be overridden for different methods
+        compare_with_cnn_lstm=True  # Enable comparison with raw CNN-LSTM outputs
     )
 
 def get_update_method_configs():
@@ -261,7 +268,7 @@ def create_experiment_config(base_config, update_method_config, covariate_config
     
     return config
 
-# Culprit:
+
 def run_experiment(config, base_orchestrator, ed_df_0, ptd_df_0, ed_df_1, ptd_df_1, runs_dir):
     """Run a single experiment with the given configuration, importing backbone from base_orchestrator."""
     logger = logging.getLogger(__name__)
@@ -316,22 +323,47 @@ def main():
     ed_df_0, ptd_df_0 = load_synthetic_data(0)
     ed_df_1, ptd_df_1 = load_synthetic_data(1)
 
+    logger.info("Creating preprocessing components from synthetic data")
+    
+    # Create preprocessing components from the first dataset to avoid lookahead bias
+    try:
+        scaler, lower_bounds, upper_bounds = create_pretrained_scaler(
+            ed_df_0, quantile=0.005
+        )
+        logger.info("Successfully created preprocessing components from synthetic data")
+        logger.info(f"Scaler fitted on {len([col for col in ed_df_0.columns if 'of' in col])} order flow features")
+        logger.info(f"Bounds computed for winsorization: {len(lower_bounds) if lower_bounds else 0} features")
+    except Exception as e:
+        logger.error(f"Failed to create preprocessing components: {str(e)}")
+        logger.info("Continuing without preprocessing components (may cause issues)")
+        raise ValueError("Preprocessing component creation failed")
+
     # Create runs directory
-    runs_dir = Path('runs_synthetic_study')
-    runs_dir.mkdir(exist_ok=True)
+    runs_dir = Path('outputs/runs_synthetic_study')
+    runs_dir.mkdir(parents=True, exist_ok=True)
 
     # Get base configuration and experiment configurations
     base_config = get_base_config()
+    
+    # Set preprocessing components in base config
+    base_config.pretrained_scaler = scaler
+    base_config.lower_bounds = lower_bounds
+    base_config.upper_bounds = upper_bounds
     update_methods = get_update_method_configs()
     covariate_configs = get_covariate_configs()
 
-    # Generate all experiments
-    experiments = []
+    # Generate all experiments as dictionary
+    experiments = {}
     for update_key, update_config in update_methods.items():
         for cov_key, cov_config in covariate_configs.items():
             run_id = f"{update_key}_{cov_key}"
             exp_config = create_experiment_config(base_config, update_config, cov_config, run_id)
-            experiments.append((run_id, exp_config, cov_config['description'], cov_key))
+            experiments[run_id] = {
+                'config': exp_config,
+                'description': cov_config['description'],
+                'cov_key': cov_key,
+                'update_key': update_key
+            }
 
     logger.info(f"Generated {len(experiments)} experiments to run")
     
@@ -339,7 +371,10 @@ def main():
     logger.info("=" * 80)
     logger.info("EXPERIMENT SUMMARY")
     logger.info("=" * 80)
-    for run_id, config, description, cov_key in experiments:
+    for run_id, exp_data in experiments.items():
+        config = exp_data['config']
+        description = exp_data['description']
+        
         # Extract update method info
         update_method = config.update_method
         update_params = config.update_parameters
@@ -357,27 +392,23 @@ def main():
     # PHASE 1: Run M_01 experiment first (this will train the backbone)
     logger.info("Running M_01 experiment to train shared backbone neural network")
     
-    # Find M_01 experiment
-    m01_experiment = None
-    remaining_experiments = []
-    
-    for exp_data in experiments:
-        run_id, config, description, cov_key = exp_data
-        if run_id == "M_01":
-            m01_experiment = exp_data
-        else:
-            remaining_experiments.append(exp_data)
-    
-    if m01_experiment is None:
+    # Direct dictionary lookup - O(1)
+    if "M_01" not in experiments:
         logger.error("M_01 experiment not found! Cannot proceed.")
         return
     
-    # Run M_01 to train the backbone
-    run_id, config, description, cov_key = m01_experiment
-    logger.info(f"Training backbone with experiment: {run_id}")
-    logger.info(f"Description: {description}")
+    # Get M_01 experiment directly
+    m01_data = experiments["M_01"]
+    logger.info(f"Training backbone with experiment: M_01")
+    logger.info(f"Description: {m01_data['description']}")
     
-    m01_orchestrator = run_experiment(config, None, ed_df_0, ptd_df_0, ed_df_1, ptd_df_1, runs_dir)
+    m01_orchestrator = run_experiment(
+        m01_data['config'], 
+        None, 
+        ed_df_0, ptd_df_0, 
+        ed_df_1, ptd_df_1, 
+        runs_dir
+    )
     
     if m01_orchestrator is None:
         logger.error("Failed to complete M_01 experiment (backbone training). Exiting.")
@@ -390,11 +421,20 @@ def main():
     successful_experiments = 1  # M_01 already completed
     failed_experiments = 0
     
-    for i, (run_id, config, description, cov_key) in enumerate(remaining_experiments, 2):
+    # Create dictionary of remaining experiments (excluding M_01)
+    remaining_experiments = {k: v for k, v in experiments.items() if k != "M_01"}
+    
+    for i, (run_id, exp_data) in enumerate(remaining_experiments.items(), 2):
         logger.info(f"Running experiment {i}/{len(experiments)}: {run_id}")
         
         # Import backbone from M_01 orchestrator
-        result = run_experiment(config, m01_orchestrator, ed_df_0, ptd_df_0, ed_df_1, ptd_df_1, runs_dir)
+        result = run_experiment(
+            exp_data['config'], 
+            m01_orchestrator, 
+            ed_df_0, ptd_df_0, 
+            ed_df_1, ptd_df_1, 
+            runs_dir
+        )
         
         if result is not None:
             successful_experiments += 1
