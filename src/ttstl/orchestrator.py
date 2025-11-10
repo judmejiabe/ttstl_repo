@@ -527,9 +527,19 @@ class Orchestrator:
                     source_backbone = source_orchestrator.stacks[stack_key].interface.backbone
                     target_backbone = self.stacks[stack_key].interface.backbone
 
-                    # Copy the trained model
-                    target_backbone.model = copy.deepcopy(source_backbone.model)
-                    target_backbone.device = source_backbone.device
+                    # Copy the trained model and move to target device
+                    # First, get the target device (where the target backbone's model currently is)
+                    target_device = target_backbone.device
+                    
+                    # Deep copy the source model
+                    copied_model = copy.deepcopy(source_backbone.model)
+                    
+                    # Move the copied model to the target device to ensure consistency
+                    copied_model = copied_model.to(target_device)
+                    
+                    # Assign the copied and relocated model
+                    target_backbone.model = copied_model
+                    # Device remains unchanged (already set correctly at target_device)
 
                     # Copy learned state for sequential learning
                     target_backbone.pretrained = True  # Mark as having pretrained weights
@@ -538,7 +548,7 @@ class Orchestrator:
                         self.cfg.epochs = 0  # Disable further training
 
                     imported_count += 1
-                    self.logger.debug(f"Successfully imported backbone for {stack_key}")
+                    self.logger.debug(f"Successfully imported backbone for {stack_key} to device {target_device}")
                     
                 except Exception as e:
                     failed_count += 1
