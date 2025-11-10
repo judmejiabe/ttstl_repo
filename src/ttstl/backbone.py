@@ -423,7 +423,7 @@ class Backbone():
                                      high_na].tolist()
         
         if target_col_name in stationary_variables:
-            self.logger.info(f"✓ Target column '{target_col_name}' passed stationarity tests.")
+            self.logger.info(f"Target column '{target_col_name}' passed stationarity tests.")
         else:
             self.logger.warning(f"Target column '{target_col_name}' does not pass stationarity tests.")
 
@@ -700,27 +700,41 @@ class Backbone():
                 # Non-parsimonious mode: Create separate correlation matrices as before
                 self.logger.info("Using full mode: creating separate correlation matrices for the microstructural features and neural features")
 
-                # 1. Stationary variables + extra covariates correlation
-                stationary_with_target = [target_col_name] + microstructural_covariates_names
-                stationary_data = correlation_data[stationary_with_target]
-                self.manually_extracted_covariates_correlation = stationary_data.corr(method='pearson')
-                self.logger.info(f"Computed microstructural covariates correlation matrix with shape: {self.manually_extracted_covariates_correlation.shape}.")
-                self.logger.info("The correlation matrix can be accessed via the 'manually_extracted_covariates_correlation' attribute.")
+                # Initialize all to None
+                self.manually_extracted_covariates_correlation = None
+                self.neural_covariates_correlation = None
+                self.cross_correlation_matrix = None
 
-                # 2. Neural covariates + extra covariates correlation
-                neural_with_target = [target_col_name] + neural_covariates_names
-                neural_data = correlation_data[neural_with_target]
-                self.neural_covariates_correlation = neural_data.corr(method='pearson')
-                self.logger.info(f"Computed neural covariates correlation matrix with shape: {self.neural_covariates_correlation.shape}.")
-                self.logger.info("The correlation matrix can be accessed via the 'neural_covariates_correlation' attribute.")
+                # 1. Microstructural covariates correlation (only if we have microstructural covariates)
+                if len(microstructural_covariates_names) > 0:
+                    microstructural_with_target = [target_col_name] + microstructural_covariates_names
+                    microstructural_data = correlation_data[microstructural_with_target]
+                    self.manually_extracted_covariates_correlation = microstructural_data.corr(method='pearson')
+                    self.logger.info(f"Computed microstructural covariates correlation matrix with shape: {self.manually_extracted_covariates_correlation.shape}.")
+                    self.logger.info("The correlation matrix can be accessed via the 'manually_extracted_covariates_correlation' attribute.")
+                else:
+                    self.logger.info("No microstructural covariates available - skipping microstructural correlation matrix")
 
-                # 3. Cross-correlation between neural and stationary variables (NO extra covariates)
-                cross_correlation_data = correlation_data[neural_covariates_names + microstructural_covariates_names]
-                full_correlation = cross_correlation_data.corr(method='pearson')
-                # Extract cross-correlation submatrix (neural vs stationary only)
-                self.cross_correlation_matrix = full_correlation.loc[neural_covariates_names, microstructural_covariates_names]
-                self.logger.info(f"Computed cross-correlation matrix with shape: {self.cross_correlation_matrix.shape}.")
-                self.logger.info("The correlation matrix can be accessed via the 'cross_correlation_matrix' attribute.")
+                # 2. Neural covariates correlation (only if we have neural covariates)
+                if len(neural_covariates_names) > 0:
+                    neural_with_target = [target_col_name] + neural_covariates_names
+                    neural_data = correlation_data[neural_with_target]
+                    self.neural_covariates_correlation = neural_data.corr(method='pearson')
+                    self.logger.info(f"Computed neural covariates correlation matrix with shape: {self.neural_covariates_correlation.shape}.")
+                    self.logger.info("The correlation matrix can be accessed via the 'neural_covariates_correlation' attribute.")
+                else:
+                    self.logger.info("No neural covariates available - skipping neural correlation matrix")
+
+                # 3. Cross-correlation between neural and microstructural variables (only if BOTH exist)
+                if len(neural_covariates_names) > 0 and len(microstructural_covariates_names) > 0:
+                    cross_correlation_data = correlation_data[neural_covariates_names + microstructural_covariates_names]
+                    full_correlation = cross_correlation_data.corr(method='pearson')
+                    # Extract cross-correlation submatrix (neural vs microstructural only)
+                    self.cross_correlation_matrix = full_correlation.loc[neural_covariates_names, microstructural_covariates_names]
+                    self.logger.info(f"Computed cross-correlation matrix with shape: {self.cross_correlation_matrix.shape}.")
+                    self.logger.info("The correlation matrix can be accessed via the 'cross_correlation_matrix' attribute.")
+                else:
+                    self.logger.info("Cannot compute cross-correlation matrix - need both neural and microstructural covariates")
 
         
         # Save correlation matrices if save_dir provided
@@ -800,19 +814,34 @@ class Backbone():
         """
         
         if self.parsimonious_mode:
-            self._create_correlation_heatmap(self.neural_covariates_correlation, 
-                                             "Correlation Heatmap Full Covariate Set", 
-                                             save_dir / "corr_heatmap.png")
+            if self.neural_covariates_correlation is not None:
+                self._create_correlation_heatmap(self.neural_covariates_correlation, 
+                                                 "Correlation Heatmap Full Covariate Set", 
+                                                 save_dir / "corr_heatmap.png")
+            else:
+                self.logger.warning("No correlation matrix available in parsimonious mode - skipping heatmap creation")
         else:
-            self._create_correlation_heatmap(self.neural_covariates_correlation, 
-                                             "Correlation Heatmap Neural Covariates", 
-                                             save_dir / "corr_heatmap_neural.png")
-            self._create_correlation_heatmap(self.manually_extracted_covariates_correlation,
-                                             "Correlation Heatmap Microstructural Measures",
-                                             save_dir / "corr_heatmap_microstructural.png")
-            self._create_correlation_heatmap(self.cross_correlation_matrix,
-                                             "Cross Correlation Heatmap: Neural Covariates and Microstructural Measures",
-                                             save_dir / "corr_heatmap_cross_covariates.png")
+            # Full mode: create heatmaps only for matrices that exist
+            if self.neural_covariates_correlation is not None:
+                self._create_correlation_heatmap(self.neural_covariates_correlation, 
+                                                 "Correlation Heatmap Neural Covariates", 
+                                                 save_dir / "corr_heatmap_neural.png")
+            else:
+                self.logger.info("No neural covariates correlation matrix - skipping neural heatmap")
+            
+            if self.manually_extracted_covariates_correlation is not None:
+                self._create_correlation_heatmap(self.manually_extracted_covariates_correlation,
+                                                 "Correlation Heatmap Microstructural Measures",
+                                                 save_dir / "corr_heatmap_microstructural.png")
+            else:
+                self.logger.info("No microstructural covariates correlation matrix - skipping microstructural heatmap")
+            
+            if self.cross_correlation_matrix is not None:
+                self._create_correlation_heatmap(self.cross_correlation_matrix,
+                                                 "Cross Correlation Heatmap: Neural Covariates and Microstructural Measures",
+                                                 save_dir / "corr_heatmap_cross_covariates.png")
+            else:
+                self.logger.info("No cross-correlation matrix - skipping cross-correlation heatmap")
 
     def save_training_history(self, save_dir: str) -> None:
         """Save training history to parquet file.
@@ -1271,9 +1300,19 @@ class Backbone():
                 neural_covariates['timestamp'] = neural_covariates['timestamp'].astype(float)
                 
                 if self.neural_covariates_only:
-                    # Neural covariates only mode - use neural covariates directly without merging
+                    # Neural covariates only mode - use neural covariates but include target variable
                     self.logger.info('Neural covariates only mode - using neural covariates without manual features')
-                    augmented_physical_data = neural_covariates.copy()
+                    # Need to merge target variable from physical data for stationarity testing
+                    physical_time_driven_backbone_time_bar_data['timestamp'] = \
+                        physical_time_driven_backbone_time_bar_data['timestamp'].astype(float)
+                    augmented_physical_data = pd.merge_asof(
+                        neural_covariates,
+                        physical_time_driven_backbone_time_bar_data[['timestamp', target_col_name]],
+                        on='timestamp',
+                        direction='nearest',
+                        tolerance=1e-6
+                    )
+                    self.logger.info(f'Merged target variable {target_col_name} with neural covariates')
                 else:
                     # Standard mode - merge neural covariates with physical data
                     physical_time_driven_backbone_time_bar_data['timestamp'] = \
@@ -1333,25 +1372,33 @@ class Backbone():
 
 
         if self.full_covariate_list and len(self.full_covariate_list) > 1:
-            # Get neural and stationary variables
+            # Separate neural covariates from manual covariates
+            # stationary_vars contains all variables that passed stationarity tests (both neural and manual)
             
             if self.neural_covariates_only:
-                # In neural-only mode, stationary_covariates should be empty
-                stationary_covariates = []
+                # In neural-only mode, only neural covariates (no manual covariates)
+                stationary_neural_covariates = [col for col in stationary_vars if col in neural_covariate_columns]
+                stationary_manual_covariates = []
             elif self.manual_covariates_only:
-                # In manual-only mode, neural_covariate_columns should be empty
-                stationary_covariates = [col for col in stationary_vars if col not in {'timestamp', target_col_name}]
+                # In manual-only mode, only manual covariates (no neural covariates)
+                stationary_neural_covariates = []
+                stationary_manual_covariates = [col for col in stationary_vars if col not in {'timestamp', target_col_name}]
             else:
-                # In standard mode, get stationary variables 
-                stationary_covariates = [col for col in stationary_vars if col not in {'timestamp', target_col_name}]
+                # In standard mode, separate neural and manual covariates
+                # Neural covariates: those that passed stationarity AND are in neural_covariate_columns
+                stationary_neural_covariates = [col for col in stationary_vars if col in neural_covariate_columns]
+                # Manual covariates: those that passed stationarity AND are NOT in neural_covariate_columns
+                stationary_manual_covariates = [col for col in stationary_vars 
+                                               if col not in {'timestamp', target_col_name} 
+                                               and col not in neural_covariate_columns]
 
             save_dir_correlation = None
             if save_dir:
                 save_dir_correlation = Path(save_dir) / "correlation"
 
                 self._compute_correlation_matrices(augmented_physical_data,
-                                                neural_covariate_columns,
-                                                stationary_covariates,
+                                                stationary_neural_covariates,
+                                                stationary_manual_covariates,
                                                 target_col_name,
                                                 save_dir_correlation)
                 self._save_correlation_heatmaps(save_dir_correlation)
