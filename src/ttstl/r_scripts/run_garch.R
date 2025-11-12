@@ -7,7 +7,7 @@ library(ggplot2)
 run_garch <- 
     function(y, X = NULL, Z = NULL, model = 'sGARCH',
              p = 1, q = 1, m = 1, s = 1, 
-             archm = FALSE, dist = 'norm', # If called should fail,
+             archm = FALSE, dist = 'norm',
              out_sample = 0,
              start_pars = list(),
              display = TRUE,
