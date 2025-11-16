@@ -17,6 +17,9 @@ pandas2ri.activate()
 rugarch = importr('rugarch')
 
 class Adapter:
+    # Class-level flag to track if R scripts are loaded
+    _r_scripts_loaded = False
+    
     def __init__(self, 
                  interface,
                  update_method: str = 'myopic',
@@ -25,7 +28,7 @@ class Adapter:
                  dist: str = 'norm', # If called should fail 
                  model : str = 'sGARCH',
                  archm: bool = False,
-                 parameters : dict = {},
+                 parameters : dict = None,
                  compare_with_cnn_lstm: bool = False):
         self.interface = interface
         self.update_method = update_method
@@ -34,10 +37,40 @@ class Adapter:
         self.dist = dist
         self.model = model
         self.archm = archm
-        self.parameters = parameters
+        self.parameters = parameters if parameters is not None else {}
         self.compare_with_cnn_lstm = compare_with_cnn_lstm
         self.spec = None  # To store GARCH specification
         self.logger = logging.getLogger('ttstl.adapter')
+        
+        # Load R scripts once
+        self._load_r_scripts()
+
+    def _load_r_scripts(self):
+        """Load R scripts once per class to avoid repeated file I/O.
+        
+        This method loads the required R scripts into the R global environment.
+        It only loads scripts once using a class-level flag to optimize performance
+        during rolling forecasts and repeated model fitting.
+        """
+        if not Adapter._r_scripts_loaded:
+            try:
+                # Load run_garch.R
+                run_garch_path = os.path.join(
+                    os.path.dirname(__file__), 'r_scripts', 'run_garch.R'
+                )
+                ro.r(f'source("{run_garch_path}")')
+                
+                # Load numderiv_garch.R
+                numderiv_path = os.path.join(
+                    os.path.dirname(__file__), 'r_scripts', 'numderiv_garch.R'
+                )
+                ro.r(f'source("{numderiv_path}")')
+                
+                Adapter._r_scripts_loaded = True
+                self.logger.info("R scripts loaded successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to load R scripts: {e}")
+                raise
 
     def _update_myopic(self, new_parameters: dict):
         self.parameters = new_parameters
@@ -47,30 +80,48 @@ class Adapter:
         if not self.parameters:
             self.parameters = new_parameters
         else:
+            # Validate parameter keys match
+            if set(new_parameters.keys()) != set(self.parameters.keys()):
+                self.logger.error("Parameter mismatch in _update_simple_average.")
+                self.logger.error(f"Existing keys: {sorted(list(self.parameters.keys()))}")
+                self.logger.error(f"New keys: {sorted(list(new_parameters.keys()))}")
+                raise ValueError("Parameter keys must match for simple_average update.")
+            
             # Simple average of current and new parameters
             for key in new_parameters:
-                if key in self.parameters:
-                    self.parameters[key] = (ell - 1) / ell * self.parameters[key] + \
-                        1 / ell * new_parameters[key]
+                self.parameters[key] = (ell - 1) / ell * self.parameters[key] + \
+                    1 / ell * new_parameters[key]
     
     def _update_power_law(self, new_parameters : dict, ell : int, alpha : float = 3):
         if not self.parameters:
             self.parameters = new_parameters
         else:
+            # Validate parameter keys match
+            if set(new_parameters.keys()) != set(self.parameters.keys()):
+                self.logger.error("Parameter mismatch in _update_power_law.")
+                self.logger.error(f"Existing keys: {sorted(list(self.parameters.keys()))}")
+                self.logger.error(f"New keys: {sorted(list(new_parameters.keys()))}")
+                raise ValueError("Parameter keys must match for power_law update.")
+            
             for key in new_parameters:
                 ell_seq = np.arange(1, ell) ** alpha
                 sum_ell_seq = np.sum(ell_seq)
-                if key in self.parameters:
-                    self.parameters[key] = sum_ell_seq / (sum_ell_seq + ell ** alpha) * self.parameters[key] + \
-                                           ell ** alpha / (sum_ell_seq + ell ** alpha) * new_parameters[key]
+                self.parameters[key] = sum_ell_seq / (sum_ell_seq + ell ** alpha) * self.parameters[key] + \
+                                       ell ** alpha / (sum_ell_seq + ell ** alpha) * new_parameters[key]
 
     def _update_exponential_smoothing(self, new_parameters : dict, alpha : float = 0.1):
         if not self.parameters:
             self.parameters = new_parameters
         else:
+            # Validate parameter keys match
+            if set(new_parameters.keys()) != set(self.parameters.keys()):
+                self.logger.error("Parameter mismatch in _update_exponential_smoothing.")
+                self.logger.error(f"Existing keys: {sorted(list(self.parameters.keys()))}")
+                self.logger.error(f"New keys: {sorted(list(new_parameters.keys()))}")
+                raise ValueError("Parameter keys must match for exponential_smoothing update.")
+            
             for key in new_parameters:
-                if key in self.parameters:
-                    self.parameters[key] = (1 - alpha) * self.parameters[key] + alpha * new_parameters[key]
+                self.parameters[key] = (1 - alpha) * self.parameters[key] + alpha * new_parameters[key]
 
     def _update_minimum_variance(self):
         pass
@@ -86,15 +137,32 @@ class Adapter:
         Parameters:
         -----------
         new_parameters : dict - Current fitted parameters (θ_old)
-        gradient : np.ndarray - Gradient vector from numderiv_garch
-        hessian : np.ndarray - Hessian matrix from numderiv_garch  
+        gradient : np.ndarray - Gradient vector from numderiv_garch (required)
+        hessian : np.ndarray - Hessian matrix from numderiv_garch (required)
         param_names : list - Parameter names ensuring consistent ordering
         regularization : float - Diagonal regularization for numerical stability (λ)
+        
+        Raises:
+        -------
+        ValueError : If gradient or hessian is None
         """
         
         if not self.parameters:
             self.parameters = new_parameters
         else:
+            # Validate that required derivatives are provided
+            if gradient is None or hessian is None:
+                self.logger.error("Newton-Raphson update requires gradient and hessian.")
+                self.logger.error(f"gradient is None: {gradient is None}, hessian is None: {hessian is None}")
+                raise ValueError("Newton-Raphson update requires non-None gradient and hessian.")
+            
+            # Validate parameter keys match
+            if set(new_parameters.keys()) != set(self.parameters.keys()):
+                self.logger.error("Parameter mismatch in _update_newton_raphson.")
+                self.logger.error(f"Existing keys: {sorted(list(self.parameters.keys()))}")
+                self.logger.error(f"New keys: {sorted(list(new_parameters.keys()))}")
+                raise ValueError("Parameter keys must match for newton_raphson update.")
+            
             self.logger.info(gradient)
             self.logger.info(hessian)
             # 1. Validate inputs and convert to arrays
@@ -128,15 +196,32 @@ class Adapter:
         Parameters:
         -----------
         new_parameters : dict - Current fitted parameters (θ_old)
-        gradient : np.ndarray - Gradient vector from numderiv_garch
-        hessian : np.ndarray - Hessian matrix from numderiv_garch  
+        gradient : np.ndarray - Gradient vector from numderiv_garch (required)
+        info_mat : np.ndarray - Information matrix from numderiv_garch (required)
         param_names : list - Parameter names ensuring consistent ordering
         regularization : float - Diagonal regularization for numerical stability (λ)
+        
+        Raises:
+        -------
+        ValueError : If gradient or info_mat is None
         """
 
         if not self.parameters:
             self.parameters = new_parameters
         else:
+            # Validate that required derivatives are provided
+            if gradient is None or info_mat is None:
+                self.logger.error("Fischer scoring update requires gradient and info_mat.")
+                self.logger.error(f"gradient is None: {gradient is None}, info_mat is None: {info_mat is None}")
+                raise ValueError("Fischer scoring update requires non-None gradient and info_mat.")
+            
+            # Validate parameter keys match
+            if set(new_parameters.keys()) != set(self.parameters.keys()):
+                self.logger.error("Parameter mismatch in _update_fischer_scoring.")
+                self.logger.error(f"Existing keys: {sorted(list(self.parameters.keys()))}")
+                self.logger.error(f"New keys: {sorted(list(new_parameters.keys()))}")
+                raise ValueError("Parameter keys must match for fischer_scoring update.")
+            
             # 1. Validate inputs and convert to arrays
             current_params_array = np.array([self.parameters[name] for name in new_parameters.keys()])
 
@@ -167,14 +252,31 @@ class Adapter:
         Parameters:
         -----------
         new_parameters : dict - Current fitted parameters (θ_old)
-        gradient : np.ndarray - Gradient vector from numderiv_garch
+        gradient : np.ndarray - Gradient vector from numderiv_garch (required)
         param_names : list - Parameter names ensuring consistent ordering
         alpha : float - Step size for gradient descent
+        
+        Raises:
+        -------
+        ValueError : If gradient is None
         """
 
         if not self.parameters:
             self.parameters = new_parameters
         else:
+            # Validate that required derivative is provided
+            if gradient is None:
+                self.logger.error("Gradient ascent update requires gradient.")
+                self.logger.error(f"gradient is None: {gradient is None}")
+                raise ValueError("Gradient ascent update requires non-None gradient.")
+            
+            # Validate parameter keys match
+            if set(new_parameters.keys()) != set(self.parameters.keys()):
+                self.logger.error("Parameter mismatch in _update_gradient_ascent.")
+                self.logger.error(f"Existing keys: {sorted(list(self.parameters.keys()))}")
+                self.logger.error(f"New keys: {sorted(list(new_parameters.keys()))}")
+                raise ValueError("Parameter keys must match for gradient_ascent update.")
+            
             # 1. Validate inputs and convert to arrays
             current_params_array = np.array([self.parameters[name] for name in new_parameters.keys()])
 
@@ -250,7 +352,9 @@ class Adapter:
 
     def _fit_garch_model(self, y : np.ndarray, 
                          X : np.ndarray = None, 
-                         Z : np.ndarray = None, out_sample=0):
+                         Z : np.ndarray = None, 
+                         out_sample: int = 0,
+                         bypass_fit: bool = False) -> dict:
         """
         Fit GARCH model using R's rugarch package through rpy2.
         
@@ -259,28 +363,37 @@ class Adapter:
         y : array-like
             The time series data to fit
         X : array-like, optional
-            External regressors for the mean model
+            External regressors for the mean model (default: None)
         Z : array-like, optional  
-            External regressors for the variance model
+            External regressors for the variance model (default: None)
         out_sample : int, optional
-            Number of out-of-sample observations
+            Number of out-of-sample observations to hold out during fitting (default: 0)
+        bypass_fit : bool, optional
+            If True, only create the GARCH specification without fitting. 
+            Returns spec only, all other result fields will be None (default: False)
             
         Returns:
         --------
-        dict : Dictionary containing GARCH model results
+        dict : Dictionary containing GARCH model results with the following keys:
+            - 'coefficients': np.ndarray or None - Fitted parameter values
+            - 'se_coefficients': np.ndarray or None - Standard errors of coefficients
+            - 'p_values': np.ndarray or None - P-values for coefficient tests
+            - 'coefficient_names': list or None - Names of coefficients
+            - 'gof_pval': np.ndarray or None - Goodness-of-fit test p-values
+            - 'lb_pval': np.ndarray or None - Ljung-Box test p-values
+            - 'lb_sq_pval': np.ndarray or None - Ljung-Box test p-values on squared residuals
+            - 'standardized_residuals': np.ndarray or None - Standardized residuals
+            - 'saddle_point_indicator': int or None - 1 if saddle point detected, 0 otherwise
+            - 'spec': R GARCH specification object (always returned)
+            - 'model_info': dict - Model configuration metadata
+            
+        Note:
+        -----
+        When bypass_fit=True, only 'spec' and 'model_info' contain meaningful data.
+        All other fields will be None since no actual fitting is performed.
         """
-        #try:
-        # Load the R script with run_garch function
-        r_script_path = os.path.join(os.path.dirname(__file__), 'r_scripts', 'run_garch.R')
-        ro.r(f'source("{r_script_path}")')
+
         run_garch_model = ro.globalenv['run_garch']
-        
-        # Convert Python data to R
-        r_y = ro.FloatVector(y)
-        
-        # Handle optional external regressors
-        r_X = ro.NULL if X is None else pandas2ri.py2rpy(pd.DataFrame(X))
-        r_Z = ro.NULL if Z is None else pandas2ri.py2rpy(pd.DataFrame(Z))
         
         # Create parameter dictionary for R function
         r_params = {
@@ -299,7 +412,9 @@ class Adapter:
         }
         
         if self.parameters:
-           r_params['start_pars'] = ro.ListVector(self.parameters)
+            r_params['start_pars'] = ro.ListVector(self.parameters)
+        else:
+            r_params['start_pars'] = ro.ListVector({})
 
 
         # Call the R function
@@ -313,24 +428,40 @@ class Adapter:
                         archm = self.archm,
                         dist = self.dist,
                         model = self.model,
-                        start_pars = ro.ListVector({}) if not self.parameters else r_params['start_pars'],
+                        start_pars = r_params['start_pars'],
                         out_sample = out_sample,
-                        display = False)
+                        display = False,
+                        bypass_fit = bypass_fit
+                        )
 
         # Convert R results back to Python dictionary
         result_dict = {}
         
         # Extract key results from R list
-        result_dict['coefficients'] = np.array(r_result.rx2('coef'))
-        result_dict['se_coefficients'] = np.array(r_result.rx2('se_coef'))
-        result_dict['p_values'] = np.array(r_result.rx2('pvals'))
-        result_dict['coefficient_names'] = list(r_result.rx2('coef_names'))
-        result_dict['gof_pval'] = np.array(r_result.rx2('gof'))
-        result_dict['lb_pval'] = np.array(r_result.rx2('lb'))
-        result_dict['lb_sq_pval'] = np.array(r_result.rx2('lb_sq'))
-        result_dict['standardized_residuals'] = np.array(r_result.rx2('stdresid'))
-        result_dict['saddle_point_indicator'] = int(r_result.rx2('saddle')[0])
-        result_dict['spec'] = r_result.rx2('spec')  # Store GARCH specification
+        if bypass_fit:
+            # When bypassing fit, only extract spec (no fitted results)
+            result_dict['coefficients'] = None
+            result_dict['se_coefficients'] = None
+            result_dict['p_values'] = None
+            result_dict['coefficient_names'] = None
+            result_dict['gof_pval'] = None
+            result_dict['lb_pval'] = None
+            result_dict['lb_sq_pval'] = None
+            result_dict['standardized_residuals'] = None
+            result_dict['saddle_point_indicator'] = None
+            result_dict['spec'] = r_result.rx2('spec')  # Store GARCH specification
+        else:
+            # Normal case: extract all fitted results
+            result_dict['coefficients'] = np.array(r_result.rx2('coef'))
+            result_dict['se_coefficients'] = np.array(r_result.rx2('se_coef'))
+            result_dict['p_values'] = np.array(r_result.rx2('pvals'))
+            result_dict['coefficient_names'] = list(r_result.rx2('coef_names'))
+            result_dict['gof_pval'] = np.array(r_result.rx2('gof'))
+            result_dict['lb_pval'] = np.array(r_result.rx2('lb'))
+            result_dict['lb_sq_pval'] = np.array(r_result.rx2('lb_sq'))
+            result_dict['standardized_residuals'] = np.array(r_result.rx2('stdresid'))
+            result_dict['saddle_point_indicator'] = int(r_result.rx2('saddle')[0])
+            result_dict['spec'] = r_result.rx2('spec')  # Store GARCH specification
 
         # Store model specification info
         result_dict['model_info'] = {
@@ -343,8 +474,6 @@ class Adapter:
         
         return result_dict
             
-        # except Exception as e:
-        #     raise RuntimeError(f"Failed to fit GARCH model: {str(e)}")
 
     def get_nn_output(self,
                       event_driven_adapter_time_bar_data: pd.DataFrame,
@@ -581,6 +710,8 @@ class Adapter:
             self.logger.error(f"After removing NaN values, insufficient data: {len(y)} observations")
             raise ValueError(f"After removing NaN values, insufficient data: {len(y)} observations")
         
+        # Store old parameters to enable falling back if needed
+        old_parameters = copy.deepcopy(self.parameters)
         # Fit GARCH model
         try:
             self.logger.info(f"Fitting GARCH model with {len(y)} observations and {len(selected_vars)} covariates...")
@@ -592,40 +723,50 @@ class Adapter:
                 Z=None,  # No variance regressors for now
                 out_sample=0
             )
+
             
+            ### set a flag if valid estimate (not saddle point)
+            if garch_results['saddle_point_indicator'] == 1:
+                raise RuntimeError("GARCH fitting resulted in a saddle point. Falling back to previous parameters.")
+
+
             # Extract fitted parameters
             coef_names = copy.deepcopy(garch_results['coefficient_names'])
             coef_values = copy.deepcopy(garch_results['coefficients'])
             new_parameters = dict(zip(coef_names, coef_values))
+            self.spec = garch_results['spec']  # Store GARCH specification
 
             self.logger.info(f"GARCH model fitted successfully")
 
-            self.spec = garch_results['spec']  # Store GARCH specification
-
             if self.parameters:
                 # Check if the new parameters have the same keys as the existing ones
+                ### Raise an error instead of warning
                 if set(new_parameters.keys()) != set(self.parameters.keys()):
-                    self.logger.warning("Parameter mismatch between new and existing parameters.")
-                    self.logger.warning(f"Existing keys: {sorted(list(self.parameters.keys()))}")
-                    self.logger.warning(f"New keys: {sorted(list(new_parameters.keys()))}")
-                    # This might indicate a change in model structure, which could be problematic
-                    # for some update rules. For now, we'll log a warning.
+                    self.logger.error("Parameter mismatch between new and existing parameters.")
+                    self.logger.error(f"Existing keys: {sorted(list(self.parameters.keys()))}")
+                    self.logger.error(f"New keys: {sorted(list(new_parameters.keys()))}")
+                    raise ValueError("Parameter mismatch between new and existing parameters.")
+                
+                if self.update_method in ['newton_raphson', 'fischer_scoring', 'gradient_ascent']:
 
-                # Load the R script with numderiv_garch function
-                r_script_path = os.path.join(os.path.dirname(__file__), 'r_scripts', 'numderiv_garch.R')
-                ro.r(f'source("{r_script_path}")')
-                numderiv_garch = ro.globalenv['numderiv_garch']
-                theta = copy.deepcopy(self.parameters)
-                # Call the numderiv_garch function
-                numderiv_results = numderiv_garch(
-                    spec=self.spec,
-                    y=y.values,
-                    theta=ro.ListVector(theta)
-                )
+                    # Get the R function from global environment (already loaded in __init__)
+                    numderiv_garch = ro.globalenv['numderiv_garch']
+                    theta = copy.deepcopy(self.parameters)
+                    # Call the numderiv_garch function
+                    numderiv_results = numderiv_garch(
+                        spec=self.spec,
+                        y=y.values,
+                        theta=ro.ListVector(theta)
+                    )
 
-                grad = np.array(numderiv_results.rx2('grad'))
-                hessian = np.array(numderiv_results.rx2('hessian'))
-                info_mat = np.array(numderiv_results.rx2('I'))
+                    grad = np.array(numderiv_results.rx2('grad'))
+                    hessian = np.array(numderiv_results.rx2('hessian'))
+                    info_mat = np.array(numderiv_results.rx2('I'))
+                
+                else:
+                    grad = None
+                    hessian = None
+                    info_mat = None
 
 
             else:
@@ -680,12 +821,30 @@ class Adapter:
             self.logger.info("Finished running adapter module update")
             self.logger.info('='*80)
             self.logger.info('='*80)
-            
-            # Prepare return dictionary
-            return garch_results
 
+            # Indicate successful update
+            garch_results['valid_local_estimate'] = True
+            
+            
         except Exception as e:
-            raise RuntimeError(f"Failed to update adapter for bar {adapter_bar_number}: {str(e)}")
+            self.logger.error(f"Adapter update failed: {str(e)}")
+            self.logger.info('Falling back')
+            garch_results = self._fit_garch_model(
+                y=y.values,
+                X=X.values,
+                Z=None,  # No variance regressors for now
+                out_sample=0,
+                bypass_fit=True
+            )
+            # Indicate faulty update
+            garch_results['valid_local_estimate'] = False  
+            self.spec = garch_results['spec']  # Store GARCH specification
+            self.parameters = old_parameters  # Revert to old parameters
+
+        
+        return garch_results
+
+
 
     def forecast(self,
                  in_sample_event_df: pd.DataFrame,
@@ -789,7 +948,7 @@ class Adapter:
         
         # In-sample data
         in_sample_y = in_sample_augmented[target_col_name]
-        #in_sample_X = in_sample_augmented[selected_vars]
+        in_sample_X = in_sample_augmented[selected_vars]
         
         # Out-of-sample data
         out_of_sample_y = out_of_sample_augmented[target_col_name]
@@ -801,12 +960,20 @@ class Adapter:
 
         # Perform forecast using R
         self.logger.info(f"Performing rolling forecast on {len(out_of_sample_y)} observations.")
-        r_script_path = os.path.join(os.path.dirname(__file__), 'r_scripts', 'run_garch.R')
-        ro.r(f'source("{r_script_path}")')
+        
+        # Reconstruct GARCH spec with in-sample external regressors using _fit_garch_model
+        forecast_spec_result = self._fit_garch_model(
+            y=in_sample_y.values,
+            X=in_sample_X.values,
+            Z=None,
+            out_sample=0,
+            bypass_fit=True
+        )
+        forecast_spec = forecast_spec_result['spec']
+        
+        # Get R helper function from global environment (already loaded in __init__)
         set_fixed_parameters = ro.globalenv['set_fixed_parameters']
-
-        # Set the GARCH spec with the fixed parameters from the last update
-        spec_with_fixed_pars = set_fixed_parameters(self.spec, ro.ListVector(self.parameters))
+        spec_with_fixed_pars = set_fixed_parameters(forecast_spec, ro.ListVector(self.parameters))
 
         # Prepare external regressors for the forecast period
         external_forecasts_r = ro.ListVector({
@@ -872,7 +1039,7 @@ class Adapter:
         relative_contributions_df = pd.DataFrame(
             contributions,
             columns=selected_vars.copy(),  # Copy column names to avoid reference issues
-            index=out_of_sample_augmented.index
+            index=out_of_sample_augmented.index.copy()
         )
         
         # Add timestamp as first column (use .values to avoid index alignment issues)

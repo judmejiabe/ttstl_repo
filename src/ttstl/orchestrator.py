@@ -1002,6 +1002,8 @@ class Orchestrator:
             relative_contributions = []
             scaled_features = []
             performance_metrics = []
+            valid_local_estimate = False
+            first_valid_local_estimate_found = False
             
             # Process each adapter bar
             for i, adapter_bar in enumerate(adapter_bars):
@@ -1064,7 +1066,7 @@ class Orchestrator:
                                     f"{len(bar_edlob)} event samples (the latter including lookback)")
                     
                     # Skip bars with insufficient data
-                    min_samples = 10  # Minimum samples required for fitting
+                    min_samples = 60  # Minimum samples required for fitting
                     if len(bar_ptdata) < min_samples:
                         self.logger.warning(f"Skipping {bar_logger_prefix}: insufficient data "
                                           f"({len(bar_ptdata)} < {min_samples})")
@@ -1088,10 +1090,20 @@ class Orchestrator:
                         target_col_name=self.cfg.target_col_name,
                         update_parameters=self.cfg.update_parameters
                     )
+
+                    valid_local_estimate = adapter_result['valid_local_estimate']
                     
-                    # Raise value error if saddle_point_indicator is 1
-                    if adapter_result['saddle_point_indicator'] == 1:
-                        raise RuntimeError(f"Saddle point detected in adapter fitting for {bar_logger_prefix}")
+                    # Fall back if saddle point detected
+                    if not valid_local_estimate:
+                        self.logger.warning(f"No valid estimate found for {bar_logger_prefix}")
+                        if not first_valid_local_estimate_found:
+                            self.logger.error(f"No previous adapter state to revert to for {bar_logger_prefix}")
+                            raise RuntimeError(f"Cannot revert adapter state for first adapter bar {bar_logger_prefix}")
+                        # Fallback to previous adapter state recording the failure
+                        failed_updates += 1
+                    else:
+                        first_valid_local_estimate_found = True
+
 
                     if i < len(adapter_bars) - 1:
                         next_adapter_bar = adapter_bars[i+1]
@@ -1131,49 +1143,57 @@ class Orchestrator:
                         
                     
                     # Store results
-                    all_parameters[adapter_bar] = copy.deepcopy(current_adapter.parameters)
-                    all_adapter_bar_specific_parameters[adapter_bar] = dict(zip(copy.deepcopy(adapter_result['coefficient_names']), 
-                                                                                copy.deepcopy(adapter_result['coefficients'])))
-                    all_adapter_bar_specific_p_values[adapter_bar] = dict(zip(copy.deepcopy(adapter_result['coefficient_names']), 
-                                                                                copy.deepcopy(adapter_result['p_values'])))
+                    if valid_local_estimate:
+                        all_parameters[adapter_bar] = copy.deepcopy(current_adapter.parameters)
+                        all_adapter_bar_specific_parameters[adapter_bar] = dict(zip(copy.deepcopy(adapter_result['coefficient_names']), 
+                                                                                    copy.deepcopy(adapter_result['coefficients'])))
+                        all_adapter_bar_specific_p_values[adapter_bar] = dict(zip(copy.deepcopy(adapter_result['coefficient_names']), 
+                                                                                    copy.deepcopy(adapter_result['p_values'])))
                     
-                    # Compute relative contributions (still need to rescale the covariates properly)
-
+                        # Store GARCH diagnostic test results
+                        garch_diagnostics = {}
+                        if 'gof_pval' in adapter_result:
+                            gof_pvals = adapter_result['gof_pval']
+                            if isinstance(gof_pvals, (list, np.ndarray)) and len(gof_pvals) >= 4:
+                                garch_diagnostics['gof20'] = gof_pvals[0]
+                                garch_diagnostics['gof30'] = gof_pvals[1] 
+                                garch_diagnostics['gof40'] = gof_pvals[2]
+                                garch_diagnostics['gof50'] = gof_pvals[3]
+                        
+                        if 'lb_pval' in adapter_result:
+                            lb_pvals = adapter_result['lb_pval']
+                            if isinstance(lb_pvals, (list, np.ndarray)) and len(lb_pvals) >= 3:
+                                garch_diagnostics['lb1'] = lb_pvals[0]
+                                garch_diagnostics['lb5'] = lb_pvals[1]
+                                garch_diagnostics['lb9'] = lb_pvals[2]
+                        
+                        if 'lb_sq_pval' in adapter_result:
+                            lb_sq_pvals = adapter_result['lb_sq_pval']
+                            if isinstance(lb_sq_pvals, (list, np.ndarray)) and len(lb_sq_pvals) >= 3:
+                                garch_diagnostics['lbsq1'] = lb_sq_pvals[0]
+                                garch_diagnostics['lbsq5'] = lb_sq_pvals[1]
+                                garch_diagnostics['lbsq9'] = lb_sq_pvals[2]
                     
-                    # Store GARCH diagnostic test results
-                    garch_diagnostics = {}
-                    if 'gof_pval' in adapter_result:
-                        gof_pvals = adapter_result['gof_pval']
-                        if isinstance(gof_pvals, (list, np.ndarray)) and len(gof_pvals) >= 4:
-                            garch_diagnostics['gof20'] = gof_pvals[0]
-                            garch_diagnostics['gof30'] = gof_pvals[1] 
-                            garch_diagnostics['gof40'] = gof_pvals[2]
-                            garch_diagnostics['gof50'] = gof_pvals[3]
-                    
-                    if 'lb_pval' in adapter_result:
-                        lb_pvals = adapter_result['lb_pval']
-                        if isinstance(lb_pvals, (list, np.ndarray)) and len(lb_pvals) >= 3:
-                            garch_diagnostics['lb1'] = lb_pvals[0]
-                            garch_diagnostics['lb5'] = lb_pvals[1]
-                            garch_diagnostics['lb9'] = lb_pvals[2]
-                    
-                    if 'lb_sq_pval' in adapter_result:
-                        lb_sq_pvals = adapter_result['lb_sq_pval']
-                        if isinstance(lb_sq_pvals, (list, np.ndarray)) and len(lb_sq_pvals) >= 3:
-                            garch_diagnostics['lbsq1'] = lb_sq_pvals[0]
-                            garch_diagnostics['lbsq5'] = lb_sq_pvals[1]
-                            garch_diagnostics['lbsq9'] = lb_sq_pvals[2]
-                    
-                    all_garch_diagnostics[adapter_bar] = garch_diagnostics
+                        all_garch_diagnostics[adapter_bar] = garch_diagnostics
 
 
-                    processing_stats[adapter_bar] = {
-                        'status': 'completed',
-                        'physical_samples': len(bar_ptdata),
-                        'event_samples': len(bar_edlob)
-                    }
+                        processing_stats[adapter_bar] = {
+                            'status': 'completed',
+                            'physical_samples': len(bar_ptdata),
+                            'event_samples': len(bar_edlob)
+                        }
+
+                        successful_updates += 1
                     
-                    successful_updates += 1
+                    else:
+                        failed_updates += 1
+                        processing_stats[adapter_bar] = {
+                            'status': 'saddle_point_detected',
+                            'physical_samples': len(bar_ptdata),
+                            'event_samples': len(bar_edlob)
+                        }
+                    
+                    
                     
                 except Exception as e:
                     failed_updates += 1
@@ -1191,6 +1211,19 @@ class Orchestrator:
             # Create artifacts directory
             artifacts_dir = bb_dir / "adapter"
             artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+            if not first_valid_local_estimate_found:
+                error_msg = "No successful adapter updates - cannot generate artifacts"
+                self.logger.error(error_msg)
+                
+                # Save error message to file
+                error_file = artifacts_dir / "error.txt"
+                with open(error_file, 'w') as f:
+                    f.write(error_msg)
+                self.logger.info(f"Saved error message to {error_file}")
+
+                raise RuntimeError("Adapter global update failed completely: no successful adapter updates")
+                
 
             #self.logger.info(f"Adapter parameters by bar: {all_parameters}")
             all_parameters_df = pd.DataFrame.from_dict(all_parameters, orient='index')
@@ -1226,14 +1259,23 @@ class Orchestrator:
             # stats_file = artifacts_dir / "processing_stats.parquet"
             # stats_df.to_parquet(stats_file)
             
-            # Create performance summary (placeholder for now)
-            performance_data = {
+            # Create convergence performance summary
+            # Convert processing_stats keys to strings for JSON serialization
+            processing_stats_serializable = {str(k): v for k, v in processing_stats.items()}
+            
+            convergence_performance_data = {
                 'total_adapter_bars': len(adapter_bars),
                 'successful_updates': successful_updates,
                 'failed_updates': failed_updates,
-                'success_rate': successful_updates / len(adapter_bars) if adapter_bars else 0.0
+                'success_rate': successful_updates / len(adapter_bars) if adapter_bars else 0.0,
+                'processing_stats': processing_stats_serializable  # Include detailed stats for each bar
             }
             
+            # Save convergence performance data as JSON
+            convergence_file = artifacts_dir / "convergence_performance.json"
+            with open(convergence_file, 'w') as f:
+                json.dump(convergence_performance_data, f, indent=2)
+            self.logger.info(f"Saved convergence performance data to {convergence_file}")
             
             # Calculate actual artifacts created count
             artifacts_created = 4  # param_series.png, armax_garch_corridor.png, param_series.parquet, all_parameters.parquet
@@ -1246,7 +1288,7 @@ class Orchestrator:
                 'total_adapter_bars': len(adapter_bars),
                 'successful_updates': successful_updates,
                 'failed_updates': failed_updates,
-                'success_rate': performance_data['success_rate'],
+                'success_rate': convergence_performance_data['success_rate'],
                 'parameters_by_bar': all_parameters,
                 'processing_stats': processing_stats,
                 'artifacts_created': artifacts_created
@@ -1254,7 +1296,7 @@ class Orchestrator:
             
             self.logger.info(f"Adapter global update completed: "
                            f"{successful_updates}/{len(adapter_bars)} bars successful "
-                           f"({performance_data['success_rate']:.1%} success rate)")
+                           f"({convergence_performance_data['success_rate']:.1%} success rate)")
             
             # Generate and save the parameter series plot
             plot_save_path = artifacts_dir / 'param_series.png'
