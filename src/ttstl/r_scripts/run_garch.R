@@ -11,7 +11,8 @@ run_garch <-
              out_sample = 0,
              start_pars = list(),
              display = TRUE,
-             plot_label = '') {
+             plot_label = '',
+             bypass_fit = FALSE) {
     # Specify model with exogenous variables
     spec <- ugarchspec(variance.model = list(model = model, 
                                             garchOrder = c(m, s),
@@ -22,6 +23,20 @@ run_garch <-
                                         archm = archm),
                         distribution.model = dist,
                         start.pars = start_pars)
+    
+    if(bypass_fit) {
+        return(list(fit = NULL,
+                    coef = NULL,
+                    se_coef = NULL,
+                    pvals = NULL,
+                    gof = NULL,
+                    lb = NULL,
+                    lb_sq = NULL,
+                    coef_names = NULL,
+                    stdresid = NULL,
+                    saddle = 0,
+                    spec = spec))
+    }
 
     # Fit the model
     fit <- ugarchfit(spec, y, solver = 'hybrid', out.sample = out_sample)
