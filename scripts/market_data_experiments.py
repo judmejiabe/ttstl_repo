@@ -20,16 +20,17 @@ from ttstl.utils.data_downloader import import_to_pandas
 from market_data_cnn_lstm_pretraining import load_pretrained_model, load_full_pretrained_setup
 
 
-def setup_logging():
+def setup_logging(past_returns=False):
     """Setup logging to see orchestrator operations."""
     
     # Create logs directory
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
-    # Create log filename with timestamp
+    # Create log filename with timestamp and experiment type
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"market_data_experiments_{timestamp}.log"
+    experiment_suffix = "_concurrent" if past_returns else "_future"
+    log_file = log_dir / f"market_data_experiments{experiment_suffix}_{timestamp}.log"
     
     # Configure logging to both console and file
     logging.basicConfig(
@@ -41,7 +42,8 @@ def setup_logging():
         ]
     )
     
-    print(f"📝 Logs will be saved to: {log_file}")
+    experiment_type = "CONCURRENT RETURNS" if past_returns else "FUTURE RETURNS"
+    print(f"📝 {experiment_type} logs will be saved to: {log_file}")
 
 def set_trained_model_to_orchestrator(orchestrator_obj, trained_model):
     """
@@ -68,9 +70,15 @@ def set_trained_model_to_orchestrator(orchestrator_obj, trained_model):
             # Access backbone through: stack (adapter) -> interface -> backbone
             backbone = stack.interface.backbone
             
+            # Get the target device (where the backbone's current model is)
+            target_device = backbone.device
+            
             # Create an independent copy of the trained model for this backbone
             # This prevents cross-training issues between different backbone bars
             independent_model = copy.deepcopy(trained_model)
+            
+            # Move the copied model to the target device to ensure consistency
+            independent_model = independent_model.to(target_device)
             
             # Set the model - this is the only attribute the backbone actually has
             backbone.model = independent_model
@@ -79,7 +87,7 @@ def set_trained_model_to_orchestrator(orchestrator_obj, trained_model):
             backbone.pretrained = True
             
             models_set += 1
-            logger.debug(f"Successfully set trained model to backbone in {stack_key}")
+            logger.debug(f"Successfully set trained model to backbone in {stack_key} on device {target_device}")
             
         except Exception as e:
             logger.error(f"Failed to set trained model to backbone in {stack_key}: {str(e)}")
@@ -123,11 +131,11 @@ def get_base_config():
         parsimonious_mode=False,  # Default full mode
         neural_covariates_only=False,
         manual_covariates_only=False,
+        past_returns=False,  # Default to future returns (will be overridden if needed)
         epochs=10,  # Increased for proper training on May data
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
-        quantile=0.005,
         adf_rejection_rate_threshold=0.8,
         kpss_verification_threshold=0.2,
         na_verification_threshold=0.2,
@@ -141,6 +149,7 @@ def get_base_config():
 
         # Interface knobs (same as market_data_ttstl_test)
         user_defined_variables=None,  # Will be modified per experiment
+        second_stage_mse=False,
         alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
         lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
         tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
@@ -152,58 +161,80 @@ def get_base_config():
         wald_significance_level=0.05,
         n_lags=5,
 
-        # Adapter knobs (same as market_data_ttstl_test)
-        update_method='simple_average',
-        arma_order=(1, 1),
+        # Adapter knobs (based on synthetic study results)
+        update_method='exponential_smoothing',
+        arma_order=(0, 1),
         garch_order=(1, 1),
         dist='nig',
         model='eGARCH',
         archm=False,
-        update_parameters={'alpha': 3.0}
+        update_parameters={'alpha': 0.1},
+        compare_with_cnn_lstm=True  # Enable comparison with raw CNN-LSTM outputs
     )
 
 def get_experiment_configs():
-    """Get configurations for the three experiments."""
+    """Get configurations for covariate experiments based on synthetic study."""
     return {
-        'main': {
-            'description': 'Full mode configuration (all covariates)',
-            'run_id': 'MAIN_FULL',
+        '01': {
+            'description': 'Full mode (all covariates, parsimonious_mode=False)',
+            'run_id': 'ES010_01',
             'parsimonious_mode': False,
             'neural_covariates_only': False,
             'manual_covariates_only': False,
             'epochs': 10,
             'user_defined_variables': None,
-            'arma_order': (1, 1)  # Default ARMA order
+            'arma_order': (0, 1)
         },
-        'parsimonious': {
-            'description': 'Parsimonious mode configuration with ARMA(1,1)',
-            'run_id': 'PARSIMONIOUS',
+        '02': {
+            'description': 'Parsimonious mode (all covariates, parsimonious_mode=True)',
+            'run_id': 'ES010_02',
             'parsimonious_mode': True,
             'neural_covariates_only': False,
             'manual_covariates_only': False,
-            'epochs': 0,  # No training, uses imported backbone
-            'user_defined_variables': None,  # Uses default parsimonious covariate selection
-            'arma_order': (1, 1)  # ARMA(1,1) order
+            'epochs': 0,
+            'user_defined_variables': None,
+            'arma_order': (0, 1)
         },
-        'benchmark': {
-            'description': 'Benchmark configuration (forward_pass_0 only, parsimonious)',
-            'run_id': 'BENCHMARK_FP0',
+        '03': {
+            'description': 'Manual covariates only (no neural network training)',
+            'run_id': 'ES010_03',
+            'parsimonious_mode': False,
+            'neural_covariates_only': False,
+            'manual_covariates_only': True,
+            'epochs': 0,
+            'user_defined_variables': None,
+            'arma_order': (0, 1)
+        },
+        '04': {
+            'description': 'Neural covariates only (no manual features)',
+            'run_id': 'ES010_04',
+            'parsimonious_mode': False,
+            'neural_covariates_only': True,
+            'manual_covariates_only': False,
+            'epochs': 0,
+            'user_defined_variables': None,
+            'arma_order': (0, 1)
+        },
+        '05': {
+            'description': 'Only forward_pass_0 as an user defined covariate (relaxed KPSS for less stationary forward_pass)',
+            'run_id': 'ES010_05',
             'parsimonious_mode': True,
             'neural_covariates_only': True,
             'manual_covariates_only': False,
-            'epochs': 0,  # No training, uses imported backbone
+            'epochs': 0,
             'user_defined_variables': ['forward_pass_0'],
-            'arma_order': (0, 0)  # Default ARMA order
+            'arma_order': (0, 1),
+            'kpss_verification_threshold': 0.8  # Relaxed threshold for forward_pass (tends to be less stationary compared to synthetic study)
         },
-        'no_covariates': {
-            'description': 'No covariates configuration with ARMA(1,1)',
-            'run_id': 'NO_COVARIATES',
+        '06': {
+            'description': 'Locally Adapting ARMA-GARCH model (no covariates)',
+            'run_id': 'ES010_06',
             'parsimonious_mode': True,
             'neural_covariates_only': False,
             'manual_covariates_only': False,
-            'epochs': 0,  # No training necessary
-            'user_defined_variables': [],  # Empty list, no covariates
-            'arma_order': (1, 1)  # ARMA(1,1) order
+            'epochs': 0,
+            'user_defined_variables': [],
+            'arma_order': (0, 1)
         }
     }
 
@@ -220,15 +251,20 @@ def create_experiment_config(base_config, exp_config):
     config.user_defined_variables = exp_config['user_defined_variables']
     config.arma_order = exp_config['arma_order']
     
+    # Apply optional configuration overrides if present
+    if 'kpss_verification_threshold' in exp_config:
+        config.kpss_verification_threshold = exp_config['kpss_verification_threshold']
+    
     return config
 
-def load_date_data(date_str, ticker="INTC"):
+def load_date_data(date_str, ticker="INTC", past_returns=False):
     """
     Load data for a specific date.
     
     Args:
         date_str: Date string in format MMDDYYYY (e.g., "06032024")
         ticker: Stock ticker
+        past_returns: If True, compute past returns instead of future returns
         
     Returns:
         Tuple of (ed_df, ptd_df) or (None, None) if loading fails
@@ -260,10 +296,18 @@ def load_date_data(date_str, ticker="INTC"):
         if ptd_df.index.name == 'timestamp' or 'timestamp' in ptd_df.index.names:
             ptd_df = ptd_df.reset_index()
         
-        # Calculate micro returns
+        # Calculate micro returns based on experiment type
         ptd_df['micro_return'] = ptd_df['micro'].pct_change() * 1e3
-        ptd_df['micro_return'] = ptd_df['micro_return'].shift(-1)
-        ptd_df = ptd_df.iloc[:-1]
+        
+        if past_returns:
+            # For concurrent returns: no shift needed, delete first observation
+            ptd_df = ptd_df.iloc[1:]
+            logger.info(f"Computed concurrent (past) returns for {date_str}")
+        else:
+            # For future returns: shift by -1, delete last observation
+            ptd_df['micro_return'] = ptd_df['micro_return'].shift(-1)
+            ptd_df = ptd_df.iloc[:-1]
+            logger.info(f"Computed future returns for {date_str}")
         
         logger.info(f"Loaded {date_str} data: ED {ed_df.shape}, PTD {ptd_df.shape}")
         return ed_df, ptd_df
@@ -272,7 +316,7 @@ def load_date_data(date_str, ticker="INTC"):
         logger.warning(f"Could not load data for {date_str}: {str(e)}")
         return None, None
 
-def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, base_orchestrator=None, previous_orchestrator=None, trained_model=None):
+def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, base_orchestrator=None, previous_orchestrator=None, trained_model=None, past_returns=False):
     """
     Run a single date pair experiment with the given configuration.
     
@@ -284,6 +328,7 @@ def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, b
         base_orchestrator: Orchestrator to import backbone from (for non-main configs)
         previous_orchestrator: Previous orchestrator from same config type (for state transfer)
         trained_model: Pretrained CNN-LSTM model (only for first main config)
+        past_returns: If True, use concurrent returns; if False, use future returns
         
     Returns:
         Orchestrator instance if successful, None if failed
@@ -292,6 +337,8 @@ def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, b
     
     logger.info(f"Running single date pair experiment: {config.run_id}")
     logger.info(f"Date pair: {global_date} → {local_date}")
+    experiment_type = "CONCURRENT RETURNS" if past_returns else "FUTURE RETURNS"
+    logger.info(f"Using {experiment_type}")
     
     try:
         # Create orchestrator for this specific date pair
@@ -330,7 +377,7 @@ def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, b
         
         # Load data for global update date
         logger.info(f"Loading data for GLOBAL UPDATE: {global_date}")
-        global_ed_df, global_ptd_df = load_date_data(global_date)
+        global_ed_df, global_ptd_df = load_date_data(global_date, past_returns=past_returns)
         
         if global_ed_df is None or global_ptd_df is None:
             logger.error(f"Failed to load global update data for {global_date}")
@@ -338,7 +385,7 @@ def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, b
         
         # Load data for local adapt date  
         logger.info(f"Loading data for LOCAL ADAPT: {local_date}")
-        local_ed_df, local_ptd_df = load_date_data(local_date)
+        local_ed_df, local_ptd_df = load_date_data(local_date, past_returns=past_returns)
         
         if local_ed_df is None or local_ptd_df is None:
             logger.error(f"Failed to load local adapt data for {local_date}")
@@ -373,21 +420,25 @@ def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, b
         logger.exception("Full traceback:")
         return None
 
-def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir, trained_model):
+def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir, trained_model, past_returns=False, seed=19991810):
     """
-    Run TTSTL experiments date-pair by date-pair.
-    For each date pair: run main configuration (trains backbone), then other configurations import it.
+    Run TTSTL experiments date-pair by date-pair following synthetic study design.
+    For each date pair: run config 01 (trains backbone), then other configurations import it.
     
     Args:
         base_config: Base orchestrator configuration
         experiment_configs: Dictionary of experiment configurations
         runs_dir: Directory to save results
-        trained_model: Pretrained CNN-LSTM model (used as starting point for main config)
+        trained_model: Pretrained CNN-LSTM model (used as starting point for config 01)
+        past_returns: If True, use concurrent returns; if False, use future returns
+        seed: Base random seed for generating date-pair-specific seeds
     """
     logger = logging.getLogger(__name__)
-    logger.info("Starting date-pair-wise TTSTL experiments")
+    experiment_type = "CONCURRENT RETURNS" if past_returns else "FUTURE RETURNS"
+    logger.info(f"Starting date-pair-wise TTSTL experiments with {experiment_type}")
+    logger.info("Based on synthetic study: ES010 (alpha=0.1), MA(1), configs 01, 02, 03, 05, 06")
     
-    # Define the sequence of date pairs for experiments (same as in run_experiment)
+    # Define the sequence of date pairs for experiments
     experiment_pairs = [
         ("05312024", "06032024"),  # May 31st (Global Update) & June 3rd (Local Adapt)
         ("06032024", "06052024"),  # June 3rd (Global Update) & June 5th (Local Adapt)
@@ -401,25 +452,29 @@ def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir,
         ("06272024", "06282024"),  # June 27th (Global Update) & June 28th (Local Adapt)
     ]
     
-    # Prepare experiment configurations
-    main_config = create_experiment_config(base_config, experiment_configs['main'])
-    benchmark_config = create_experiment_config(base_config, experiment_configs['benchmark'])
-    no_covariates_config = create_experiment_config(base_config, experiment_configs['no_covariates'])
-    parsimonious_config = create_experiment_config(base_config, experiment_configs['parsimonious'])
-    
+    # Prepare experiment configurations (matching synthetic study order: 01, 02, 03, 04, 05, 06)
+    config_01 = create_experiment_config(base_config, experiment_configs['01'])
+    config_02 = create_experiment_config(base_config, experiment_configs['02'])
+    config_03 = create_experiment_config(base_config, experiment_configs['03'])
+    config_04 = create_experiment_config(base_config, experiment_configs['04'])
+    config_05 = create_experiment_config(base_config, experiment_configs['05'])
+    config_06 = create_experiment_config(base_config, experiment_configs['06'])
     logger.info(f"Will process {len(experiment_pairs)} date pairs")
-    logger.info("SEQUENTIAL LEARNING DESIGN (Design B):")
+    logger.info("SEQUENTIAL LEARNING DESIGN:")
     logger.info("  - Date pair 1: Start with pretrained model → train 10 epochs")
     logger.info("  - Date pair 2: Start with date pair 1 results → train 10 epochs") 
     logger.info("  - Date pair 3: Start with date pair 2 results → train 10 epochs")
     logger.info("  - And so on... (progressive learning across time)")
-    logger.info("For each date pair: Main (train backbone) → Parsimonious (import) → Benchmark (import) → No-covariates (import)")
+    logger.info("For each date pair: Config 01 (train backbone) → Configs 02, 03, 04, 05, 06 (import backbone)")
+    
+    # Set random seed for reproducible random seed generation
+    np.random.seed(seed)
     
     # Track orchestrators for state transfer between date pairs
-    previous_main_orchestrator = None
+    previous_01_orchestrator = None
     
     # Counters for summary
-    total_experiments = len(experiment_pairs) * 4  # 4 configs per date pair
+    total_experiments = len(experiment_pairs) * 6  # 6 configs per date pair
     successful_experiments = 0
     failed_experiments = 0
     
@@ -429,90 +484,144 @@ def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir,
         logger.info(f"PROCESSING DATE PAIR {pair_idx+1}/{len(experiment_pairs)}: {global_date} → {local_date}")
         logger.info(f"{'='*100}")
         
-        # Step 1: Run MAIN configuration for this date pair
-        logger.info(f"\n--- STEP 1: Running MAIN configuration for pair {pair_idx+1} ---")
+        # Step 1: Run CONFIG 01 for this date pair (trains backbone)
+        logger.info(f"\n--- STEP 1: Running CONFIG 01 for pair {pair_idx+1} ---")
         
-        # Create config for this specific date pair
-        main_pair_config = OrchestratorConfig(**vars(main_config))
-        main_pair_config.run_id = f"{main_config.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        # Generate random seed for this date pair to vary validation split
+        # This same seed will be used for all configurations in this date pair
+        date_pair_seed = np.random.randint(0, 2**31 - 1)
+        logger.info(f"Using randomly generated seed {date_pair_seed} for ALL configurations in date pair {pair_idx+1}")
         
-        # Run single date pair for main configuration
-        main_orchestrator = run_single_date_pair_experiment(
-            main_pair_config, global_date, local_date, runs_dir,
-            base_orchestrator=None,  # No base for main
-            previous_orchestrator=previous_main_orchestrator,  # Transfer from previous main
-            trained_model=trained_model if pair_idx == 0 else None  # Only first pair gets pretrained model
+        config_01_pair = OrchestratorConfig(**vars(config_01))
+        config_01_pair.run_id = f"{config_01.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_01_pair.seed = date_pair_seed
+        
+        orchestrator_01 = run_single_date_pair_experiment(
+            config_01_pair, global_date, local_date, runs_dir,
+            base_orchestrator=None,
+            previous_orchestrator=previous_01_orchestrator,
+            trained_model=trained_model if pair_idx == 0 else None,
+            past_returns=past_returns
         )
         
-        if main_orchestrator is not None:
+        if orchestrator_01 is not None:
             successful_experiments += 1
-            previous_main_orchestrator = main_orchestrator
-            logger.info(f"✓ MAIN configuration completed for pair {pair_idx+1}")
+            previous_01_orchestrator = orchestrator_01
+            logger.info(f"✓ CONFIG 01 completed for pair {pair_idx+1}")
         else:
             failed_experiments += 1
-            logger.error(f"✗ MAIN configuration failed for pair {pair_idx+1}")
-            # Continue to next pair if main fails
+            logger.error(f"✗ CONFIG 01 failed for pair {pair_idx+1}")
             continue
         
-        # Step 2: Run PARSIMONIOUS configuration for this date pair
-        logger.info(f"\n--- STEP 2: Running PARSIMONIOUS configuration for pair {pair_idx+1} ---")
+        # Step 2: Run CONFIG 02 for this date pair
+        logger.info(f"\n--- STEP 2: Running CONFIG 02 for pair {pair_idx+1} ---")
         
-        parsimonious_pair_config = OrchestratorConfig(**vars(parsimonious_config))
-        parsimonious_pair_config.run_id = f"{parsimonious_config.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_02_pair = OrchestratorConfig(**vars(config_02))
+        config_02_pair.run_id = f"{config_02.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_02_pair.seed = date_pair_seed  # Use same seed as config 01
         
-        parsimonious_orchestrator = run_single_date_pair_experiment(
-            parsimonious_pair_config, global_date, local_date, runs_dir,
-            base_orchestrator=main_orchestrator,  # Import backbone from main
-            previous_orchestrator=None,  # Transfer from previous parsimonious
-            trained_model=None  # No pretrained model needed
+        orchestrator_02 = run_single_date_pair_experiment(
+            config_02_pair, global_date, local_date, runs_dir,
+            base_orchestrator=orchestrator_01,
+            previous_orchestrator=None,
+            trained_model=None,
+            past_returns=past_returns
         )
         
-        if parsimonious_orchestrator is not None:
+        if orchestrator_02 is not None:
             successful_experiments += 1
-            logger.info(f"✓ PARSIMONIOUS configuration completed for pair {pair_idx+1}")
+            logger.info(f"✓ CONFIG 02 completed for pair {pair_idx+1}")
         else:
             failed_experiments += 1
-            logger.error(f"✗ PARSIMONIOUS configuration failed for pair {pair_idx+1}")
+            logger.error(f"✗ CONFIG 02 failed for pair {pair_idx+1}")
         
-        # Step 3: Run BENCHMARK configuration for this date pair
-        logger.info(f"\n--- STEP 3: Running BENCHMARK configuration for pair {pair_idx+1} ---")
+        # Step 3: Run CONFIG 03 for this date pair
+        logger.info(f"\n--- STEP 3: Running CONFIG 03 for pair {pair_idx+1} ---")
         
-        benchmark_pair_config = OrchestratorConfig(**vars(benchmark_config))
-        benchmark_pair_config.run_id = f"{benchmark_config.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_03_pair = OrchestratorConfig(**vars(config_03))
+        config_03_pair.run_id = f"{config_03.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_03_pair.seed = date_pair_seed  # Use same seed as config 01
         
-        benchmark_orchestrator = run_single_date_pair_experiment(
-            benchmark_pair_config, global_date, local_date, runs_dir,
-            base_orchestrator=main_orchestrator,  # Import backbone from main
-            previous_orchestrator=None,  # Transfer from previous benchmark
-            trained_model=None  # No pretrained model needed
+        orchestrator_03 = run_single_date_pair_experiment(
+            config_03_pair, global_date, local_date, runs_dir,
+            base_orchestrator=orchestrator_01,
+            previous_orchestrator=None,
+            trained_model=None,
+            past_returns=past_returns
         )
         
-        if benchmark_orchestrator is not None:
+        if orchestrator_03 is not None:
             successful_experiments += 1
-            logger.info(f"✓ BENCHMARK configuration completed for pair {pair_idx+1}")
+            logger.info(f"✓ CONFIG 03 completed for pair {pair_idx+1}")
         else:
             failed_experiments += 1
-            logger.error(f"✗ BENCHMARK configuration failed for pair {pair_idx+1}")
+            logger.error(f"✗ CONFIG 03 failed for pair {pair_idx+1}")
         
-        # Step 4: Run NO-COVARIATES configuration for this date pair
-        logger.info(f"\n--- STEP 4: Running NO-COVARIATES configuration for pair {pair_idx+1} ---")
+        # Step 4: Run CONFIG 04 for this date pair
+        logger.info(f"\n--- STEP 4: Running CONFIG 04 for pair {pair_idx+1} ---")
         
-        no_covariates_pair_config = OrchestratorConfig(**vars(no_covariates_config))
-        no_covariates_pair_config.run_id = f"{no_covariates_config.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_04_pair = OrchestratorConfig(**vars(config_04))
+        config_04_pair.run_id = f"{config_04.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_04_pair.seed = date_pair_seed  # Use same seed as config 01
         
-        no_covariates_orchestrator = run_single_date_pair_experiment(
-            no_covariates_pair_config, global_date, local_date, runs_dir,
-            base_orchestrator=main_orchestrator,  # Import backbone from main
-            previous_orchestrator=None,  # Transfer from previous no-covariates
-            trained_model=None  # No pretrained model needed
+        orchestrator_04 = run_single_date_pair_experiment(
+            config_04_pair, global_date, local_date, runs_dir,
+            base_orchestrator=orchestrator_01,
+            previous_orchestrator=None,
+            trained_model=None,
+            past_returns=past_returns
         )
         
-        if no_covariates_orchestrator is not None:
+        if orchestrator_04 is not None:
             successful_experiments += 1
-            logger.info(f"✓ NO-COVARIATES configuration completed for pair {pair_idx+1}")
+            logger.info(f"✓ CONFIG 04 completed for pair {pair_idx+1}")
         else:
             failed_experiments += 1
-            logger.error(f"✗ NO-COVARIATES configuration failed for pair {pair_idx+1}")
+            logger.error(f"✗ CONFIG 04 failed for pair {pair_idx+1}")
+        
+        # Step 6: Run CONFIG 06 for this date pair
+        logger.info(f"\n--- STEP 6: Running CONFIG 06 for pair {pair_idx+1} ---")
+        
+        config_05_pair = OrchestratorConfig(**vars(config_05))
+        config_05_pair.run_id = f"{config_05.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_05_pair.seed = date_pair_seed  # Use same seed as config 01
+        
+        orchestrator_05 = run_single_date_pair_experiment(
+            config_05_pair, global_date, local_date, runs_dir,
+            base_orchestrator=orchestrator_01,
+            previous_orchestrator=None,
+            trained_model=None,
+            past_returns=past_returns
+        )
+        
+        if orchestrator_05 is not None:
+            successful_experiments += 1
+            logger.info(f"✓ CONFIG 05 completed for pair {pair_idx+1}")
+        else:
+            failed_experiments += 1
+            logger.error(f"✗ CONFIG 05 failed for pair {pair_idx+1}")
+        
+        # Step 5: Run CONFIG 06 for this date pair
+        logger.info(f"\n--- STEP 5: Running CONFIG 06 for pair {pair_idx+1} ---")
+        
+        config_06_pair = OrchestratorConfig(**vars(config_06))
+        config_06_pair.run_id = f"{config_06.run_id}_PAIR{pair_idx+1:02d}_{global_date}_{local_date}"
+        config_06_pair.seed = date_pair_seed  # Use same seed as config 01
+        
+        orchestrator_06 = run_single_date_pair_experiment(
+            config_06_pair, global_date, local_date, runs_dir,
+            base_orchestrator=orchestrator_01,
+            previous_orchestrator=None,
+            trained_model=None,
+            past_returns=past_returns
+        )
+        
+        if orchestrator_06 is not None:
+            successful_experiments += 1
+            logger.info(f"✓ CONFIG 06 completed for pair {pair_idx+1}")
+        else:
+            failed_experiments += 1
+            logger.error(f"✗ CONFIG 06 failed for pair {pair_idx+1}")
         
         logger.info(f"\nCompleted all configurations for date pair {pair_idx+1}: {global_date} → {local_date}")
     
@@ -528,13 +637,13 @@ def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir,
     logger.info(f"Results saved to: {runs_dir}")
     logger.info("=" * 100)
 
-def load_pretrained_model_for_experiments(model_path=None):
+def load_pretrained_model_for_experiments(pretraining_dir):
     """
     Load a pretrained CNN-LSTM model and preprocessing components for use in TTSTL experiments.
     
     Args:
-        model_path: Path to the pretrained model file. If None, will look for 
-                   the most recent model in cnn_lstm_pretraining_market_data directory.
+        pretraining_dir: Path to the directory containing the pretrained model files.
+                        Should contain .pth, _bounds.json, and _metadata.json files.
         
     Returns:
         Tuple of (trained_model, scaler, lower_bounds, upper_bounds) or None if loading fails
@@ -542,57 +651,57 @@ def load_pretrained_model_for_experiments(model_path=None):
     logger = logging.getLogger(__name__)
     
     try:
-        if model_path is None:
-            # Look for the most recent pretrained model
-            pretraining_dir = Path('cnn_lstm_pretraining_market_data')
-            if not pretraining_dir.exists():
-                logger.error(f"Pretraining directory not found: {pretraining_dir}")
-                logger.info("Please run cnn_lstm_pretraining.py first to create a pretrained model")
-                return None
-            
-            # Find the most recent .pth file
-            model_files = list(pretraining_dir.glob("*.pth"))
-            if not model_files:
-                logger.error(f"No pretrained model files (.pth) found in {pretraining_dir}")
-                logger.info("Please run cnn_lstm_pretraining.py first to create a pretrained model")
-                return None
-            
-            # Use the most recent model file
-            model_path = max(model_files, key=lambda p: p.stat().st_mtime)
-            logger.info(f"Using most recent pretrained model: {model_path}")
-            
-            # Extract directory and model name from the full path
-            experiments_dir = model_path.parent
-            model_name = model_path.stem  # Gets filename without .pth extension
-        else:
-            # User provided a specific model path
-            model_path = Path(model_path)
-            experiments_dir = model_path.parent
-            model_name = model_path.stem  # Gets filename without .pth extension
-            logger.info(f"Using specified pretrained model: {model_path}")
+        pretraining_dir = Path(pretraining_dir)
+        
+        if not pretraining_dir.exists():
+            logger.error(f"Pretraining directory not found: {pretraining_dir}")
+            logger.info("Please provide a valid pretraining directory path")
+            return None
+        
+        # Find the .pth file in the directory
+        model_files = list(pretraining_dir.glob("*.pth"))
+        if not model_files:
+            logger.error(f"No pretrained model files (.pth) found in {pretraining_dir}")
+            logger.info("Please ensure the directory contains a pretrained model")
+            return None
+        
+        if len(model_files) > 1:
+            logger.warning(f"Multiple .pth files found in {pretraining_dir}, using the first one")
+        
+        # Use the first model file found
+        model_path = model_files[0]
+        logger.info(f"Using pretrained model: {model_path}")
+        
+        # Extract directory and model name from the full path
+        experiments_dir = model_path.parent
+        model_name = model_path.stem  # Gets filename without .pth extension
         
         # Load the complete pretrained setup (model + preprocessing components)
         trained_model, scaler, lower_bounds, upper_bounds = load_full_pretrained_setup(
             experiments_dir, model_name
         )
-        logger.info("Successfully loaded pretrained CNN-LSTM model and preprocessing components for experiments")
+        logger.info(f"Successfully loaded pretrained CNN-LSTM model and preprocessing components from {pretraining_dir}")
         
         return trained_model, scaler, lower_bounds, upper_bounds
         
     except Exception as e:
         logger.error(f"Failed to load pretrained model and preprocessing components: {str(e)}")
-        logger.info("Please ensure you have run cnn_lstm_pretraining.py successfully")
+        logger.info("Please ensure the directory contains valid pretrained model files")
         return None
 
-def main():
+def main(past_returns=False):
     """
     Main function to orchestrate the market data TTSTL experiments.
     
     This script focuses only on running TTSTL experiments with different configurations
     using a pretrained CNN-LSTM model. The model should be pretrained using the 
     cnn_lstm_pretraining.py script first.
+    
+    Args:
+        past_returns: If True, run experiments with concurrent returns; if False, use future returns
     """
-    print("🚀 Starting market data TTSTL experiments...")
+    experiment_type = "CONCURRENT RETURNS" if past_returns else "FUTURE RETURNS"
+    print(f"🚀 Starting market data TTSTL experiments with {experiment_type}...")
     print("="*100)
 
     # Set global random seeds for reproducibility
@@ -607,30 +716,35 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    setup_logging()
+    setup_logging(past_returns)
     logger = logging.getLogger(__name__)
-    logger.info("Starting market data TTSTL experiments for INTC")
+    logger.info(f"Starting market data TTSTL experiments for INTC with {experiment_type}")
     logger.info(f"Global random seed set to: {SEED}")
 
+    # Specify the pretrained model directory
+    pretraining_dir = Path('outputs/cnn_lstm_pretraining_market_data')
+    
     # Load pretrained CNN-LSTM model and preprocessing components
-    logger.info("Loading pretrained CNN-LSTM model and preprocessing components...")
-    model_data = load_pretrained_model_for_experiments()
+    logger.info(f"Loading pretrained CNN-LSTM model and preprocessing components from {pretraining_dir}...")
+    model_data = load_pretrained_model_for_experiments(pretraining_dir)
     
     if model_data is None:
-        logger.error("Failed to load pretrained model and preprocessing components. Please run cnn_lstm_pretraining.py first.")
+        logger.error(f"Failed to load pretrained model and preprocessing components from {pretraining_dir}.")
         return
     
     trained_model, scaler, lower_bounds, upper_bounds = model_data
-    logger.info("Pretrained CNN-LSTM model and preprocessing components loaded successfully")
+    logger.info(f"Pretrained CNN-LSTM model and preprocessing components loaded successfully for {experiment_type}")
     
-    # Create runs directory
-    runs_dir = Path('runs_market_data_experiments')
-    runs_dir.mkdir(exist_ok=True)
+    # Create runs directory with experiment type suffix
+    experiment_suffix = "_concurrent" if past_returns else ""
+    runs_dir = Path(f'outputs/runs_market_data_experiments{experiment_suffix}')
+    runs_dir.mkdir(parents=True, exist_ok=True)
 
     # Get base configuration and experiment configurations
     base_config = get_base_config()
     
-    # Update base configuration with preprocessing components
+    # Update base configuration with experiment type and preprocessing components
+    base_config.past_returns = past_returns  # Set the experiment type
     base_config.pretrained_scaler = scaler
     base_config.lower_bounds = lower_bounds
     base_config.upper_bounds = upper_bounds
@@ -638,23 +752,28 @@ def main():
     experiment_configs = get_experiment_configs()
 
     logger.info("=" * 80)
-    logger.info("EXPERIMENT SUMMARY")
+    logger.info(f"EXPERIMENT SUMMARY - {experiment_type}")
+    logger.info("Based on synthetic study results:")
+    logger.info("  - Update method: Exponential Smoothing (alpha=0.1)")
+    logger.info("  - ARMA order: (0, 1)")
+    logger.info("  - Covariate configurations: 01, 02, 03, 04, 05, 06")
     logger.info("=" * 80)
     for exp_key, exp_config in experiment_configs.items():
-        logger.info(f"{exp_key.upper()}: {exp_config['description']}")
+        logger.info(f"CONFIG {exp_key}: {exp_config['description']}")
         logger.info(f"  - Run ID: {exp_config['run_id']}")
         logger.info(f"  - Parsimonious mode: {exp_config['parsimonious_mode']}")
         logger.info(f"  - User defined variables: {exp_config['user_defined_variables']}")
-        logger.info(f"  - Epochs: {exp_config['epochs']} (using pre-trained model)")
+        logger.info(f"  - Epochs: {exp_config['epochs']}")
+        logger.info(f"  - ARMA order: {exp_config['arma_order']}")
     logger.info("=" * 80)
 
     # Run experiments independently with separate directories
     run_independent_ttstl_experiments(
         base_config, experiment_configs, runs_dir, 
-        trained_model
+        trained_model, past_returns, seed=SEED
     )
     
-    logger.info("All TTSTL experiments completed successfully!")
+    logger.info(f"All TTSTL experiments with {experiment_type} completed successfully!")
     return
 
 if __name__ == "__main__":

@@ -9,18 +9,22 @@ This script shows how to:
 """
 
 # Standard library imports
+import json
 import logging
 import sys
 from pathlib import Path
 
 # Third-party imports
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import pandas as pd
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Local imports
+from ttstl.utils.data_preprocessor import create_pretrained_scaler
+
 from utils_experiment_analysis import (
     ExperimentMetadata, 
     ExperimentLoader, 
@@ -31,6 +35,7 @@ from utils_experiment_analysis import (
 )
 
 
+
 def setup_logging():
     """Setup logging for the test script."""
     logging.basicConfig(
@@ -39,10 +44,50 @@ def setup_logging():
     )
 
 
+def get_convergence_stats(run_dir: Path, backbone_bar: str, mode: str = 'local_adapt'):
+    """
+    Extract convergence statistics from convergence_performance.json file.
+    
+    Args:
+        run_dir: Path to the experiment run directory
+        backbone_bar: Backbone bar identifier (e.g., 'bb_000')
+        mode: Mode to check ('local_adapt' or 'global_update')
+        
+    Returns:
+        Tuple of (failed_count, saddle_point_count) or (0, 0) if file not found
+    """
+    convergence_file = run_dir / backbone_bar / mode / 'adapter' / 'convergence_performance.json'
+    
+    if not convergence_file.exists():
+        return 0, 0
+    
+    try:
+        with open(convergence_file, 'r') as f:
+            convergence_data = json.load(f)
+        
+        processing_stats = convergence_data.get('processing_stats', {})
+        
+        failed_count = 0
+        saddle_point_count = 0
+        
+        for adapter_bar, stats in processing_stats.items():
+            status = stats.get('status', '')
+            if status == 'failed':
+                failed_count += 1
+            elif status == 'saddle_point_detected':
+                saddle_point_count += 1
+        
+        return failed_count, saddle_point_count
+        
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to read convergence stats from {convergence_file}: {e}")
+        return 0, 0
+
+
 def load_all_experiments(update_methods=['M', 'SA', 'PL3', 'ES010'], backbone_bar='bb_000', config_numbers=['01', '02', '03', '04', '05', '06', '07']):
     """Load performance data for all experiments matching the specified update methods and config numbers (local_adapt mode only)."""
     logger = logging.getLogger(__name__)
-    runs_dir = Path('outputs/runs_synthetic_study_covariance')
+    runs_dir = Path('outputs/runs_synthetic_study')
     
     if not runs_dir.exists():
         logger.error(f"Runs directory not found: {runs_dir}")
@@ -50,34 +95,34 @@ def load_all_experiments(update_methods=['M', 'SA', 'PL3', 'ES010'], backbone_ba
     
     # Hardcoded experiment directories to ensure correct loading
     hardcoded_experiments = {
-        'M_01': '2025-11-05_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_01',
-        'M_02': '2025-11-05_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_02',
-        'M_03': '2025-11-05_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_03',
-        'M_04': '2025-11-05_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_04',
-        'M_05': '2025-11-05_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_05',
-        'M_06': '2025-11-05_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_06',
-        'M_07': '2025-11-05_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_07',
-        'SA_01': '2025-11-05_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_01',
-        'SA_02': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_02',
-        'SA_03': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_03',
-        'SA_04': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_04',
-        'SA_05': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_05',
-        'SA_06': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_06',
-        'SA_07': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_07',
-        'PL3_01': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_01',
-        'PL3_02': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_02',
-        'PL3_03': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_03',
-        'PL3_04': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_04',
-        'PL3_05': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_05',
-        'PL3_06': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_06',
-        'PL3_07': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_07',
-        'ES010_01': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_01',
-        'ES010_02': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_02',
-        'ES010_03': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_03',
-        'ES010_04': '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_04',
-        'ES010_05': '2025-11-07_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_05',
-        'ES010_06': '2025-11-07_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_06',
-        'ES010_07': '2025-11-07_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_07',
+        'M_01': '2025-11-14_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_01',
+        'M_02': '2025-11-14_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_02',
+        'M_03': '2025-11-14_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_03',
+        'M_04': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_04',
+        'M_05': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_05',
+        'M_06': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_06',
+        'M_07': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idM_07',
+        'SA_01': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_01',
+        'SA_02': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_02',
+        'SA_03': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_03',
+        'SA_04': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_04',
+        'SA_05': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_05',
+        'SA_06': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_06',
+        'SA_07': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idSA_07',
+        'PL3_01': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_01',
+        'PL3_02': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_02',
+        'PL3_03': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_03',
+        'PL3_04': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_04',
+        'PL3_05': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_05',
+        'PL3_06': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_06',
+        'PL3_07': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idPL3_07',
+        'ES010_01': '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_01',
+        'ES010_02': '2025-11-16_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_02',
+        'ES010_03': '2025-11-16_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_03',
+        'ES010_04': '2025-11-16_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_04',
+        'ES010_05': '2025-11-16_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_05',
+        'ES010_06': '2025-11-16_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_06',
+        'ES010_07': '2025-11-16_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_07'
     }
     
     # Build list of experiments based on requested update methods and config numbers
@@ -108,8 +153,13 @@ def load_all_experiments(update_methods=['M', 'SA', 'PL3', 'ES010'], backbone_ba
             # Load performance for local_adapt mode only
             perf_local = loader.load_performance_data(backbone_bar, mode='local_adapt')
             if perf_local:
+                # Add convergence statistics to the performance data object
+                failed_count, saddle_point_count = get_convergence_stats(run_dir, backbone_bar, mode='local_adapt')
+                perf_local.convergence_failed = failed_count
+                perf_local.convergence_saddle_point = saddle_point_count
+                
                 perf_data_local.append(perf_local)
-                logger.info(f"Loaded local_adapt: {run_id} ({update_method})")
+                logger.info(f"Loaded local_adapt: {run_id} ({update_method}) - Failed: {failed_count}, Saddle: {saddle_point_count}")
         
         except Exception as e:
             logger.error(f"Failed to load {run_dir.name}: {e}")
@@ -167,6 +217,14 @@ def performance_comparison():
         )
         
         if not comparison_local_bb000.empty:
+            # Add convergence statistics columns
+            comparison_local_bb000['convergence_failed'] = [
+                perf.convergence_failed for perf in perf_data_local_bb000
+            ]
+            comparison_local_bb000['convergence_saddle_point'] = [
+                perf.convergence_saddle_point for perf in perf_data_local_bb000
+            ]
+            
             # Save comparison results to CSV
             csv_path = save_path / 'comparison_bb000_local_adapt.csv'
             comparison_local_bb000.to_csv(csv_path, index=False)
@@ -224,7 +282,7 @@ def performance_comparison():
                 metric='garch_relmae',
                 color_dict=color_dict,
                 legend_config=legend_config,
-                vline=1.0,
+                xlabel='Update Method',
                 ylim=(0.875, 1.075),
                 save_path=save_path / 'performance_boxplot_bb000.png',
                 title='GARCH RelMAE by Update Method (Local Adapt Mode Backbone Bar 1)'
@@ -235,7 +293,7 @@ def performance_comparison():
                 metric='garch_relmae_nn_baseline',
                 color_dict=color_dict,
                 legend_config=legend_config,
-                vline=1.0,
+                xlabel='Update Method',
                 ylim=(0.925, 1.1),
                 save_path=save_path / 'performance_boxplot_bb000_nn_baseline.png',
                 title='GARCH RelMAE with CNN-LSTM Baseline by Update Method (Local Adapt Mode Backbone Bar 1)'
@@ -254,6 +312,14 @@ def performance_comparison():
             perf_data_list=perf_data_local_bb001,
             metric='garch_relmae'
         )
+        
+        # Add convergence statistics columns
+        comparison_local_bb001['convergence_failed'] = [
+            perf.convergence_failed for perf in perf_data_local_bb001
+        ]
+        comparison_local_bb001['convergence_saddle_point'] = [
+            perf.convergence_saddle_point for perf in perf_data_local_bb001
+        ]
         
         csv_path = save_path / 'comparison_bb001_local_adapt.csv'
         comparison_local_bb001.to_csv(csv_path, index=False)
@@ -279,7 +345,7 @@ def performance_comparison():
             metric='garch_relmae',
             color_dict=color_dict_bb001,
             legend_config=legend_config,
-            vline=1.0,
+            xlabel='Update Method',
             ylim=(0.875, 1.075),
             save_path=save_path / 'performance_boxplot_bb001.png',
             title='GARCH RelMAE by Update Method (Local Adapt Mode Backbone Bar 2)'
@@ -290,7 +356,7 @@ def performance_comparison():
             metric='garch_relmae_nn_baseline',
             color_dict=color_dict_bb001,
             legend_config=legend_config,
-            vline=1.0,
+            xlabel='Update Method',
             ylim=(0.925, 1.1),
             save_path=save_path / 'performance_boxplot_bb001_nn_baseline.png',
             title='GARCH RelMAE with CNN-LSTM Baseline by Update Method (Local Adapt Mode Backbone Bar 2)'
@@ -301,9 +367,10 @@ def performance_comparison():
     # =========================================================================
     if perf_data_local_bb000 and perf_data_local_bb001:
         if not comparison_local_bb000.empty and not comparison_local_bb001.empty:
-            # Select columns to keep
+            # Select columns to keep (including convergence stats, excluding num_observations)
             cols_to_keep = ['experiment_id', 'overall_rank', 'avg_garch_relmae', 
-                           'best_rank', 'worst_rank', 'times_in_top3', 'num_observations']
+                           'best_rank', 'worst_rank', 'times_in_top3', 
+                           'convergence_failed', 'convergence_saddle_point']
             
             # Prepare bb_000 data with suffix
             bb000_subset = comparison_local_bb000[cols_to_keep].copy()
@@ -326,13 +393,13 @@ def performance_comparison():
 def covariates_aggregate_measures_trends():
     """Analyze covariate trends across both backbone bars for multiple variables."""
     logger = logging.getLogger(__name__)
-    runs_dir = Path('outputs/runs_synthetic_study_covariance')
+    runs_dir = Path('outputs/runs_synthetic_study')
     save_path = Path('outputs/analysis_synthetic_data_experiment_results')
     
     print("Plotting aggregate measures sequential boxplots")
     
     # Load experiment
-    exp_dir = runs_dir / '2025-11-06_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_01'
+    exp_dir = runs_dir / '2025-11-15_SIM_bdelta5000000_adelta100000_sdelta100_seed19991810_idES010_01'
     
     if not exp_dir.exists():
         logger.warning(f"Experiment directory not found: {exp_dir}")
@@ -347,9 +414,8 @@ def covariates_aggregate_measures_trends():
     metadata.gcs_ptd_local_path = 'synthetic_data/08042025_long_physical_time_driven_recorded_data_1.parquet'
     
     # Create preprocessing components
-    from ttstl.utils.data_preprocessor import create_pretrained_scaler
     loader = ExperimentLoader(metadata)
-    ed_df, _ = loader.load_data(mode='local_adapt')
+    ed_df, _ = loader.load_data(mode='global_update')
     scaler, lower_bounds, upper_bounds = create_pretrained_scaler(ed_df, quantile=0.005)
     
     # Define variables to analyze
@@ -498,12 +564,11 @@ def covariates_aggregate_measures_trends():
                     fontsize=14, fontweight='bold', pad=20)
         
         # Create legend
-        from matplotlib.patches import Patch
         legend_elements = [
-            Patch(facecolor=color_bb000, alpha=0.7, label='Backbone Bar 1 (bb_000)'),
-            Patch(facecolor=color_bb001, alpha=0.7, label='Backbone Bar 2 (bb_001)')
+            Patch(facecolor=color_bb000, alpha=0.7, label='Backbone Bar 1'),
+            Patch(facecolor=color_bb001, alpha=0.7, label='Backbone Bar 2')
         ]
-        ax.legend(handles=legend_elements, loc='upper right', fontsize=11)
+        ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.01, 1), fontsize=11)
         
         plt.tight_layout()
         
@@ -605,12 +670,11 @@ def _create_std_plot(all_stats, variables_subset, plot_suffix, save_path):
                 fontsize=14, fontweight='bold', pad=20)
     
     # Create legend
-    from matplotlib.patches import Patch
     legend_elements = [
-        Patch(facecolor=color_bb000, alpha=0.7, label='Backbone Bar 1 (bb_000)'),
-        Patch(facecolor=color_bb001, alpha=0.7, label='Backbone Bar 2 (bb_001)')
+        Patch(facecolor=color_bb000, alpha=0.7, label='Backbone Bar 1'),
+        Patch(facecolor=color_bb001, alpha=0.7, label='Backbone Bar 2')
     ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=11)
+    ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.01, 1), fontsize=11)
     
     plt.tight_layout()
     
