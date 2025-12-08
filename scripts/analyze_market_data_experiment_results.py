@@ -821,8 +821,8 @@ def plot_covariate_aggregate_measures():
             pair_labels_list = []
             position = 1
             for pair_num in sorted(df['pair_num'].unique()):
-                # Center position for this date pair (middle of 5 variables)
-                center_pos = position + 2  # (0 + 1 + 2 + 3 + 4) / 5 = 2
+                # Center position for this date pair (middle of 3 variables)
+                center_pos = position + 1  # (0 + 1 + 2) / 3 = 1
                 pair_positions.append(center_pos)
                 pair_labels_list.append(date_labels[pair_num])
                 position += len(variables) + 1
