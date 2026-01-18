@@ -152,27 +152,27 @@ def main():
     cfg = OrchestratorConfig(
         # General settings
         ticker='SIM',
-        bdelta=5_000_000.0,
-        #bdelta=500_000.0,  # For testing purposes
+        #bdelta=5_000_000.0,
+        bdelta=500_000.0,  # For testing purposes
         adelta=100_000.0,
         sdelta=100.0,
         seed=19991810,
         session_start=0.0,
-        session_finish=10_000_000.0,
-        #session_finish=1_000_000.0,  # For testing purposes
+        #session_finish=10_000_000.0,
+        session_finish=1_000_000.0,  # For testing purposes
         target_col_name='micro_return',
         
         # Backbone knobs
         parsimonious_mode=False,
         neural_covariates_only=False,
         manual_covariates_only=False,
-        epochs=5,
-        #epochs=1,  # For testing purposes 
+        #epochs=5,
+        epochs=1,  # For testing purposes 
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
-        adf_rejection_rate_threshold=0.8,
-        kpss_verification_threshold=0.2,
+        adf_rejection_rate_threshold=0.7,
+        kpss_verification_threshold=0.3,
         na_verification_threshold=0.1,
         learning_rate=0.0001,
         correlation_threshold=0.95,
@@ -183,8 +183,8 @@ def main():
         upper_bounds=upper_bounds,      # Created from ed_df_0
 
         # Interface knobs
-        #user_defined_variables=[],  # Test user-defined variables bypass with consistently available names
-        second_stage_mse=False,  # Use MSE instead of BIC for adalasso hyperparameter selection
+        #user_defined_variables=['forward_pass_0'],  # Test user-defined variables bypass with consistently available names
+        second_stage_mse=False,  # Use MSE instead of BIC for adalasso hyperparameter selection if true
         alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
         #alpha_enet_grid=[0.0],  # For testing purposes
         lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),

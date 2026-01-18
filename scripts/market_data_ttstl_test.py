@@ -48,29 +48,29 @@ def setup_logging():
 
 def load_market_data():
     """
-    Loads market data for INTC for the test date pair: June 12, 2024 and June 13, 2024.
+    Loads market data for INTC for the test date pair: June 10, 2024 and June 11, 2024 (PAIR05).
     
     Returns:
         Tuple of (global_update_ed_df, global_update_ptd_df, local_update_ed_df, local_update_ptd_df)
     """
     logger = logging.getLogger(__name__)
-    logger.info("Loading market data for INTC test pair: 06122024 → 06132024")
+    logger.info("Loading market data for INTC test pair PAIR05: 06102024 → 06112024")
     
-    # Load global update data (June 12, 2024)
-    logger.info("Loading global update data (June 12, 2024)")
-    global_ed_df, global_ptd_df = load_date_data("06122024")
+    # Load global update data (June 10, 2024)
+    logger.info("Loading global update data (June 10, 2024)")
+    global_ed_df, global_ptd_df = load_date_data("06102024")
     
     if global_ed_df is None or global_ptd_df is None:
-        logger.error("Failed to load global update data for June 12, 2024")
-        raise ValueError("Could not load global update data for 06122024")
+        logger.error("Failed to load global update data for June 10, 2024")
+        raise ValueError("Could not load global update data for 06102024")
     
-    # Load local update data (June 13, 2024)
-    logger.info("Loading local update data (June 13, 2024)")
-    local_ed_df, local_ptd_df = load_date_data("06132024")
+    # Load local update data (June 11, 2024)
+    logger.info("Loading local update data (June 11, 2024)")
+    local_ed_df, local_ptd_df = load_date_data("06112024")
     
     if local_ed_df is None or local_ptd_df is None:
-        logger.error("Failed to load local update data for June 13, 2024")
-        raise ValueError("Could not load local update data for 06132024")
+        logger.error("Failed to load local update data for June 11, 2024")
+        raise ValueError("Could not load local update data for 06112024")
 
     return global_ed_df, global_ptd_df, local_ed_df, local_ptd_df
 
@@ -177,10 +177,10 @@ def main():
     Main function to test the market data TTSTL system with a single date pair.
     
     This test follows the same logic as market_data_experiments.py but runs only
-    the base configuration on the date pair 06122024 → 06132024.
+    configuration ES010_05 on the date pair 06102024 → 06112024 (PAIR05).
     """
 
-    print("🚀 Starting market data TTSTL test...")
+    print("🚀 Starting market data TTSTL test for ES010_05 on PAIR05...")
     print("="*80)
 
     # Set global random seeds for reproducibility
@@ -197,13 +197,16 @@ def main():
 
     setup_logging()
     logger = logging.getLogger(__name__)
-    logger.info("Starting market data TTSTL test for INTC")
+    logger.info("Starting market data TTSTL test for INTC - Configuration ES010_05 on PAIR05")
     logger.info(f"Global random seed set to: {SEED}")
-    logger.info("Test date pair: June 12, 2024 → June 13, 2024")
+    logger.info("Test date pair: June 10, 2024 → June 11, 2024 (PAIR05)")
 
+    # Specify the pretrained model directory
+    pretraining_dir = Path('outputs/cnn_lstm_pretraining_market_data')
+    
     # Load pretrained CNN-LSTM model and preprocessing components
-    logger.info("Loading pretrained CNN-LSTM model and preprocessing components...")
-    model_data = load_pretrained_model_for_experiments()
+    logger.info(f"Loading pretrained CNN-LSTM model and preprocessing components from {pretraining_dir}...")
+    model_data = load_pretrained_model_for_experiments(pretraining_dir)
     
     if model_data is None:
         logger.error("Failed to load pretrained model and preprocessing components. Please run cnn_lstm_pretraining.py first.")
@@ -217,27 +220,26 @@ def main():
     # Load market data for the test date pair
     global_ed_df, global_ptd_df, local_ed_df, local_ptd_df = load_market_data()
 
-    logger.info("Setting up orchestrator configuration")
+    logger.info("Setting up orchestrator configuration for ES010_05")
 
     # Get base configuration from experiments script
     cfg = get_base_config()
-    
-    # Override compare_with_cnn_lstm to False for this test
-    cfg.compare_with_cnn_lstm = True
     
     # Update configuration with preprocessing components
     cfg.pretrained_scaler = scaler
     cfg.lower_bounds = lower_bounds
     cfg.upper_bounds = upper_bounds
     
-    # Enable MSE mode for adalasso hyperparameter selection
-    cfg.second_stage_mse = True
-    
-    # Set epochs to 1 for faster testing
-    cfg.epochs = 0 # No training for test
-    
-    # Set specific run ID for test
-    cfg.run_id = "TEST_BASE_CONFIG_06122024_06132024"
+    # Apply ES010_05 configuration (from get_experiment_configs)
+    cfg.run_id = "TEST_ES010_05_PAIR05_06102024_06112024"
+    cfg.parsimonious_mode = True
+    cfg.neural_covariates_only = True
+    cfg.manual_covariates_only = False
+    cfg.epochs = 1 
+    cfg.user_defined_variables = ['forward_pass_0']
+    cfg.arma_order = (0, 1)
+    cfg.kpss_verification_threshold = 0.8  # Relaxed threshold for forward_pass
+    cfg.past_returns = False  # Explicitly use future returns mode
     
     # Log configuration
     log_orchestrator_config(cfg)
@@ -258,11 +260,12 @@ def main():
     # Generate microreturns analysis plots
     logger.info("Generating microreturns analysis plots")
     plot_microreturns_analysis(global_ptd_df, cfg.session_start, cfg.session_finish, 
-                              runs_dir, "June_12_Global_Update")
+                              runs_dir, "June_10_Global_Update_PAIR05")
     plot_microreturns_analysis(local_ptd_df, cfg.session_start, cfg.session_finish, 
-                              runs_dir, "June_13_Local_Update")
+                              runs_dir, "June_11_Local_Update_PAIR05")
 
-    logger.info("Starting global update phase with June 12, 2024 data")
+    logger.info("Starting global update phase with June 10, 2024 data (PAIR05)")
+    logger.info(f"Configuration: ES010_05 (forward_pass_0 only, parsimonious mode)")
     logger.info(f"Neural network training: {'ENABLED' if cfg.epochs > 0 else 'DISABLED'} ({cfg.epochs} epochs)")
     logger.info(f"AdaLASSO hyperparameter selection: {'MSE mode' if cfg.second_stage_mse else 'BIC mode'}")
     
@@ -275,7 +278,7 @@ def main():
         print("❌ Global update failed. Check logs for details.")
         return
 
-    logger.info("Starting local adaptation phase with June 13, 2024 data")
+    logger.info("Starting local adaptation phase with June 11, 2024 data (PAIR05)")
     
     try:
         orchestrator_instance.local_adapt(local_ed_df, local_ptd_df)
@@ -291,14 +294,17 @@ def main():
     print(f"📁 Results saved to: {runs_dir}")
     print(f"📝 Check logs for detailed information")
     print(f"🎯 Test configuration: {cfg.run_id}")
+    print(f"🔬 Configuration: ES010_05 (forward_pass_0 only, parsimonious mode)")
     print(f"🔬 AdaLASSO mode: {'MSE-based' if cfg.second_stage_mse else 'BIC-based'}")
     
     logger.info("=" * 80)
     logger.info("MARKET DATA TTSTL TEST COMPLETED SUCCESSFULLY")
     logger.info("=" * 80)
-    logger.info(f"Test date pair: 06122024 → 06132024")
-    logger.info(f"Configuration: Base configuration with MSE-based adalasso")
+    logger.info(f"Test date pair: 06102024 → 06112024 (PAIR05)")
+    logger.info(f"Configuration: ES010_05 (forward_pass_0 only, parsimonious mode)")
+    logger.info(f"User defined variables: {cfg.user_defined_variables}")
     logger.info(f"AdaLASSO hyperparameter selection: {'MSE mode' if cfg.second_stage_mse else 'BIC mode'}")
+    logger.info(f"KPSS verification threshold: {cfg.kpss_verification_threshold}")
     logger.info(f"Results directory: {runs_dir}")
     logger.info(f"Run ID: {cfg.run_id}")
     logger.info("=" * 80)
