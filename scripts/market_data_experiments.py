@@ -2,6 +2,7 @@
 import copy
 import json
 import logging
+import os
 import random
 from datetime import datetime
 from pathlib import Path
@@ -259,8 +260,9 @@ def create_experiment_config(base_config, exp_config):
 
 def load_date_data(date_str, ticker="INTC", past_returns=False):
     """
-    Load data for a specific date.
-    
+    Load data for a specific date, dynamically resolving the GCS bucket.
+    Priority: 1. Environment Var -> 2. credentials.json -> 3. Hardcoded Default
+        
     Args:
         date_str: Date string in format MMDDYYYY (e.g., "06032024")
         ticker: Stock ticker
@@ -272,7 +274,26 @@ def load_date_data(date_str, ticker="INTC", past_returns=False):
     logger = logging.getLogger(__name__)
     
     credentials_path = 'credentials.json'
-    bucket_name = 'evolving-microstructural-tk-data'
+    
+    # 1. Try Environment Variable (Best Practice)
+    bucket_name = os.environ.get('GCS_BUCKET_NAME')
+    
+    # 2. Try loading from credentials.json (Convenience)
+    if not bucket_name and os.path.exists(credentials_path):
+        try:
+            with open(credentials_path, 'r') as f:
+                creds = json.load(f)
+                bucket_name = creds.get('bucket_name')
+        except Exception as e:
+            logger.debug(f"Could not read bucket_name from credentials: {e}")
+
+    # 3. Fallback to default (Legacy)
+    if not bucket_name:
+        bucket_name = 'evolving-microstructural-tk-data'
+        logger.info(f"Using default bucket: {bucket_name}")
+    else:
+        logger.info(f"Using configured bucket: {bucket_name}")
+
     gcs_market_data_folder = 'market_data/'
     
     try:
