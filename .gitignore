@@ -151,6 +151,7 @@ Thumbs.db
 
 # Partial Results
 runs_synthetic_study/
+runs_synthetic_study_test/
 runs_market_data_test/
 runs_market_data_experiments/
 analysis_outputs/
