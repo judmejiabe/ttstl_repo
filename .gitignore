@@ -160,3 +160,5 @@ examine_artifacts.py
 # Local tests
 tests/
 scripts/market_data_concurrent_cnn_lstm_pretraining.py
+!outputs/analysis_market_data_experiment_results/*.csv
+!outputs/analysis_synthetic_data_experiment_results/*.csv
