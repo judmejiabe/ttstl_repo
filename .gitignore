@@ -156,3 +156,6 @@ runs_market_data_experiments/
 analysis_outputs/
 # Local scripts
 examine_artifacts.py
+
+# Local tests
+tests/
