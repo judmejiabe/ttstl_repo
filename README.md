@@ -40,7 +40,8 @@ docker build -t ttstl .
 
 # Run the synthetic study reproduction script
 # Mounts the current directory to /app to save outputs locally
-docker run --rm -v $(pwd):/app ttstl python scripts/synthetic_study_experiment.py```
+docker run --rm -v $(pwd):/app ttstl python scripts/synthetic_study_experiment.py
+```
 
 ### Option B: Local Install
 Requires **Python 3.9+** and **R 4.3+**.
