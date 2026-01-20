@@ -1,5 +1,5 @@
 # Use micromamba for fast, reliable cross-language (Python + R) environment creation
-FROM mambaorg/micromamba:1.5.1
+FROM --platform=linux/amd64 mambaorg/micromamba:1.5.1
 
 # Set working directory
 WORKDIR /app
