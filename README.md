@@ -12,15 +12,22 @@ Implementation of the **Two-Time-Scale Transfer Learning (TTSTL)** framework for
 ## 📌 Abstract
 Deep Learning models face a critical "simulation-to-reality" gap when applied to high frequency financial data. Deep learning models often fail to capture the non-stationary dynamics of live markets, requiring computationally expensive recalibrations. This work introduces the Two-Time-Scale Transfer Learning (TTSTL) framework, a hybrid model architecture that combines the flexibility of deep learning models with the parsimony and calibration ease of time series regression models. The TTSTL architecture mimics the hippocampus-neocortex interaction in the human brain by coupling a high-capacity deep learning "backbone" with a lightweight, adaptive time series regression "adapter." The backbone, utilizing a CNN-LSTM network, extracts complex, non-linear feature interactions from event-driven limit order book data, while the adapter—implemented as a Hybrid ARMAX-GARCH-DeepLOB model—integrates these features into a statistical framework for micro-return forecasting. Experiments are conducted on synthetic and Intel (INTC) market-by-order data. Results demonstrate that the TTSTL framework significantly outperforms standalone deep learning baselines in terms of accuracy (RelMAE), while enabling volatility modeling and formal probabilistic forecasting.
 
-## ⚠️ Data Availability & Reproduction
-This research utilizes two types of data. Please follow the instructions below to reproduce the results.
+## 🧠 Architecture
+The TTSTL architecture is better understood with the diagram below. For a detailed description of each module, refer to Section 6.1 of the paper.
 
-### 1. Synthetic Data (Fully Reproducible)
+![TTSTL Architecture](images/TTSTL.png)
+
+## ⚠️ Data Availability & Reproduction
+
+**Disclaimer:** Reproducing the results presented in this paper requires access to proprietary market data and significant computational resources. For transparency, the synthetic data experiments took approximately 39 hours and 39 minutes. The real market data experiments required approximately 22 hours and 10 minutes for CNN-LSTM pretraining, and an additional 28 hours and 25 minutes for the experimental runs. The experiments were conducted on a single machine with an Intel i9-9940X CPU, 128GB of RAM, and 4 NVIDIA GeForce RTX 2080 Ti GPUs. Only one GPU was used for the experiments.
+
+
+### A. Synthetic Data (Fully Reproducible)
 We provide the exact synthetic datasets used in the paper's experiments to ensure reproducibility without re-running the generation simulations.
 * **Download:** [https://doi.org/10.5281/zenodo.18304963](https://doi.org/10.5281/zenodo.18304963)
 * **Generation Source:** Alternatively, you can re-generate the data using the codebase in our auxiliary repository: [`evolving-microstructural-toolkit-data`](https://github.com/judmejiabe/evolving-microstructural-toolkit-data).
 
-### 2. Real Market Data (Proprietary)
+### B. Real Market Data (Proprietary)
 The paper analyzes high-frequency Intel (INTC) Market-by-Order (MBO) data and VIX index data.
 * **MBO Data:** Raw market-by-order data must be licensed directly from **[Databento](https://databento.com)**.
 * **VIX Data:** Volatility index data must be sourced from **[Polygon.io](https://polygon.io)**.
@@ -121,7 +128,7 @@ This method is recommended as it allows you to utilize local GPUs for accelerate
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/judmejiabe/ttstl_repo.git](https://github.com/judmejiabe/ttstl_repo.git)
+    git clone https://github.com/judmejiabe/ttstl_repo.git
     cd ttstl_repo
     ```
 
@@ -141,7 +148,7 @@ We provide a containerized environment with exact Python and R versions to preve
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/judmejiabe/ttstl_repo.git](https://github.com/judmejiabe/ttstl_repo.git)
+    git clone https://github.com/judmejiabe/ttstl_repo.git
     cd ttstl_repo
     ```
 
@@ -150,51 +157,41 @@ We provide a containerized environment with exact Python and R versions to preve
     docker build -t ttstl .
     ```
 
-3.  **Run experiments:**
-    ```bash
-    # Run the synthetic study reproduction script
-    # Mounts the current directory to /app to save outputs locally
-    docker run --rm -v $(pwd):/app ttstl python scripts/synthetic_study_experiment.py
-    ```
-
-## 🚀 Quick Start
-
-Initialize the Orchestrator to run a training cycle with a CNN-LSTM backbone and GARCH adapter.
-
-```python
-import torch
-from ttstl.orchestrator import Orchestrator, OrchestratorConfig
-from ttstl.backbone import Backbone
-from ttstl.architectures.cnn_lstm import CNNLSTM
-
-# 1. Configuration
-config = OrchestratorConfig(
-    ticker='SIM',
-    bdelta=5000000.0,  # Backbone update interval (ns)
-    adelta=100000.0,   # Adapter update interval (ns)
-    sdelta=100.0       # Sampling interval (ns)
-)
-
-# 2. Initialize Orchestrator
-# (Assuming you have preloaded dataframes ed_df and ptd_df)
-orchestrator = Orchestrator(run_dir="outputs/test_run", config=config)
-
-# 3. Run Global Update (Backbone Training)
-orchestrator.global_update(ed_df, ptd_df)
-
-# 4. Run Local Adaptation (Adapter Fitting)
-# The adapter will now use features extracted by the trained backbone
-orchestrator.local_adapt(ed_df_next, ptd_df_next)
-```
 
 ## 📂 Repository Structure
+
+* `paper/`: Contains the research paper and supplementary materials.
+* `outputs/`: Directory for storing experiment outputs and post-processing results.
+    * `analysis_market_data_experiment_results/`: Analysis of market data experiments results.
+    * `analysis_synthetic_data_experiment_results/`: Analysis of synthetic data experiments results.
 * `src/ttstl/`: Core package source code.
-    * `backbone.py`: Deep learning feature extractor management.
-    * `adapter.py`: R-based statistical transfer learning module (rpy2 interface).
-    * `orchestrator.py`: Manages the two-time-scale interaction.
-* `scripts/`: Reproduction scripts for paper experiments.
-    * `synthetic_study_experiment.py`: Main script for synthetic data results.
-    * `market_data_experiments.py`: Script for real market data analysis.
+    * `adapter.py`: Adapter module implementation (Volatility modeling & Probabilistic forecasting, see image in the Architecture section).
+    * `backbone.py`: Backbone module implementation (Deep learning feature extractor, see image in the Architecture section).
+    * `interface.py`: Interface module implementation (Variable selection & R-Python bridging, see image in the Architecture section).
+    * `orchestrator.py`: Main API matching backbone, interface, and adapter modules.
+    * `architectures/`: Neural network architecture definitions (e.g., CNN-LSTM).
+    * `datasets/`: PyTorch dataset implementations for LOB data.
+    * `utils/`: Utility functions for data processing and metrics.
+    * `r_scripts/`: R scripts wrapped by the modules for statistical methodologies.
+* `scripts/`: Experiments and analysis.
+    * `analyze_market_data_experiment_results.py`: Post-processing and visualization for market experiments.
+    * `analyze_synthetic_data_experiment_results.py`: Post-processing and visualization for synthetic experiments.
+    * `market_data_cnn_lstm_pretraining.py`: Script for pretraining the CNN-LSTM backbone on market data.
+    * `market_data_experiments.py`: Main script for Intel (INTC) market data experiments.
+    * `market_data_ttstl_test.py`: Test script for market data experiments (single date pair).
+    * `synthetic_study_analysis.py`: Analysis script for synthetic study results (RelMAE plots, rankings).
+    * `synthetic_study_experiment.py`: Main script for synthetic data experiments.
+    * `synthetic_study_test.py`: Test script for synthetic data experiments.
+    * `utils_experiment_analysis.py`: Unified framework for analyzing experiment results.
+* `docs/`: Additional documentation and guides.
+* `environment.yml`: Conda environment specification file.
+* `Dockerfile`: Docker container build configuration.
+* `CITATION.cff`: Citation metadata.
+* `credentials.example.json`: Template for GCP credentials.
+* `LICENSE`: License text.
+* `pyproject.toml`: Build system requirements and dependencies.
+* `README.md`: The file you are reading.
+
 
 ## 🔗 Citation
 If you use this code, please cite our paper:
