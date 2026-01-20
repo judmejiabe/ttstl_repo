@@ -5,23 +5,11 @@ FROM --platform=linux/amd64 mambaorg/micromamba:1.5.1
 WORKDIR /app
 
 # Copy the environment file(s)
+# Copy the environment file
 COPY --chown=$MAMBA_USER:$MAMBA_USER environment.yml /tmp/env.yaml
-COPY --chown=$MAMBA_USER:$MAMBA_USER environment_relaxed.yml /tmp/env_relaxed.yaml
 
-# Install dependencies with simplified failover
-RUN \
-    echo "⬇️  Attempting exact installation from environment.yml..." && \
-    if micromamba install -y -n base -f /tmp/env.yaml; then \
-    echo "✅ Exact installation succeeded!"; \
-    else \
-    echo "⚠️  Exact installation failed (likely due to platform-specific build strings)." && \
-    echo "⬇️  Attempting installation from environment_relaxed.yml..." && \
-    if micromamba install -y -n base -f /tmp/env_relaxed.yaml; then \
-    echo "✅ Relaxed installation succeeded!"; \
-    else \
-    echo "❌ All installation attempts failed." && exit 1; \
-    fi; \
-    fi && \
+# Install dependencies defined in environment.yml
+RUN micromamba install -y -n base -f /tmp/env.yaml && \
     micromamba clean --all --yes
 
 # Activate the environment for all subsequent commands
