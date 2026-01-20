@@ -19,7 +19,11 @@ The TTSTL architecture is better understood with the diagram below. For a detail
 
 ## ⚠️ Data Availability & Reproduction
 
-**Disclaimer:** Reproducing the results presented in this paper requires access to proprietary market data and significant computational resources. For transparency, the synthetic data experiments took approximately 39 hours and 39 minutes. The real market data experiments required approximately 22 hours and 10 minutes for CNN-LSTM pretraining, and an additional 28 hours and 25 minutes for the experimental runs. The experiments were conducted on a single machine with an Intel i9-9940X CPU, 128GB of RAM, and 4 NVIDIA GeForce RTX 2080 Ti GPUs. Only one GPU was used for the experiments.
+**Disclaimer:** Reproducing the results presented in this paper requires access to proprietary market data and significant computational resources.
+
+* **Hardware Specification:** All computational experiments were conducted on a remote machine equipped with an Intel Core i9-9940X CPU (14 cores, 28 threads, 3.30 GHz base clock), 125 GiB of RAM, and four NVIDIA GeForce RTX 2080 Ti GPUs (each with 11 GiB VRAM). Primary storage consisted of a 1.8 TB NVMe SSD, supplemented by a 3.5 TB HDD for data storage. The machine ran Ubuntu 20.04.6 LTS (Kernel 5.4.0-200-generic).
+
+* **Compute Time:** The synthetic data experiments took approximately 40 hours. The real market data experiments required approximately 22 hours for CNN-LSTM pretraining and an additional 28.5 hours for the experimental runs.
 
 
 ### A. Synthetic Data (Fully Reproducible)
@@ -65,7 +69,7 @@ The main **TTSTL Repository** uses a `credentials.json` file to authenticate wit
 
 **Step 2:** Rename this file to `credentials.json` and place it in the root directory of the `ttstl_repo`.
 
-**Step 3 (CRITICAL):** Open `credentials.json` in a text editor and **add the `bucket_name` field** to the JSON object. This tells the code which bucket to look for.
+**Step 3:** Open `credentials.json` in a text editor and **add the `bucket_name` field** to the JSON object. This tells the code which bucket to look for.
 
 Your final `credentials.json` should look like this (standard GCP fields + `bucket_name`):
 

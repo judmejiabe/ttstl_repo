@@ -9,7 +9,6 @@ dependencies:
   # Core scientific computing stack - exact versions
   - numpy=2.0.2
   - pandas=2.3.1
-  - pyarrow=21.0.0
   - scipy=1.13.1
   
   # Jupyter environment - exact versions
@@ -42,6 +41,7 @@ dependencies:
     # Cloud storage - exact versions
     - google-cloud-storage==3.3.0
     - gcsfs==2025.7.0
+    - pyarrow==18.1.0
     
     # PyTorch ecosystem - keep exact versions with CUDA
     - --extra-index-url https://download.pytorch.org/whl/cu118
