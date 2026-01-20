@@ -17,43 +17,144 @@ This research utilizes two types of data. Please follow the instructions below t
 
 ### 1. Synthetic Data (Fully Reproducible)
 We provide the exact synthetic datasets used in the paper's experiments to ensure reproducibility without re-running the generation simulations.
-* **Download:** [Link to Zenodo Dataset (TBD)]
-* **Generation Source:** The logic for generating this data is available in the auxiliary repository: [`evolving-microstructural-toolkit-data`](https://github.com/judmejiabe/evolving-microstructural-toolkit-data).
-* **Usage:** Extract the downloaded `.parquet` files into `data/synthetic_data/`.
+* **Download:** [https://doi.org/10.5281/zenodo.18304963](https://doi.org/10.5281/zenodo.18304963)
+* **Generation Source:** Alternatively, you can re-generate the data using the codebase in our auxiliary repository: [`evolving-microstructural-toolkit-data`](https://github.com/judmejiabe/evolving-microstructural-toolkit-data).
 
 ### 2. Real Market Data (Proprietary)
-The paper analyzes high-frequency Intel (INTC) Market-by-Order data.
-* **Source:** Raw data must be licensed directly from **[Databento](https://databento.com)**.
-* **Preprocessing:** Raw vendor data must be normalized using the pipeline in our [MeatPy](https://github.com/judmejiabe/meatpy) repository.
-* **Configuration:**
-    1.  Copy `credentials.example.json` to `credentials.json`.
-    2.  Fill in your Google Cloud Storage details or set the `bucket_name` to your local data path if modifying the loader.
+The paper analyzes high-frequency Intel (INTC) Market-by-Order (MBO) data and VIX index data.
+* **MBO Data:** Raw market-by-order data must be licensed directly from **[Databento](https://databento.com)**.
+* **VIX Data:** Volatility index data must be sourced from **[Polygon.io](https://polygon.io)**.
+* **Processing Instructions:** For full instructions on downloading and processing this data, please refer to our dedicated data repository: **[Evolving Microstructural Toolkit Data](https://github.com/judmejiabe/evolving-microstructural-toolkit-data)**.
+
+## 📋 Usage & Reproducibility Notes
+
+To reproduce the results or run the data generation pipeline, you will need to set up authentication for the required data vendors and cloud storage. This section only outlines general guidelines for reproducibility. For detailed instructions, please refer to the `README.md` file in the dedicated data repository **[Evolving Microstructural Toolkit Data](https://github.com/judmejiabe/evolving-microstructural-toolkit-data)**.
+
+### 1. API Key Generation
+The **Data Generation Repository** (`evolving-microstructural-toolkit-data`) requires valid API keys from the following vendors to fetch raw market data.
+
+* **Databento (Market-by-Order Data):**
+    1.  Sign up at [databento.com](https://databento.com).
+    2.  Navigate to **User Profile** > **API Keys**.
+    3.  Create a new API key. You will need this for the `DB_API_KEY` environment variable in the data scripts.
+
+* **Polygon.io (VIX Data):**
+    1.  Sign up at [polygon.io](https://polygon.io).
+    2.  Go to your **Dashboard**.
+    3.  Copy your API Key from the dashboard. You will need this for the `POLYGON_API_KEY` environment variable in the data scripts.
+
+* **Google Cloud Platform (GCS Storage):**
+    1.  Create a new Project in the [Google Cloud Console](https://console.cloud.google.com/).
+    2.  Enable the **Cloud Storage API** for your project.
+    3.  Go to **IAM & Admin** > **Service Accounts** and create a new service account.
+    4.  Grant it the **Storage Object Admin** (or Viewer) role.
+    5.  Go to the **Keys** tab for that service account, click **Add Key** > **Create new key**, and select **JSON**.
+    6.  The JSON key file will automatically download to your computer.
+
+### 2. Configuration (`credentials.json`)
+The main **TTSTL Repository** uses a `credentials.json` file to authenticate with Google Cloud Storage for fetching processed data.
+
+**Step 1:** Locate the GCP Service Account JSON key you downloaded in the previous section.
+
+**Step 2:** Rename this file to `credentials.json` and place it in the root directory of the `ttstl_repo`.
+
+**Step 3 (CRITICAL):** Open `credentials.json` in a text editor and **add the `bucket_name` field** to the JSON object. This tells the code which bucket to look for.
+
+Your final `credentials.json` should look like this (standard GCP fields + `bucket_name`):
+
+```json
+{
+  "type": "service_account",
+  "project_id": "your-gcp-project-id",
+  "private_key_id": "...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "service-account@your-project.iam.gserviceaccount.com",
+  "client_id": "...",
+  "auth_uri": "[https://accounts.google.com/o/oauth2/auth](https://accounts.google.com/o/oauth2/auth)",
+  "token_uri": "[https://oauth2.googleapis.com/token](https://oauth2.googleapis.com/token)",
+  "auth_provider_x509_cert_url": "[https://www.googleapis.com/oauth2/v1/certs](https://www.googleapis.com/oauth2/v1/certs)",
+  "client_x509_cert_url": "...",
+  "universe_domain": "googleapis.com",
+  "bucket_name": "your-target-gcs-bucket-name"
+}
+```
+
+**Note:** Ensure `credentials.json` is listed in your `.gitignore` file to prevent accidentally committing your private keys.
+
+### 💻 3. Data Processing Pipeline
+
+To keep the main repository lightweight, all raw data ingestion, heavy processing, and synthetic data generation are handled by our auxiliary repository. This section outlines the workflow for users who wish to **rebuild the datasets from scratch** instead of using the pre-processed versions.
+
+**🔗 Auxiliary Repository:** [Evolving Microstructural Toolkit Data](https://github.com/judmejiabe/evolving-microstructural-toolkit-data)
+
+> **Note:** The scripts mentioned below reside in the *auxiliary repository*, not this one. You must clone that repo and install its dependencies to proceed.
+
+#### A. Synthetic Data Workflow
+While we recommend downloading the official dataset from [Zenodo](https://doi.org/10.5281/zenodo.18304963) for exact reproducibility, you can generate fresh synthetic data if needed.
+
+1.  **Generate:**
+    * Run `Synthetic_Study/synthetic_data_generator.py`.
+    * This runs a Markovian simulation of the LOB to create event-driven and physical-time datasets saved locally.
+
+2.  **Upload:**
+    * Run `Synthetic_Study/upload_synthetic_data.py`.
+    * This authenticates using your `credentials.json` and pushes the generated files to the `synthetic_data/` folder in your GCS bucket, making them accessible to the TTSTL orchestrator.
+
+#### B. Real Market Data Workflow
+The processing pipeline transforms raw Databento (MBO) and Polygon (VIX) data into the specific parquet format required by TTSTL.
+
+1.  **Download Raw Data:**
+    * Set your environment variables: `DB_API_KEY` (Databento) and `POLYGON_API_KEY` (Polygon).
+    * Run `Data_Download/databento_data_download.py` to fetch high-frequency MBO data.
+    * Run `Data_Download/polygon_data_download.py` to fetch 1-second VIX aggregates.
+
+2.  **Process & Upload:**
+    * Ensure your `credentials.json` (with GCS permissions) is in the root of the data repo.
+    * Run `Market_Data_Processing/data_processor.py`.
+    * **What it does:** This script parses the MBO messages, constructs the Limit Order Book (LOB), synchronizes it with VIX data, calculates micro-returns, and automatically uploads the final `.parquet` files to your Google Cloud Storage bucket.
+
 
 ## 🛠️ Installation
 
-### Option A: Docker (Recommended)
-We provide a containerized environment with exact Python and R versions to prevent dependency issues.
+### Option A: Local Install (Recommended)
+This method is recommended as it allows you to utilize local GPUs for accelerated training. Requires **Python 3.9+** and **R 4.3+**.
 
-```bash
-# Build the image
-docker build -t ttstl .
+1.  **Clone the repository:**
+    ```bash
+    git clone [https://github.com/judmejiabe/ttstl_repo.git](https://github.com/judmejiabe/ttstl_repo.git)
+    cd ttstl_repo
+    ```
 
-# Run the synthetic study reproduction script
-# Mounts the current directory to /app to save outputs locally
-docker run --rm -v $(pwd):/app ttstl python scripts/synthetic_study_experiment.py
-```
-
-### Option B: Local Install
-Requires **Python 3.9+** and **R 4.3+**.
-
-1.  **Create Environment:**
+2.  **Create Environment:**
     ```bash
     conda env create -f environment.yml
     conda activate ttstl_dev
     ```
-2.  **Install Package:**
+
+3.  **Install Package:**
     ```bash
     pip install -e .
+    ```
+
+### Option B: Docker
+We provide a containerized environment with exact Python and R versions to prevent dependency issues.
+
+1.  **Clone the repository:**
+    ```bash
+    git clone [https://github.com/judmejiabe/ttstl_repo.git](https://github.com/judmejiabe/ttstl_repo.git)
+    cd ttstl_repo
+    ```
+
+2.  **Build the image:**
+    ```bash
+    docker build -t ttstl .
+    ```
+
+3.  **Run experiments:**
+    ```bash
+    # Run the synthetic study reproduction script
+    # Mounts the current directory to /app to save outputs locally
+    docker run --rm -v $(pwd):/app ttstl python scripts/synthetic_study_experiment.py
     ```
 
 ## 🚀 Quick Start
