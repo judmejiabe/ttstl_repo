@@ -4,12 +4,24 @@ FROM mambaorg/micromamba:1.5.1
 # Set working directory
 WORKDIR /app
 
-# Copy the environment file
+# Copy the environment file(s)
 COPY --chown=$MAMBA_USER:$MAMBA_USER environment.yml /tmp/env.yaml
+COPY --chown=$MAMBA_USER:$MAMBA_USER environment_relaxed.yml /tmp/env_relaxed.yaml
 
-# Install dependencies defined in environment.yml
-# This handles Python 3.9, R 4.3.3, PyTorch, and R packages (rugarch, etc.) together
-RUN micromamba install -y -n base -f /tmp/env.yaml && \
+# Install dependencies with simplified failover
+RUN \
+    echo "⬇️  Attempting exact installation from environment.yml..." && \
+    if micromamba install -y -n base -f /tmp/env.yaml; then \
+    echo "✅ Exact installation succeeded!"; \
+    else \
+    echo "⚠️  Exact installation failed (likely due to platform-specific build strings)." && \
+    echo "⬇️  Attempting installation from environment_relaxed.yml..." && \
+    if micromamba install -y -n base -f /tmp/env_relaxed.yaml; then \
+    echo "✅ Relaxed installation succeeded!"; \
+    else \
+    echo "❌ All installation attempts failed." && exit 1; \
+    fi; \
+    fi && \
     micromamba clean --all --yes
 
 # Activate the environment for all subsequent commands
@@ -19,7 +31,6 @@ ARG MAMBA_DOCKERFILE_ACTIVATE=1
 COPY --chown=$MAMBA_USER:$MAMBA_USER . .
 
 # Install the local package in editable mode
-# We use --no-deps because micromamba already handled dependencies
 RUN pip install --no-deps -e .
 
 # Set environment variables

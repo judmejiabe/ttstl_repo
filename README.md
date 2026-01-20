@@ -128,7 +128,7 @@ The processing pipeline transforms raw Databento (MBO) and Polygon (VIX) data in
 ## 🛠️ Installation
 
 ### Option A: Local Install (Recommended)
-This method is recommended as it allows you to utilize local GPUs for accelerated training. Requires **Python 3.9+** and **R 4.3+**.
+This method is recommended as it allows you to utilize local GPUs for accelerated training and is best for development. Requires **Python 3.9+** and **R 4.3+**.
 
 1.  **Clone the repository:**
     ```bash
@@ -137,12 +137,31 @@ This method is recommended as it allows you to utilize local GPUs for accelerate
     ```
 
 2.  **Create Environment:**
+    The repository includes two environment files. Choose the one that fits your needs:
+
+    * **Option A.1: Exact Reproduction (Linux/x86_64 only)**
+        Use `environment.yml`. This file contains the exact package build strings used in the paper's experiments. It guarantees identical numerical results but is **platform-specific** and may fail on your system.
+        ```bash
+        conda env create -f environment.yml
+        ```
+
+    * **Option A.2: Relaxed Install (macOS/Windows/General)**
+        Use `environment_relaxed.yml`. This file maintains the same software versions but removes platform-specific build constraints (e.g., specific CUDA drivers or Linux binaries). Use this if Option A.1 fails. Results may not be identical to the paper if using this option.
+        ```bash
+        conda env create -f environment_relaxed.yml
+        ```
+
+3.  **Activate & Install:**
+    Activate the environment corresponding to your choice in Step 2:
     ```bash
-    conda env create -f environment.yml
+    # If you used Option A.1 (environment.yml)
     conda activate ttstl_dev
+    
+    # OR if you used Option A.2 (environment_relaxed.yml)
+    conda activate ttstl_relaxed
     ```
 
-3.  **Install Package:**
+    Then install the package in editable mode:
     ```bash
     pip install -e .
     ```
@@ -157,10 +176,17 @@ We provide a containerized environment with exact Python and R versions to preve
     ```
 
 2.  **Build the image:**
+    The Dockerfile is configured to attempt an exact installation first and fall back to a relaxed configuration if necessary.
     ```bash
     docker build -t ttstl .
     ```
 
+3.  **Run experiments:**
+    ```bash
+    # Run the synthetic study reproduction script
+    # Mounts the current directory to /app to save outputs locally
+    docker run --rm -v $(pwd):/app ttstl python scripts/synthetic_study_experiment.py
+    ```
 
 ## 📂 Repository Structure
 
