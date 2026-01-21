@@ -165,4 +165,5 @@ scripts/market_data_concurrent_cnn_lstm_pretraining.py
 !outputs/analysis_synthetic_data_experiment_results/*.csv
 experiments_market_data/*.pth
 experiments_market_data/*.json
+outputs/cnn_lstm_pretraining_market_data
 environment_test.yml
