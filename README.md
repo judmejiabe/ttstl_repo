@@ -152,9 +152,9 @@ Your final `credentials.json` should look like this (standard GCP fields + `buck
   "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
   "client_email": "service-account@your-project.iam.gserviceaccount.com",
   "client_id": "...",
-  "auth_uri": "[https://accounts.google.com/o/oauth2/auth](https://accounts.google.com/o/oauth2/auth)",
-  "token_uri": "[https://oauth2.googleapis.com/token](https://oauth2.googleapis.com/token)",
-  "auth_provider_x509_cert_url": "[https://www.googleapis.com/oauth2/v1/certs](https://www.googleapis.com/oauth2/v1/certs)",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
   "client_x509_cert_url": "...",
   "universe_domain": "googleapis.com",
   "bucket_name": "your-gcs-bucket-name"
@@ -200,10 +200,10 @@ conda activate data_env
 #### Synthetic Data Workflow
 
 **Option A: Download Official Data (Recommended)**
-We recommend downloading the official dataset from [Zenodo](https://doi.org/10.5281/zenodo.18304963) for exact reproducibility. Download the dataset from [https://doi.org/10.5281/zenodo.18304963](https://doi.org/10.5281/zenodo.18304963). Unzip the downloaded file and place its contents in the `data.nosync` directory at the root of the `evolving-microstructural-toolkit-data` repository.
+We recommend downloading the official dataset from [Zenodo](https://doi.org/10.5281/zenodo.18304963) for exact reproducibility. Download the dataset from [https://doi.org/10.5281/zenodo.18304963](https://doi.org/10.5281/zenodo.18304963). Unzip the downloaded file and place its contents in the `data.nosync/Recorded_Synthetic_Data` directory at the root of the `evolving-microstructural-toolkit-data` repository.
 
-**Option B: Generate & Upload**
-If you wish to generate fresh synthetic data.  Run `Synthetic_Study/synthetic_data_generator.py`. This runs the Markovian simulation of the LOB outlined in the **Synthetic Study** section of the paper to create event-driven and physical-time datasets saved locally.
+**Option B: Generate Fresh Data**
+If you wish to generate fresh synthetic data.  Run `Synthetic_Study/synthetic_data_generator.py`. This runs the Markovian simulation of the LOB outlined in the **Synthetic Study** section of the paper to create event-driven and physical-time datasets saved locally. This will generate different datasets than the ones provided in the Zenodo repository.
 
 After executing either of these options, run `Synthetic_Study/upload_synthetic_data.py`. This authenticates using your `credentials.json` and pushes the generated files to the `synthetic_data/` folder in your GCS bucket, making them accessible to the TTSTL orchestrator.
 
