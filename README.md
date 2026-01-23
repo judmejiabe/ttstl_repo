@@ -234,11 +234,14 @@ The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data in
     ```bash
     python scripts/synthetic_study_experiment.py
     ```
+    *   **Output**: Experiment results and model checkpoints are saved in `outputs/runs/`.
+    *   **Logs**: Comprehensive logs are saved to `logs/synthetic_study_<timestamp>.log`.
 
 2.  **Analyze Results**: Execute the analysis script to generate the rankings (Table 2) and RelMAE plots:
     ```bash
     python scripts/synthetic_study_analysis.py
     ```
+    *   **Output**: Plots and rankings are saved in `outputs/analysis_synthetic_data_experiment_results/`.
 
 #### Market Data Study
 
@@ -246,23 +249,27 @@ The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data in
     ```bash
     python scripts/market_data_cnn_lstm_pretraining.py
     ```
+    *   **Output**: Pretrained models are saved in `outputs/models/`.
 
 2.  **Run Experiments**: Run the recursive forecasting experiments on the INTC dataset using the pretrained backbone:
     ```bash
     python scripts/market_data_experiments.py
     ```
+    *   **Output**: Experiment results are saved in `outputs/runs/`.
+    *   **Logs**: Comprehensive logs are saved to `logs/market_data_experiments_<type>_<timestamp>.log`.
 
 3.  **Analyze Results**: Generate the performance boxplots and statistics:
     ```bash
     python scripts/analyze_market_data_experiment_results.py
     ```
+    *   **Output**: Boxplots and statistics are saved in `outputs/analysis_market_data_experiment_results/`.
 
 ## 📂 Repository Structure
 
 * `manuscript/`: Contains the research paper and supplementary materials in LaTeX format.
 * `outputs/`: Directory for storing experiment outputs and post-processing results.
-    * `analysis_market_data_experiment_results/`: Analysis of market data experiments results.
-    * `analysis_synthetic_data_experiment_results/`: Analysis of synthetic data experiments results.
+    * `analysis_market_data_experiment_results/`: Original analysis of market data experiments results.
+    * `analysis_synthetic_data_experiment_results/`: Original analysis of synthetic data experiments results.
 * `src/ttstl/`: Core package source code.
     * `adapter.py`: Adapter module implementation (Volatility modeling & Probabilistic forecasting, see image in the Architecture section).
     * `backbone.py`: Backbone module implementation (Deep learning feature extractor, see image in the Architecture section).
