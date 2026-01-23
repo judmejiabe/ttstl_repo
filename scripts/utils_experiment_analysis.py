@@ -16,6 +16,7 @@ import json
 import logging
 import re
 import traceback
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -50,7 +51,7 @@ class ExperimentMetadata:
     run_dir: Path
     
     # GCS data paths (optional - for data loading)
-    gcs_bucket: str = 'evolving-microstructural-tk-data'
+    gcs_bucket: Optional[str] = None
     gcs_credentials_path: str = 'credentials.json'
     gcs_ed_global_path: Optional[str] = None  # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_0.parquet'
     gcs_ptd_global_path: Optional[str] = None  # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_0.parquet'
@@ -59,6 +60,42 @@ class ExperimentMetadata:
     
     # Cached configuration (loaded on demand)
     _config: Optional[Dict[str, Any]] = field(default=None, repr=False, init=False)
+
+    def __post_init__(self):
+        """Initialize GCS bucket if not provided."""
+        if self.gcs_bucket is None:
+            # Strict loading from credentials.json
+            bucket_name = None
+            
+            creds_path = Path(self.gcs_credentials_path)
+            if not creds_path.exists():
+                    # Try finding it relative to project root if simple path fails
+                    # Just a best-effort check if we are deep in directories
+                    project_root = Path(__file__).resolve().parent.parent.parent
+                    alt_path = project_root / 'credentials.json'
+                    if alt_path.exists():
+                        creds_path = alt_path
+                        self.gcs_credentials_path = str(alt_path)
+
+            if creds_path.exists():
+                try:
+                    with open(creds_path, 'r') as f:
+                        creds = json.load(f)
+                        bucket_name = creds.get('bucket_name')
+                except Exception as e:
+                    logging.error(f"Failed to read credentials.json: {e}")
+                    raise ValueError(f"Failed to read credentials.json: {e}. Please ensure it is a valid JSON file.")
+            
+            if not bucket_name:
+                error_msg = (
+                    f"Could not find 'bucket_name' in {self.gcs_credentials_path}. "
+                    "The credentials.json file must contain a 'bucket_name' key. "
+                    "Please refer to the 'Credentials Configuration' section in README.md."
+                )
+                logging.error(error_msg)
+                raise ValueError(error_msg)
+            
+            self.gcs_bucket = bucket_name
     
     def get_config(self) -> Dict[str, Any]:
         """

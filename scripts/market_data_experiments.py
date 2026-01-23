@@ -16,326 +16,31 @@ import torch
 from ttstl import orchestrator
 from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 from ttstl.utils.data_downloader import import_to_pandas
+from ttstl.utils.experiment_utils import (
+    setup_experiment_logging,
+    set_trained_model_to_orchestrator,
+    log_orchestrator_config,
+    get_base_config,
+    get_experiment_configs,
+    create_experiment_config,
+    load_date_data,
+    load_pretrained_model_for_experiments
+)
 
-# Import CNN-LSTM pretraining functions
-from market_data_cnn_lstm_pretraining import load_pretrained_model, load_full_pretrained_setup
 
 
-def setup_logging(past_returns=False):
-    """Setup logging to see orchestrator operations."""
-    
-    # Create logs directory
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    
-    # Create log filename with timestamp and experiment type
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    experiment_suffix = "_concurrent" if past_returns else "_future"
-    log_file = log_dir / f"market_data_experiments{experiment_suffix}_{timestamp}.log"
-    
-    # Configure logging to both console and file
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),  # Write to file
-            logging.StreamHandler()         # Also show in terminal
-        ]
-    )
-    
-    experiment_type = "CONCURRENT RETURNS" if past_returns else "FUTURE RETURNS"
-    print(f"📝 {experiment_type} logs will be saved to: {log_file}")
 
-def set_trained_model_to_orchestrator(orchestrator_obj, trained_model):
-    """
-    Set the trained CNN-LSTM model to all backbone bars in the orchestrator.
-    
-    Args:
-        orchestrator_obj: TTSTL Orchestrator instance
-        trained_model: Trained CNN-LSTM model
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Setting trained CNN-LSTM model to orchestrator backbone bars")
-    
-    # Access the stacks from the orchestrator
-    if not hasattr(orchestrator_obj, 'stacks') or not orchestrator_obj.stacks:
-        logger.error("Orchestrator has no initialized stacks")
-        return
-    
-    # Set the trained model to each backbone through stacks -> interface -> backbone
-    models_set = 0
-    for stack_key, stack in orchestrator_obj.stacks.items():
-        logger.info(f"Setting trained model to backbone in stack {stack_key}")
-        
-        try:
-            # Access backbone through: stack (adapter) -> interface -> backbone
-            backbone = stack.interface.backbone
-            
-            # Get the target device (where the backbone's current model is)
-            target_device = backbone.device
-            
-            # Create an independent copy of the trained model for this backbone
-            # This prevents cross-training issues between different backbone bars
-            independent_model = copy.deepcopy(trained_model)
-            
-            # Move the copied model to the target device to ensure consistency
-            independent_model = independent_model.to(target_device)
-            
-            # Set the model - this is the only attribute the backbone actually has
-            backbone.model = independent_model
-            
-            # Mark backbone as having a pretrained model
-            backbone.pretrained = True
-            
-            models_set += 1
-            logger.debug(f"Successfully set trained model to backbone in {stack_key} on device {target_device}")
-            
-        except Exception as e:
-            logger.error(f"Failed to set trained model to backbone in {stack_key}: {str(e)}")
-    
-    logger.info(f"Trained model set to {models_set} backbone bars (independent copies)")
 
-def log_orchestrator_config(cfg: OrchestratorConfig):
-    """Log the orchestrator configuration in a readable format."""
-    logger = logging.getLogger(__name__)
-    
-    logger.info("=" * 80)
-    logger.info("Orchestrator configuration")
-    logger.info("=" * 80)
-    
-    # Convert config to dictionary for easy logging
-    config_dict = cfg.__dict__ if hasattr(cfg, '__dict__') else vars(cfg)
-    
-    for key, value in config_dict.items():
-        if isinstance(value, (list, tuple)) and len(value) > 10:
-            # For long lists/tuples, show only first few and last few elements
-            logger.info(f"{key}: [{value[0]}, {value[1]}, ..., {value[-2]}, {value[-1]}] (length: {len(value)})")
-        else:
-            logger.info(f"{key}: {value}")
-    
-    logger.info("=" * 80)
 
-def get_base_config():
-    """Get the base configuration that will be modified for each experiment."""
-    return OrchestratorConfig(
-        # General settings (same as market_data_ttstl_test)
-        ticker='INTC',
-        bdelta=7_200 * 1_000_000_000.0,  # Two hours
-        adelta=600 * 1_000_000_000.0,    # Ten minutes
-        sdelta=2 * 1_000_000_000.0,    # 2 seconds
-        seed=19991810,
-        session_start=35_100 * 1_000_000_000.0,  # 9:45 AM in nanoseconds
-        session_finish=56_700 * 1_000_000_000.0,  # 15:45 PM in nanoseconds
-        target_col_name='micro_return',
-        
-        # Backbone knobs (will be modified per experiment)
-        parsimonious_mode=False,  # Default full mode
-        neural_covariates_only=False,
-        manual_covariates_only=False,
-        past_returns=False,  # Default to future returns (will be overridden if needed)
-        epochs=10,  # Increased for proper training on May data
-        batch_size=32,
-        validation_proportion_backbone=0.1,
-        buffer_proportion=0.05,
-        adf_rejection_rate_threshold=0.8,
-        kpss_verification_threshold=0.2,
-        na_verification_threshold=0.2,
-        learning_rate=0.0001,
-        correlation_threshold=0.95,
-        
-        # Preprocessing components for lookahead bias prevention
-        pretrained_scaler=None,      # Will be set when loading pretrained model
-        lower_bounds=None,           # Will be set when loading pretrained model
-        upper_bounds=None,           # Will be set when loading pretrained model
 
-        # Interface knobs (same as market_data_ttstl_test)
-        user_defined_variables=None,  # Will be modified per experiment
-        second_stage_mse=False,
-        alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
-        lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
-        tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
-        lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
-        validation_proportion_interface=0.2,
-        selection_threshold=0.29,  # L = 12, alpha = 0.00005
-        tolerance_threshold=1e-6,
-        ols_significance_level=0.05,
-        wald_significance_level=0.05,
-        n_lags=5,
 
-        # Adapter knobs (based on synthetic study results)
-        update_method='exponential_smoothing',
-        arma_order=(0, 1),
-        garch_order=(1, 1),
-        dist='nig',
-        model='eGARCH',
-        archm=False,
-        update_parameters={'alpha': 0.1},
-        compare_with_cnn_lstm=True  # Enable comparison with raw CNN-LSTM outputs
-    )
 
-def get_experiment_configs():
-    """Get configurations for covariate experiments based on synthetic study."""
-    return {
-        '01': {
-            'description': 'Full mode (all covariates, parsimonious_mode=False)',
-            'run_id': 'ES010_01',
-            'parsimonious_mode': False,
-            'neural_covariates_only': False,
-            'manual_covariates_only': False,
-            'epochs': 10,
-            'user_defined_variables': None,
-            'arma_order': (0, 1)
-        },
-        '02': {
-            'description': 'Parsimonious mode (all covariates, parsimonious_mode=True)',
-            'run_id': 'ES010_02',
-            'parsimonious_mode': True,
-            'neural_covariates_only': False,
-            'manual_covariates_only': False,
-            'epochs': 0,
-            'user_defined_variables': None,
-            'arma_order': (0, 1)
-        },
-        '03': {
-            'description': 'Manual covariates only (no neural network training)',
-            'run_id': 'ES010_03',
-            'parsimonious_mode': False,
-            'neural_covariates_only': False,
-            'manual_covariates_only': True,
-            'epochs': 0,
-            'user_defined_variables': None,
-            'arma_order': (0, 1)
-        },
-        '04': {
-            'description': 'Neural covariates only (no manual features)',
-            'run_id': 'ES010_04',
-            'parsimonious_mode': False,
-            'neural_covariates_only': True,
-            'manual_covariates_only': False,
-            'epochs': 0,
-            'user_defined_variables': None,
-            'arma_order': (0, 1)
-        },
-        '05': {
-            'description': 'Only forward_pass_0 as an user defined covariate (relaxed KPSS for less stationary forward_pass)',
-            'run_id': 'ES010_05',
-            'parsimonious_mode': True,
-            'neural_covariates_only': True,
-            'manual_covariates_only': False,
-            'epochs': 0,
-            'user_defined_variables': ['forward_pass_0'],
-            'arma_order': (0, 1),
-            'kpss_verification_threshold': 0.8  # Relaxed threshold for forward_pass (tends to be less stationary compared to synthetic study)
-        },
-        '06': {
-            'description': 'Locally Adapting ARMA-GARCH model (no covariates)',
-            'run_id': 'ES010_06',
-            'parsimonious_mode': True,
-            'neural_covariates_only': False,
-            'manual_covariates_only': False,
-            'epochs': 0,
-            'user_defined_variables': [],
-            'arma_order': (0, 1)
-        }
-    }
 
-def create_experiment_config(base_config, exp_config):
-    """Create a configuration for a specific experiment."""
-    config = OrchestratorConfig(**vars(base_config))
-    
-    # Apply experiment-specific configuration
-    config.run_id = exp_config['run_id']
-    config.parsimonious_mode = exp_config['parsimonious_mode']
-    config.neural_covariates_only = exp_config['neural_covariates_only']
-    config.manual_covariates_only = exp_config['manual_covariates_only']
-    config.epochs = exp_config['epochs']
-    config.user_defined_variables = exp_config['user_defined_variables']
-    config.arma_order = exp_config['arma_order']
-    
-    # Apply optional configuration overrides if present
-    if 'kpss_verification_threshold' in exp_config:
-        config.kpss_verification_threshold = exp_config['kpss_verification_threshold']
-    
-    return config
 
-def load_date_data(date_str, ticker="INTC", past_returns=False):
-    """
-    Load data for a specific date, dynamically resolving the GCS bucket.
-    Priority: 1. Environment Var -> 2. credentials.json -> 3. Hardcoded Default
-        
-    Args:
-        date_str: Date string in format MMDDYYYY (e.g., "06032024")
-        ticker: Stock ticker
-        past_returns: If True, compute past returns instead of future returns
-        
-    Returns:
-        Tuple of (ed_df, ptd_df) or (None, None) if loading fails
-    """
-    logger = logging.getLogger(__name__)
-    
-    credentials_path = 'credentials.json'
-    
-    # 1. Try Environment Variable (Best Practice)
-    bucket_name = os.environ.get('GCS_BUCKET_NAME')
-    
-    # 2. Try loading from credentials.json (Convenience)
-    if not bucket_name and os.path.exists(credentials_path):
-        try:
-            with open(credentials_path, 'r') as f:
-                creds = json.load(f)
-                bucket_name = creds.get('bucket_name')
-        except Exception as e:
-            logger.debug(f"Could not read bucket_name from credentials: {e}")
 
-    # 3. Fallback to default (Legacy)
-    if not bucket_name:
-        bucket_name = 'evolving-microstructural-tk-data'
-        logger.info(f"Using default bucket: {bucket_name}")
-    else:
-        logger.info(f"Using configured bucket: {bucket_name}")
 
-    gcs_market_data_folder = 'market_data/'
-    
-    try:
-        # Load event driven data
-        ed_blob_name = f"{gcs_market_data_folder}{date_str}_{ticker}_event_driven_recorded_lob.parquet"
-        ed_df = import_to_pandas(
-            blob_name=ed_blob_name,
-            credentials_path=credentials_path,
-            bucket_name=bucket_name
-        )
-        
-        # Load physical time driven data
-        ptd_blob_name = f"{gcs_market_data_folder}{date_str}_{ticker}_physical_time_driven_recorded_data.parquet"
-        ptd_df = import_to_pandas(
-            blob_name=ptd_blob_name,
-            credentials_path=credentials_path,
-            bucket_name=bucket_name
-        )
-        
-        # Handle timestamp index/column conversion for PTD data
-        if ptd_df.index.name == 'timestamp' or 'timestamp' in ptd_df.index.names:
-            ptd_df = ptd_df.reset_index()
-        
-        # Calculate micro returns based on experiment type
-        ptd_df['micro_return'] = ptd_df['micro'].pct_change() * 1e3
-        
-        if past_returns:
-            # For concurrent returns: no shift needed, delete first observation
-            ptd_df = ptd_df.iloc[1:]
-            logger.info(f"Computed concurrent (past) returns for {date_str}")
-        else:
-            # For future returns: shift by -1, delete last observation
-            ptd_df['micro_return'] = ptd_df['micro_return'].shift(-1)
-            ptd_df = ptd_df.iloc[:-1]
-            logger.info(f"Computed future returns for {date_str}")
-        
-        logger.info(f"Loaded {date_str} data: ED {ed_df.shape}, PTD {ptd_df.shape}")
-        return ed_df, ptd_df
-        
-    except Exception as e:
-        logger.warning(f"Could not load data for {date_str}: {str(e)}")
-        return None, None
+
+
 
 def run_single_date_pair_experiment(config, global_date, local_date, runs_dir, base_orchestrator=None, previous_orchestrator=None, trained_model=None, past_returns=False):
     """
@@ -658,57 +363,7 @@ def run_independent_ttstl_experiments(base_config, experiment_configs, runs_dir,
     logger.info(f"Results saved to: {runs_dir}")
     logger.info("=" * 100)
 
-def load_pretrained_model_for_experiments(pretraining_dir):
-    """
-    Load a pretrained CNN-LSTM model and preprocessing components for use in TTSTL experiments.
-    
-    Args:
-        pretraining_dir: Path to the directory containing the pretrained model files.
-                        Should contain .pth, _bounds.json, and _metadata.json files.
-        
-    Returns:
-        Tuple of (trained_model, scaler, lower_bounds, upper_bounds) or None if loading fails
-    """
-    logger = logging.getLogger(__name__)
-    
-    try:
-        pretraining_dir = Path(pretraining_dir)
-        
-        if not pretraining_dir.exists():
-            logger.error(f"Pretraining directory not found: {pretraining_dir}")
-            logger.info("Please provide a valid pretraining directory path")
-            return None
-        
-        # Find the .pth file in the directory
-        model_files = list(pretraining_dir.glob("*.pth"))
-        if not model_files:
-            logger.error(f"No pretrained model files (.pth) found in {pretraining_dir}")
-            logger.info("Please ensure the directory contains a pretrained model")
-            return None
-        
-        if len(model_files) > 1:
-            logger.warning(f"Multiple .pth files found in {pretraining_dir}, using the first one")
-        
-        # Use the first model file found
-        model_path = model_files[0]
-        logger.info(f"Using pretrained model: {model_path}")
-        
-        # Extract directory and model name from the full path
-        experiments_dir = model_path.parent
-        model_name = model_path.stem  # Gets filename without .pth extension
-        
-        # Load the complete pretrained setup (model + preprocessing components)
-        trained_model, scaler, lower_bounds, upper_bounds = load_full_pretrained_setup(
-            experiments_dir, model_name
-        )
-        logger.info(f"Successfully loaded pretrained CNN-LSTM model and preprocessing components from {pretraining_dir}")
-        
-        return trained_model, scaler, lower_bounds, upper_bounds
-        
-    except Exception as e:
-        logger.error(f"Failed to load pretrained model and preprocessing components: {str(e)}")
-        logger.info("Please ensure the directory contains valid pretrained model files")
-        return None
+
 
 def main(past_returns=False):
     """
@@ -737,7 +392,7 @@ def main(past_returns=False):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    setup_logging(past_returns)
+    setup_experiment_logging("market_data_experiments", past_returns)
     logger = logging.getLogger(__name__)
     logger.info(f"Starting market data TTSTL experiments for INTC with {experiment_type}")
     logger.info(f"Global random seed set to: {SEED}")

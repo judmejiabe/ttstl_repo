@@ -159,7 +159,10 @@ analysis_outputs/
 examine_artifacts.py
 
 # Local tests
-tests/
+tests/compare_model_weights.py
+tests/test_cnn_lstm_parameter_count.py
+tests/test_cnn_lstm_parameter_summary.py
+zenodo_entry.html
 scripts/market_data_concurrent_cnn_lstm_pretraining.py
 !outputs/analysis_market_data_experiment_results/*.csv
 !outputs/analysis_synthetic_data_experiment_results/*.csv

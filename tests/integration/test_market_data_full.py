@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 import logging
 import random
@@ -14,7 +15,7 @@ from ttstl.orchestrator import Orchestrator, OrchestratorConfig
 from ttstl.utils.data_downloader import import_to_pandas
 
 # Import necessary methods from market_data_experiments script
-from market_data_experiments import (
+from ttstl.utils.experiment_utils import (
     log_orchestrator_config,
     load_date_data,
     set_trained_model_to_orchestrator,
@@ -172,7 +173,8 @@ def plot_microreturns_analysis(ptd_df: pd.DataFrame, session_start: float, sessi
     finally:
         plt.close(fig)
 
-def main():
+@pytest.mark.comprehensive
+def test_market_data_full():
     """
     Main function to test the market data TTSTL system with a single date pair.
     
@@ -235,7 +237,7 @@ def main():
     cfg.parsimonious_mode = True
     cfg.neural_covariates_only = True
     cfg.manual_covariates_only = False
-    cfg.epochs = 1 
+    cfg.epochs = 2 
     cfg.user_defined_variables = ['forward_pass_0']
     cfg.arma_order = (0, 1)
     cfg.kpss_verification_threshold = 0.8  # Relaxed threshold for forward_pass
@@ -310,4 +312,4 @@ def main():
     logger.info("=" * 80)
 
 if __name__ == "__main__":
-    main()
+    test_market_data_full()

@@ -224,9 +224,26 @@ The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data in
 
 2.  **Process & Upload:**
     * Ensure your `credentials.json` (with GCS permissions) is in the root of the data repo.
-    * Run `Market_Data_Processing/data_processor.py`. This script parses the MBO messages, constructs the Limit Order Book (LOB), synchronizes it with VIX data, calculates micro-returns, and automatically uploads the final `.parquet` files to your Google Cloud Storage bucket. This process is computationally expensive and can take multiple days to complete. We recommend running this process in the background.
+    * Run `Market_Data_Processing/data_processor.py`. This script parses the MBO messages, constructs the Limit Order Book (LOB), synchronizes it with VIX data, calculates micro-returns, and automatically uploads the final `.parquet` files to your Google Cloud Storage bucket. This process is computationally expensive and can take multiple hours to complete. We recommend running this process in the background.
 
-### 🧪🧪 4. Reproduction Steps
+### 🧪 4. Verification
+
+We provide a test suite to verify the installation and codebase integrity. The tests are divided into two tiers:
+
+*   **Lightweight Tests**: Fast sanity checks to ensure the environment path and basic imports are working.
+*   **Comprehensive Tests**: Full-pipeline experiments that replicate the paper's results to ensure end-to-end correctness. These can take 30+ minutes.
+
+**Run lightweight tests (Recommended):**
+```bash
+pytest -m lightweight
+```
+
+**Run comprehensive suite:**
+```bash
+pytest -m comprehensive
+```
+
+### 🧪🧪 5. Reproduction Steps
 
 #### Synthetic Study
 
@@ -284,19 +301,22 @@ The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data in
     * `analyze_synthetic_data_experiment_results.py`: Post-processing and visualization for synthetic experiments.
     * `market_data_cnn_lstm_pretraining.py`: Script for pretraining the CNN-LSTM backbone on market data.
     * `market_data_experiments.py`: Main script for Intel (INTC) market data experiments.
-    * `market_data_ttstl_test.py`: Test script for market data experiments (single date pair).
     * `synthetic_study_analysis.py`: Analysis script for synthetic study results (RelMAE plots, rankings).
     * `synthetic_study_experiment.py`: Main script for synthetic data experiments.
-    * `synthetic_study_test.py`: Test script for synthetic data experiments.
     * `utils_experiment_analysis.py`: Unified framework for analyzing experiment results.
 * `docs/`: Additional documentation and guides.
+* `tests/`: Test suite for the project.
+    * `integration/`: Integration tests and full reproduction scripts.
+    * `unit/`: Unit tests for package import and basic functionality.
 * `environment.yml`: Conda environment specification file.
 * `Dockerfile`: Docker container build configuration.
 * `CITATION.cff`: Citation metadata.
+* `CONTRIBUTING.md`: Development and testing guidelines.
 * `credentials.example.json`: Template for GCP credentials.
 * `LICENSE`: License text.
 * `pyproject.toml`: Build system requirements and dependencies.
 * `README.md`: The file you are reading.
+* `setup.py`: Package installation script.
 
 ## 🔗 Citation
 If you use this code in your research, please cite the following working paper:

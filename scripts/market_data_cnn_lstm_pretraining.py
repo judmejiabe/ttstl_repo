@@ -4,6 +4,7 @@ import json
 import logging
 import pickle
 import random
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -78,8 +79,32 @@ def load_may_training_data():
     logger = logging.getLogger(__name__)
     logger.info("Loading May 2024 event-driven training data for INTC")
     
+    # Locate credentials.json
     credentials_path = 'credentials.json'
-    bucket_name = 'evolving-microstructural-tk-data'
+    if not os.path.exists(credentials_path):
+        project_root = Path(__file__).resolve().parent.parent.parent
+        credentials_path = project_root / 'credentials.json'
+
+    # Strict loading from credentials.json
+    bucket_name = None
+    if os.path.exists(credentials_path):
+        try:
+            with open(credentials_path, 'r') as f:
+                creds = json.load(f)
+                bucket_name = creds.get('bucket_name')
+        except Exception as e:
+            logger.error(f"Failed to read credentials.json: {e}")
+            raise ValueError(f"Failed to read credentials.json: {e}. Please ensure it is a valid JSON file.")
+
+    if not bucket_name:
+        error_msg = (
+            f"Could not find 'bucket_name' in {credentials_path}. "
+            "The credentials.json file must contain a 'bucket_name' key. "
+            "Please refer to the 'Credentials Configuration' section in README.md."
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
     gcs_market_data_folder = 'market_data/'
 
     # Get May 2024 trading days that satisfy inclusion criteria (revised)
@@ -102,7 +127,7 @@ def load_may_training_data():
             ed_blob_name = f"{gcs_market_data_folder}{date_str}_INTC_event_driven_recorded_lob.parquet"
             ed_df = import_to_pandas(
                 blob_name=ed_blob_name,
-                credentials_path=credentials_path,
+                credentials_path=str(credentials_path),
                 bucket_name=bucket_name
             )
             

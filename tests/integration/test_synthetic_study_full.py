@@ -1,6 +1,9 @@
+import pytest
 from pathlib import Path
 import logging
 from datetime import datetime
+import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -46,14 +49,37 @@ def load_synthetic_data(id : int = 0):
     logger = logging.getLogger(__name__)
     logger.info("Loading synthetic data")
     
+    # Locate credentials.json
     credentials_path = 'credentials.json'
-    bucket_name = 'evolving-microstructural-tk-data'
+    if not os.path.exists(credentials_path):
+        project_root = Path(__file__).resolve().parent.parent.parent
+        credentials_path = project_root / 'credentials.json'
+
+    # Strict loading from credentials.json
+    bucket_name = None
+    if os.path.exists(credentials_path):
+        try:
+            with open(credentials_path, 'r') as f:
+                creds = json.load(f)
+                bucket_name = creds.get('bucket_name')
+        except Exception as e:
+            logger.error(f"Failed to read credentials.json: {e}")
+            raise ValueError(f"Failed to read credentials.json: {e}. Please ensure it is a valid JSON file.")
+
+    if not bucket_name:
+        error_msg = (
+            f"Could not find 'bucket_name' in {credentials_path}. "
+            "The credentials.json file must contain a 'bucket_name' key. "
+            "Please refer to the 'Credentials Configuration' section in README.md."
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
     gcs_synthetic_data_folder = 'synthetic_data/'
 
     ed_df = import_to_pandas(blob_name = gcs_synthetic_data_folder + \
                                  f"08042025_long_event_driven_recorded_lob_{id}.parquet",
-                                 credentials_path=credentials_path,
+                                 credentials_path=str(credentials_path),
                                  bucket_name=bucket_name)
     
     # Filter for testing purposes
@@ -68,7 +94,7 @@ def load_synthetic_data(id : int = 0):
 
     ptd_df = import_to_pandas(blob_name = gcs_synthetic_data_folder + \
                                  f"08042025_long_physical_time_driven_recorded_data_{id}.parquet",
-                                 credentials_path=credentials_path,
+                                 credentials_path=str(credentials_path),
                                  bucket_name=bucket_name)
 
     # Check if timestamp is an index and convert to column if needed
@@ -116,7 +142,8 @@ def log_orchestrator_config(cfg: OrchestratorConfig):
     
     logger.info("=" * 80)
 
-def main():
+@pytest.mark.comprehensive
+def test_synthetic_study_full():
     """
     Main function to orchestrate the synthetic study.
     """
@@ -167,7 +194,7 @@ def main():
         neural_covariates_only=False,
         manual_covariates_only=False,
         #epochs=5,
-        epochs=1,  # For testing purposes 
+        epochs=2,  # For testing purposes 
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
@@ -225,4 +252,4 @@ def main():
     print("🛬 Finishing synthetic study...")
 
 if __name__ == "__main__":
-    main()
+    test_synthetic_study_full()
