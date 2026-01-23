@@ -29,8 +29,8 @@ We provide the exact synthetic datasets used in the paper's experiments to ensur
 
 ### Real Market Data (Proprietary)
 The paper analyzes high-frequency Intel (INTC) Market-by-Order (MBO) data and VIX index data.
-* **MBO Data:** Raw market-by-order data must be licensed directly from **[Databento](https://databento.com)**. As of January 21st, 2026, **Databento** offer 125 USD in free credits towards subscription plans which suffices to acquire the data required for the experiments in this paper.
-* **VIX Data:** Volatility index data must be sourced from **[Massive.com](https://massive.com)**. Previously known as **[Polygon.io](https://polygon.io)**. This service requires a subscription plan.
+* **MBO Data:** Raw market-by-order data must be licensed directly from **[Databento](https://databento.com)**. As of January 2026, **Databento** offers $125 USD in free credits towards subscription plans, which is sufficient to acquire the data required for this paper's experiments.
+* **VIX Data:** Volatility index data must be sourced from **[Massive.com](https://massive.com)** (previously known as **[Polygon.io](https://polygon.io)**). This service requires a subscription plan.
 * **Processing Instructions:** This repository only contains high-level instructions on how to download the data. For full instructions on downloading and processing this data, please refer to our dedicated data repository: **[Evolving Microstructural Toolkit Data](https://github.com/judmejiabe/evolving-microstructural-toolkit-data)**. 
 
 ## 🛠️ Installation
@@ -48,14 +48,14 @@ This method is recommended as it allows you to utilize local GPUs for accelerate
     The repository includes two environment files. Choose the one that fits your needs:
 
     * **Option A.1: Exact Reproduction (Linux/x86_64 only)**
-        Use `environment.yml`. This file contains the exact package build strings used in the paper's experiments. It guarantees identical numerical results but is **platform-specific** and may fail on your system.
+        Use `environment.yml`. This file contains the exact package build strings used in the paper's experiments. It guarantees identical numerical results to those in the paper but is **platform-specific** and may fail on different operating systems.
 
         ```bash
         conda env create -f environment.yml
         ```
 
     * **Option A.2: Relaxed Install (Intel macOS/Windows/General)**
-        Use `environment_relaxed.yml`. This file maintains the same software versions but removes platform-specific build constraints. *Note: Untested*
+        Use `environment_relaxed.yml`. This file maintains the same software versions but removes platform-specific build constraints. *Note: This environment allows for broader compatibility but has not been validated against the paper's exact numerical output.*
         ```bash
         conda env create -f environment_relaxed.yml
         ```
@@ -109,16 +109,16 @@ We provide a containerized environment with exact Python and R versions to preve
 
 ## 📋 Usage & Reproducibility
 
-To reproduce the results or run the data generation pipeline, you will need to set up authentication for the required data vendors and cloud storage. This section only outlines general guidelines for reproducibility. For detailed instructions, please refer to the `README.md` file in the dedicated data repository **[Evolving Microstructural Toolkit Data](https://github.com/judmejiabe/evolving-microstructural-toolkit-data)**.
+This section outlines the steps required to reproduce the paper's results.
 
-### 1. API Key Generation
+### 🔑 1. API Key Generation
 The **Data Generation Repository** (`evolving-microstructural-toolkit-data`) requires valid API keys from the following vendors to fetch raw market data.
 
 * **Databento (Market-by-Order Data):**
     1.  Sign up at [databento.com](https://databento.com).
-    2.  In the landing page, navigate to **API Keys**.
+    2.  Navigate to **API Keys** on the landing page.
     3.  Create a new API key. You will need to set it as the `DB_API_KEY` environment variable in the environment used to run the data generation scripts.
-    4.  You will need to provide a payment method to access the MBO data. The MBO data offered by Databento is a pay-as-you-go service. As of January 21st, 2026, **Databento** offer 125 USD in free credits towards subscription plans which suffices to acquire the data required for the experiments in this paper.
+    4.  You must provide a payment method to access the MBO data. Databento's MBO data is a pay-as-you-go service. As of January 21st, 2026, **Databento** offers $125 USD in free credits towards subscription plans, which is sufficient to acquire the data required for this paper's experiments.
 
 * **Massive.com (Previously Polygon.io) (VIX Data):**
     1.  Sign up at [massive.com](https://massive.com).
@@ -131,9 +131,10 @@ The **Data Generation Repository** (`evolving-microstructural-toolkit-data`) req
     2.  Enable the **Google Cloud Storage JSON API** for your project.
     3.  In the Google Cloud Console, go to **IAM & Admin** > **Service Accounts** and create a new service account. Assign the **Storage Admin** role to the service account. 
     4.  Go to the **Manage keys** tab for the service account, click **Add Key** > **Create new key**, and select **JSON**. 
-    The JSON key file will automatically download to your computer. Thik JSON key will be necessary to upload and download data to and from GCS. It will be necessary in both environments, the data generation environment and the main environment (i.e. this environment).
+    The JSON key file will automatically download to your computer. This JSON key is required to upload and download data to and from GCS. It is needed in both the data generation environment and the main environment (i.e., this environment).
 
-### 2. Credentials configuration
+### 🔐 2. Credentials Configuration
+
 The main **TTSTL Repository** uses a `credentials.json` file to authenticate with Google Cloud Storage for fetching processed data. 
 
 **Step 1:** Locate the GCP Service Account JSON key you downloaded in the previous section.
@@ -142,7 +143,7 @@ The main **TTSTL Repository** uses a `credentials.json` file to authenticate wit
 
 **Step 3:** 
     1. In the console, go to **Cloud Storage** > **Buckets** and create a bucket. 
-    2. Access the `credentials.json` and add the `bucket_name` field to the JSON object.  This tells the code which bucket to look for.
+    2. Open `credentials.json` and append the `bucket_name` field to the JSON object. This configuration instructs the application which GCS bucket to target.
 
 Your final `credentials.json` should look like this (standard GCP fields + `bucket_name`):
 
@@ -167,13 +168,13 @@ Your final `credentials.json` should look like this (standard GCP fields + `buck
 
 ### 💻 3. Data Processing Pipeline
 
-To keep the main repository lightweight, all raw data ingestion, heavy processing, and synthetic data generation are handled by our auxiliary repository. This section outlines the workflow for users who wish to **rebuild the datasets from scratch** instead of using the pre-processed versions.
+To maintain a lightweight core repository, we offload raw data ingestion, heavy processing, and synthetic data generation to a dedicated auxiliary repository. This section outlines the workflow for users wishing to **rebuild the datasets from scratch** rather than using the pre-processed versions.
 
 **🔗 Auxiliary Repository:** [Evolving Microstructural Toolkit Data](https://github.com/judmejiabe/evolving-microstructural-toolkit-data)
 
 > **Note:** The scripts mentioned below reside in the *auxiliary repository*, not this one. You must clone that repo and install its dependencies to proceed.
 
-#### Auxilary Repository Environment Configuration
+#### Auxiliary Repository Environment Configuration
 
 1. Clone the auxiliary repository into a separate directory (e.g., outside `ttstl_repo`).
 
@@ -182,7 +183,7 @@ git clone https://github.com/judmejiabe/evolving-microstructural-toolkit-data.gi
 cd evolving-microstructural-toolkit-data
 ```
 
-2. Set up the environment for the auxiliary repository. We recommend a separate environment to avoid versioning clashes
+2. Set up the environment for the auxiliary repository. We recommend a separate environment to avoid versioning conflicts.
 
 ```bash
 conda create -n data_env python=3.10
@@ -202,13 +203,13 @@ conda activate data_env
 #### Synthetic Data Workflow
 
 **Option A: Download Original Synthetic Data (Recommended)**
-We recommend downloading the original synthetic dataset from [Zenodo](https://doi.org/10.5281/zenodo.18304963) for exact reproducibility. Download the dataset from [https://doi.org/10.5281/zenodo.18304963](https://doi.org/10.5281/zenodo.18304963). Unzip the downloaded file and place its contents in the `data.nosync/Recorded_Synthetic_Data` directory at the root of the `evolving-microstructural-toolkit-data` repository.
+We recommend downloading the original synthetic dataset from [Zenodo](https://doi.org/10.5281/zenodo.18304963) for exact reproducibility. Unzip the downloaded file and place its contents in the `data.nosync/Recorded_Synthetic_Data` directory at the root of the `evolving-microstructural-toolkit-data` repository.
 
 **Option B: Generate Fresh Synthetic Data**
 
-**Warning:** This option will generate different datasets than the ones provided in the Zenodo repository. The data generation process is computationally intensive and can take up to a day to complete. It is recommended to run this process in the background if possible.
+> **Note:** This option will generate different datasets than the ones provided in the Zenodo repository. The data generation process is computationally intensive and can take up to a day to complete. We recommend running this process in the background.
 
-If you wish to generate fresh synthetic data.  Run `Synthetic_Study/synthetic_data_generator.py`. This runs the Markovian simulation of the LOB outlined in the **Synthetic Study** section of the paper to create event-driven and physical-time datasets saved locally. This will generate different datasets than the ones provided in the Zenodo repository.
+To generate fresh synthetic data, run `Synthetic_Study/synthetic_data_generator.py`. This executes the Markovian simulation of the LOB outlined in the **Synthetic Study** section of the paper, creating locally saved event-driven and physical-time datasets. This will generate different datasets than the ones provided in the Zenodo repository.
 
 After executing either of these options, run `Synthetic_Study/upload_synthetic_data.py`. This authenticates using your `credentials.json` and pushes the generated files to the `synthetic_data/` folder in your GCS bucket, making them accessible to the TTSTL orchestrator.
 
@@ -223,36 +224,42 @@ The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data in
 
 2.  **Process & Upload:**
     * Ensure your `credentials.json` (with GCS permissions) is in the root of the data repo.
-    * Run `Market_Data_Processing/data_processor.py`. This script parses the MBO messages, constructs the Limit Order Book (LOB), synchronizes it with VIX data, calculates micro-returns, and automatically uploads the final `.parquet` files to your Google Cloud Storage bucket. This process is computationally expensive and can take multiple days to complete. It is recommended to run this process in the background if possible.
+    * Run `Market_Data_Processing/data_processor.py`. This script parses the MBO messages, constructs the Limit Order Book (LOB), synchronizes it with VIX data, calculates micro-returns, and automatically uploads the final `.parquet` files to your Google Cloud Storage bucket. This process is computationally expensive and can take multiple days to complete. We recommend running this process in the background.
 
+### 🧪🧪 4. Reproduction Steps
 
-### 🧪 4. Experiments
+#### Synthetic Study
 
-#### Tests
+1.  **Run Experiments**: Execute the following command to run the 28 configurations described in the paper on the synthetic dataset:
+    ```bash
+    python scripts/synthetic_study_experiment.py
+    ```
 
-##### Test with Synthetic Data
+2.  **Analyze Results**: Execute the analysis script to generate the rankings (Table 2) and RelMAE plots:
+    ```bash
+    python scripts/synthetic_study_analysis.py
+    ```
 
-##### Test with Real Market Data
+#### Market Data Study
 
-#### Experiments
+1.  **Pretrain Backbone**: Train the CNN-LSTM backbone on May 2024 data:
+    ```bash
+    python scripts/market_data_cnn_lstm_pretraining.py
+    ```
 
-##### Synthetic Data Experiments
+2.  **Run Experiments**: Run the recursive forecasting experiments on the INTC dataset using the pretrained backbone:
+    ```bash
+    python scripts/market_data_experiments.py
+    ```
 
-##### Market Data Experiments
-
-
-### 📊 5. Analysis
-
-#### Synthetic Data Experiments Analysis
-
-#### Market Data Experiments Analysis
-
-
-
+3.  **Analyze Results**: Generate the performance boxplots and statistics:
+    ```bash
+    python scripts/analyze_market_data_experiment_results.py
+    ```
 
 ## 📂 Repository Structure
 
-* `manuscript/`: Contains the research paper and supplementary materials in latex format.
+* `manuscript/`: Contains the research paper and supplementary materials in LaTeX format.
 * `outputs/`: Directory for storing experiment outputs and post-processing results.
     * `analysis_market_data_experiment_results/`: Analysis of market data experiments results.
     * `analysis_synthetic_data_experiment_results/`: Analysis of synthetic data experiments results.
@@ -284,15 +291,16 @@ The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data in
 * `pyproject.toml`: Build system requirements and dependencies.
 * `README.md`: The file you are reading.
 
-
 ## 🔗 Citation
-If you use this code, please cite our paper:
+If you use this code in your research, please cite the following working paper:
 
 ```bibtex
-@article{mejia2026ttstl,
-  title={Two-Time-Scale Transfer Learning for Market-by-Order Micro-Return Forecasting},
-  author={Mejia Becerra, Juan Diego and Peters, Gareth W. and Hu, Ruimeng},
-  year={2026},
-  institution={University of California, Santa Barbara}
+@misc{mejiabecerra2026twotimescale,
+  title = {Two-Time-Scale Transfer Learning for Market-by-Order Micro-Return Forecasting},
+  author = {Mejia Becerra, Juan Diego and Peters, Gareth W. and Hu, Ruimeng},
+  year = {2026},
+  month = {January},
+  institution = {University of California, Santa Barbara},
+  note = {Working Paper}
 }
 ```
