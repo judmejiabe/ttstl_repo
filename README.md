@@ -252,7 +252,7 @@ The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data in
 
 ## 📂 Repository Structure
 
-* `paper/`: Contains the research paper and supplementary materials in latex format.
+* `manuscript/`: Contains the research paper and supplementary materials in latex format.
 * `outputs/`: Directory for storing experiment outputs and post-processing results.
     * `analysis_market_data_experiment_results/`: Analysis of market data experiments results.
     * `analysis_synthetic_data_experiment_results/`: Analysis of synthetic data experiments results.

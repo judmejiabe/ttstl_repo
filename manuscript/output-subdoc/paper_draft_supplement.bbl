@@ -1,0 +1,70 @@
+\begin{thebibliography}{10}
+
+\bibitem{banerjee1993co}
+Anindya Banerjee, Juan~J Dolado, John~W Galbraith, and David Hendry.
+\newblock {\em Co-integration, error correction, and the econometric analysis of non-stationary data}.
+\newblock Oxford university press, 1993.
+
+\bibitem{cont2023mathematical}
+Rama Cont, Pierre Degond, and Lifan Xuan.
+\newblock A mathematical framework for modelling order book dynamics, 2023.
+
+\bibitem{gould2013limit}
+Martin~D. Gould, Mason~A. Porter, Stacy Williams, Mark McDonald, Daniel~J. Fenn, and Sam~D. Howison.
+\newblock Limit order books, 2013.
+
+\bibitem{ioffe2015}
+Sergey Ioffe and Christian Szegedy.
+\newblock Batch normalization: Accelerating deep network training by reducing internal covariate shift, 2015.
+
+\bibitem{kolm2023deep}
+Petter~N. Kolm, Jeremy Turiel, and Nicholas Westray.
+\newblock Deep order flow imbalance: Extracting alpha at multiple horizons from the limit order book.
+\newblock {\em Mathematical Finance}, 33(4):1044--1081, 2023.
+
+\bibitem{kwiatkowski1992testing}
+Denis Kwiatkowski, Peter~CB Phillips, Peter Schmidt, and Yongcheol Shin.
+\newblock Testing the null hypothesis of stationarity against the alternative of a unit root: How sure are we that economic time series have a unit root?
+\newblock {\em Journal of econometrics}, 54(1-3):159--178, 1992.
+
+\bibitem{MEDEIROS2016255}
+Marcelo~C. Medeiros and Eduardo~F. Mendes.
+\newblock l1-regularization of high-dimensional time-series models with non-gaussian and heteroskedastic errors.
+\newblock {\em Journal of Econometrics}, 191(1):255--271, 2016.
+
+\bibitem{panayi2015stochastic}
+Efstathios Panayi and Gareth Peters.
+\newblock Stochastic simulation framework for the limit order book using liquidity motivated agents, 2015.
+
+\bibitem{urca}
+Bernhard Pfaff, Eric Zivot, and Matthieu Stigler.
+\newblock {\em urca: Unit Root and Cointegration Tests for Time Series Data}.
+\newblock CRAN, May 27, 2024, 2024.
+\newblock R package version 1.3-4.
+
+\bibitem{szegedy2015going}
+Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet, Scott Reed, Dragomir Anguelov, Dumitru Erhan, Vincent Vanhoucke, and Andrew Rabinovich.
+\newblock Going deeper with convolutions.
+\newblock In {\em Proceedings of the IEEE conference on computer vision and pattern recognition}, pages 1--9, 2015.
+
+\bibitem{funitroots2024}
+Diethelm Wuertz, Tobias Setz, Yohan Chalabi, and Georgi~N. Boshnakov.
+\newblock {\em fUnitRoots: Rmetrics - Modelling Trends and Unit Roots}, 2024.
+\newblock Accessed: 01-19-2025.
+
+\bibitem{xie2006spurious}
+Yihui Xie.
+\newblock Spurious regression: Simulation and theoretical analysis, 2006.
+\newblock (\url{https://db.yihui.org/docs/Spurious-Regression-Yihui-Xie-2006.pdf}) Accessed: 01-19-2025.
+
+\bibitem{Zhang_2019}
+Zihao Zhang, Stefan Zohren, and Stephen Roberts.
+\newblock Deeplob: Deep convolutional neural networks for limit order books.
+\newblock {\em IEEE Transactions on Signal Processing}, 67(11):3001–3012, June 2019.
+
+\bibitem{Zou01122006}
+Hui Zou.
+\newblock The adaptive lasso and its oracle properties.
+\newblock {\em Journal of the American Statistical Association}, 101(476):1418--1429, 2006.
+
+\end{thebibliography}
