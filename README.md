@@ -118,11 +118,13 @@ The **Data Generation Repository** (`evolving-microstructural-toolkit-data`) req
     1.  Sign up at [databento.com](https://databento.com).
     2.  In the landing page, navigate to **API Keys**.
     3.  Create a new API key. You will need to set it as the `DB_API_KEY` environment variable in the environment used to run the data generation scripts.
+    4.  You will need to provide a payment method to access the MBO data. The MBO data offered by Databento is a pay-as-you-go service. As of January 21st, 2026, **Databento** offer 125 USD in free credits towards subscription plans which suffices to acquire the data required for the experiments in this paper.
 
 * **Massive.com (Previously Polygon.io) (VIX Data):**
     1.  Sign up at [massive.com](https://massive.com).
     2.  Go to your **Dashboard**.
     3.  Create a new API key. You will need to set it as the `POLYGON_API_KEY` environment variable in the environment used to run the data generation scripts.
+    4.  You will need a subscription to the **indices starter** plan or superior to access the VIX data.
 
 * **Google Cloud Platform (GCS Storage):**
     1.  Create a new Project in the [Google Cloud Console](https://console.cloud.google.com/).
@@ -199,31 +201,58 @@ conda activate data_env
 
 #### Synthetic Data Workflow
 
-**Option A: Download Official Data (Recommended)**
-We recommend downloading the official dataset from [Zenodo](https://doi.org/10.5281/zenodo.18304963) for exact reproducibility. Download the dataset from [https://doi.org/10.5281/zenodo.18304963](https://doi.org/10.5281/zenodo.18304963). Unzip the downloaded file and place its contents in the `data.nosync/Recorded_Synthetic_Data` directory at the root of the `evolving-microstructural-toolkit-data` repository.
+**Option A: Download Original Synthetic Data (Recommended)**
+We recommend downloading the original synthetic dataset from [Zenodo](https://doi.org/10.5281/zenodo.18304963) for exact reproducibility. Download the dataset from [https://doi.org/10.5281/zenodo.18304963](https://doi.org/10.5281/zenodo.18304963). Unzip the downloaded file and place its contents in the `data.nosync/Recorded_Synthetic_Data` directory at the root of the `evolving-microstructural-toolkit-data` repository.
 
-**Option B: Generate Fresh Data**
+**Option B: Generate Fresh Synthetic Data**
+
+**Warning:** This option will generate different datasets than the ones provided in the Zenodo repository. The data generation process is computationally intensive and can take up to a day to complete. It is recommended to run this process in the background if possible.
+
 If you wish to generate fresh synthetic data.  Run `Synthetic_Study/synthetic_data_generator.py`. This runs the Markovian simulation of the LOB outlined in the **Synthetic Study** section of the paper to create event-driven and physical-time datasets saved locally. This will generate different datasets than the ones provided in the Zenodo repository.
 
 After executing either of these options, run `Synthetic_Study/upload_synthetic_data.py`. This authenticates using your `credentials.json` and pushes the generated files to the `synthetic_data/` folder in your GCS bucket, making them accessible to the TTSTL orchestrator.
 
 #### Real Market Data Workflow
-The processing pipeline transforms raw Databento (MBO) and Polygon (VIX) data into the specific parquet format required by TTSTL.
+The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data into the specific parquet format required by TTSTL.
 
 1.  **Download Raw Data:**
-    * Set your environment variables: `DB_API_KEY` (Databento) and `POLYGON_API_KEY` (Polygon).
-    * Run `Data_Download/databento_data_download.py` to fetch high-frequency MBO data.
-    * Run `Data_Download/polygon_data_download.py` to fetch 1-second VIX aggregates.
+    * Verify that your Databento and Massive accounts are configured properly and that the `DB_API_KEY` and `POLYGON_API_KEY` environment variables are set.
+    * Run `Data_Download/polygon_data_download.py` to fetch 1-second VIX aggregates. The data will download to the `data.nosync/Polygon/Downloads` directory.
+    * Run `Data_Download/databento_data_download.py` to fetch high-frequency MBO data. The data will download to the `data.nosync/Databento/Downloads` directory.
+    
 
 2.  **Process & Upload:**
     * Ensure your `credentials.json` (with GCS permissions) is in the root of the data repo.
-    * Run `Market_Data_Processing/data_processor.py`.
-    * **What it does:** This script parses the MBO messages, constructs the Limit Order Book (LOB), synchronizes it with VIX data, calculates micro-returns, and automatically uploads the final `.parquet` files to your Google Cloud Storage bucket.
+    * Run `Market_Data_Processing/data_processor.py`. This script parses the MBO messages, constructs the Limit Order Book (LOB), synchronizes it with VIX data, calculates micro-returns, and automatically uploads the final `.parquet` files to your Google Cloud Storage bucket. This process is computationally expensive and can take multiple days to complete. It is recommended to run this process in the background if possible.
+
+
+### 🧪 4. Experiments
+
+#### Tests
+
+##### Test with Synthetic Data
+
+##### Test with Real Market Data
+
+#### Experiments
+
+##### Synthetic Data Experiments
+
+##### Market Data Experiments
+
+
+### 📊 5. Analysis
+
+#### Synthetic Data Experiments Analysis
+
+#### Market Data Experiments Analysis
+
+
 
 
 ## 📂 Repository Structure
 
-* `paper/`: Contains the research paper and supplementary materials.
+* `paper/`: Contains the research paper and supplementary materials in latex format.
 * `outputs/`: Directory for storing experiment outputs and post-processing results.
     * `analysis_market_data_experiment_results/`: Analysis of market data experiments results.
     * `analysis_synthetic_data_experiment_results/`: Analysis of synthetic data experiments results.
