@@ -9,8 +9,6 @@ Welcome to the documentation for the **Two-Time-Scale Transfer Learning (TTSTL)*
    :maxdepth: 2
    :caption: Core Modules:
 
-   modules
-
 .. automodule:: ttstl.orchestrator
    :members:
    :undoc-members:

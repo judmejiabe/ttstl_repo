@@ -486,18 +486,25 @@ class Adapter:
         to obtain the raw CNN-LSTM outputs instead of hidden activations. This is useful
         for comparison purposes and analysis of the model's direct predictions.
         
-        Args:
-            event_driven_adapter_time_bar_data (pd.DataFrame): Event-driven data for neural network processing.
-            physical_time_driven_adapter_time_bar_data (pd.DataFrame): Physical time-driven data with timestamps.
-            batch_size (int, optional): Batch size for processing. Defaults to 512.
+        Parameters
+        ----------
+        event_driven_adapter_time_bar_data : pd.DataFrame
+            Event-driven data for neural network processing.
+        physical_time_driven_adapter_time_bar_data : pd.DataFrame
+            Physical time-driven data with timestamps.
+        batch_size : int, optional
+            Batch size for processing. Defaults to 512.
             
-        Returns:
-            pd.DataFrame: DataFrame containing timestamps and raw neural network outputs with 'forward_pass_' prefix.
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing timestamps and raw neural network outputs with ``forward_pass_`` prefix.
             
-        Example:
-            >>> nn_outputs = adapter.get_nn_output(event_df, phys_df)
-            >>> print(nn_outputs.columns)
-            ['timestamp', 'forward_pass_0']  # For single output CNN-LSTM
+        Example
+        -------
+        >>> nn_outputs = adapter.get_nn_output(event_df, phys_df)
+        >>> print(nn_outputs.columns)
+        ['timestamp', 'forward_pass_0']  # For single output CNN-LSTM
         """
         self.logger.info("Extracting raw neural network outputs from backbone")
         
@@ -1074,33 +1081,45 @@ class Adapter:
         relative contributions, then computes error metrics by comparing forecasts against
         actual values and a benchmark.
 
-        Args:
-            in_sample_event_df (pd.DataFrame): In-sample event-driven data.
-            in_sample_phys_df (pd.DataFrame): In-sample physical time data.
-            out_of_sample_event_df (pd.DataFrame): Out-of-sample event-driven data.
-            out_of_sample_phys_df (pd.DataFrame): Out-of-sample physical time data.
-            benchmark_forecast (Union[float, pd.Series]): Benchmark forecast values for 
-                relative metric calculation. Can be a scalar (constant forecast) or a 
-                Series matching the length of out-of-sample data.
-            scaler (StandardScaler): Fitted scaler for data preprocessing.
-            target_col_name (str): The name of the target variable column (default: 'micro_return').
+        Parameters
+        ----------
+        in_sample_event_df : pd.DataFrame
+            In-sample event-driven data.
+        in_sample_phys_df : pd.DataFrame
+            In-sample physical time data.
+        out_of_sample_event_df : pd.DataFrame
+            Out-of-sample event-driven data.
+        out_of_sample_phys_df : pd.DataFrame
+            Out-of-sample physical time data.
+        benchmark_forecast : Union[float, pd.Series]
+            Benchmark forecast values for relative metric calculation. Can be a scalar (constant forecast) or a 
+            Series matching the length of out-of-sample data.
+        scaler : StandardScaler
+            Fitted scaler for data preprocessing.
+        target_col_name : str
+            The name of the target variable column (default: 'micro_return').
 
-        Returns:
-            dict: A dictionary containing:
-                - 'metrics': dict
-                    Performance metrics dictionary with the following keys:
-                    * 'garch_mae': float - Mean Absolute Error (always present)
-                    * 'garch_mse': float - Mean Squared Error (always present)
-                    * 'garch_relmae': float - Relative MAE vs benchmark (always present)
-                    * 'garch_relmse': float - Relative MSE vs benchmark (always present)
-                    * 'garch_r2': float - R² score (1 - relmse) (always present)
-                    * 'nn_mae': float - NN MAE (only if compare_with_cnn_lstm=True)
-                    * 'nn_mse': float - NN MSE (only if compare_with_cnn_lstm=True)
-                    * 'nn_relmae': float - NN Relative MAE (only if compare_with_cnn_lstm=True)
-                    * 'nn_relmse': float - NN Relative MSE (only if compare_with_cnn_lstm=True)
-                    * 'nn_r2': float - NN R² score (only if compare_with_cnn_lstm=True)
-                - 'relative_contributions': pd.DataFrame
-                    DataFrame with columns ['timestamp', var1, var2, ...] containing
+        Returns
+        -------
+        dict
+            A dictionary containing:
+            
+            - 'metrics': dict
+                Performance metrics dictionary with the following keys:
+                
+                * 'garch_mae' (float): Mean Absolute Error (always present)
+                * 'garch_mse' (float): Mean Squared Error (always present)
+                * 'garch_relmae' (float): Relative MAE vs benchmark (always present)
+                * 'garch_relmse' (float): Relative MSE vs benchmark (always present)
+                * 'garch_r2' (float): R² score (1 - relmse) (always present)
+                * 'nn_mae' (float): NN MAE (only if compare_with_cnn_lstm=True)
+                * 'nn_mse' (float): NN MSE (only if compare_with_cnn_lstm=True)
+                * 'nn_relmae' (float): NN Relative MAE (only if compare_with_cnn_lstm=True)
+                * 'nn_relmse' (float): NN Relative MSE (only if compare_with_cnn_lstm=True)
+                * 'nn_r2' (float): NN R² score (only if compare_with_cnn_lstm=True)
+
+            - 'relative_contributions': pd.DataFrame
+                DataFrame with columns ['timestamp', var1, var2, ...] containing
                     coefficient × feature_value for each selected variable across the
                     out-of-sample period.
                     

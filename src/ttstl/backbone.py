@@ -51,17 +51,28 @@ class Backbone():
                  upper_bounds: Optional[Dict[str, float]] = None,
                  past_returns: bool = False) -> None:
         """Initialize the Backbone with a model and delta adapter.
-        Args:
-            model (nn.Module): The neural network model to be used.
-            delta_adapter (float, optional): Adapter time bar length in the same units of time as the data.
-            delta_sample (float, optional): Sample time bar length in the same units of time as the data.
-            parsimonious_mode (bool, optional): Whether to use parsimonious mode for neural covariate extraction.
-            neural_covariates_only (bool, optional): Whether to use only neural covariates (no manual/stationary features).
-            manual_covariates_only (bool, optional): Whether to use only manual/stationary features (no neural covariates).
-            pretrained_scaler (Optional[StandardScaler], optional): Pretrained scaler for consistent preprocessing.
-            lower_bounds (Optional[Dict[str, float]], optional): Lower quantile bounds for winsorization.
-            upper_bounds (Optional[Dict[str, float]], optional): Upper quantile bounds for winsorization.
-            past_returns (bool, optional): Whether to use past returns (concurrent returns) instead of future returns. Defaults to False.
+        Parameters
+        ----------
+        model : nn.Module
+            The neural network model to be used.
+        delta_adapter : float, optional
+            Adapter time bar length in the same units of time as the data.
+        delta_sample : float, optional
+            Sample time bar length in the same units of time as the data.
+        parsimonious_mode : bool, optional
+            Whether to use parsimonious mode for neural covariate extraction.
+        neural_covariates_only : bool, optional
+            Whether to use only neural covariates (no manual/stationary features).
+        manual_covariates_only : bool, optional
+            Whether to use only manual/stationary features (no neural covariates).
+        pretrained_scaler : Optional[StandardScaler], optional
+            Pretrained scaler for consistent preprocessing.
+        lower_bounds : Optional[Dict[str, float]], optional
+            Lower quantile bounds for winsorization.
+        upper_bounds : Optional[Dict[str, float]], optional
+            Upper quantile bounds for winsorization.
+        past_returns : bool, optional
+            Whether to use past returns (concurrent returns) instead of future returns. Defaults to False.
         """
         self.model = model
         self.device = next(self.model.parameters()).device
@@ -182,16 +193,27 @@ class Backbone():
         save_checkpoints: bool = False,
         checkpoint_dir: Optional[str] = None) -> float:
         """Train the model for specified epochs with optional checkpoint saving.
-        Args:
-            train_loader (DataLoader): DataLoader for the training data.
-            criterion (nn.modules.loss): Loss function.
-            optimizer (torch.optim.Optimizer): Optimizer for the model.
-            epochs (int): Number of training epochs.
-            validation_loader (DataLoader): DataLoader for validation data.
-            save_checkpoints (bool): Whether to save checkpoints every epoch.
-            checkpoint_dir (str): Directory to save checkpoints.
-        Returns:
-            float: Best validation loss achieved.
+        Parameters
+        ----------
+        train_loader : DataLoader
+            DataLoader for the training data.
+        criterion : nn.modules.loss
+            Loss function.
+        optimizer : torch.optim.Optimizer
+            Optimizer for the model.
+        epochs : int
+            Number of training epochs.
+        validation_loader : DataLoader
+            DataLoader for validation data.
+        save_checkpoints : bool
+            Whether to save checkpoints every epoch.
+        checkpoint_dir : str
+            Directory to save checkpoints.
+
+        Returns
+        -------
+        float
+            Best validation loss achieved.
         """
         self.logger.info("Starting training...")
         validation_loader = validation_loader or train_loader
@@ -366,16 +388,29 @@ class Backbone():
                                      save_dir: Optional[str] = None,
                                      session_start: float = 0.0) -> pd.DataFrame:
         """Select stationary variables from the DataFrame.
-        Args:
-            data (pd.DataFrame): DataFrame containing the time series data.
-            adf_rejection_rate_threshold (float): ADF rejection rate threshold for stationarity.
-            kpss_verification_threshold (float): KPSS verification threshold.
-            na_verification_threshold (float): NA verification threshold.
-            kpss_drop (bool): Whether to use strict KPSS dropping.
-            target_col_name (str): Name of the target variable column.
-            save_dir (Optional[str]): Directory to save stationarity test results.
-        Returns:
-            pd.DataFrame: DataFrame with only stationary variables.
+        Parameters
+        ----------
+        data : pd.DataFrame
+            DataFrame containing the time series data.
+        adf_rejection_rate_threshold : float
+            ADF rejection rate threshold for stationarity.
+        kpss_verification_threshold : float
+            KPSS verification threshold.
+        na_verification_threshold : float
+            NA verification threshold.
+        kpss_drop : bool
+            Whether to use strict KPSS dropping.
+        target_col_name : str
+            Name of the target variable column.
+        save_dir : Optional[str]
+            Directory to save stationarity test results.
+        session_start : float
+            Session start timestamp.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with only stationary variables.
         """
         self.logger.info(f'Running stationarity tests with kpss_drop:{kpss_drop}')
 
@@ -467,10 +502,17 @@ class Backbone():
                                     data: pd.DataFrame, 
                                     threshold : float = 0.95) -> pd.DataFrame:
         """Drops highly correlated variables from data at a random order.
-        Args:
-            data (pd.DataFrame): DataFrame containing the time series data.
-        Returns:
-            pd.DataFrame: DataFrame with covariance matrix analysis results.
+        Parameters
+        ----------
+        data : pd.DataFrame
+            DataFrame containing the time series data.
+        threshold : float
+            Correlation threshold.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with covariance matrix analysis results.
         """
 
         self.logger.info('Dropping highly correlated variables')

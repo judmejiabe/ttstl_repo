@@ -48,66 +48,102 @@ class OrchestratorConfig:
     Learning framework, including backbone neural network training, interface variable
     selection, and adapter ARMAX-GARCH modeling.
     
-    Attributes:
-        Identity & Timing:
-            ticker: Asset identifier (e.g., "MSFT", "AAPL")
-            bdelta: Backbone time bar duration in seconds
-            adelta: Adapter time bar duration in seconds
-            sdelta: Sampling time bar duration in seconds
-            seed: Random number generator seed for reproducibility
-            session_start: Trading session start timestamp
-            session_finish: Trading session end timestamp
-            target_col_name: Name of target variable column (default: 'micro_return')
-            
-        Backbone Configuration:
-            architecture: Neural network architecture ('cnn_lstm' supported)
-            parsimonious_mode: Use reduced feature set for backbone
-            neural_covariates_only: Exclude manual/stationary features
-            manual_covariates_only: Exclude neural network features
-            past_returns: Use concurrent returns instead of forward-looking returns
-            epochs: Number of training epochs
-            batch_size: Training batch size
-            validation_proportion_backbone: Validation split proportion
-            buffer_proportion: Buffer zone proportion for temporal splits
-            adf_rejection_rate_threshold: Minimum ADF test rejection rate for stationarity
-            kpss_verification_threshold: Maximum KPSS test rejection rate
-            na_verification_threshold: Maximum proportion of missing values allowed
-            learning_rate: Optimizer learning rate
-            correlation_threshold: Maximum correlation for feature redundancy filtering
-            
-        Preprocessing:
-            pretrained_scaler: Pre-fitted StandardScaler (prevents lookahead bias)
-            lower_bounds: Windsorization lower bounds per feature
-            upper_bounds: Windsorization upper bounds per feature
-            
-        Interface Configuration:
-            alpha_enet_grid: Elastic net alpha values (0=ridge, 1=lasso)
-            lambda_enet_grid: Elastic net regularization strengths
-            tau_adalasso_grid: Adaptive lasso tau exponents
-            lambda_adalasso_grid: Adaptive lasso regularization strengths
-            user_defined_variables: Bypass variable selection with fixed list
-            second_stage_mse: Use MSE instead of BIC for hyperparameter selection
-            validation_proportion_interface: Validation split for variable selection
-            selection_threshold: Minimum coefficient magnitude for variable retention
-            tolerance_threshold: Convergence tolerance for optimization
-            ols_significance_level: P-value threshold for OLS coefficient testing
-            wald_significance_level: P-value threshold for Wald testing
-            n_lags: Number of autoregressive lags
-            
-        Adapter Configuration:
-            update_method: Parameter update rule ('myopic', 'simple_average', 'power_law',
-                          'exponential_smoothing', 'newton_raphson', 'fischer_scoring',
-                          'gradient_ascent')
-            arma_order: ARMA(p,q) order for mean equation
-            garch_order: GARCH(m,s) order for volatility equation
-            dist: Error distribution ('norm', 'std', 'ged', 'snorm', 'sstd', 'sged')
-            model: GARCH variant ('sGARCH', 'eGARCH', 'gjrGARCH', etc.)
-            archm: Include ARCH-in-mean term
-            update_parameters: Additional parameters for update method (e.g., alpha, regularization)
-            compare_with_cnn_lstm: Generate CNN-LSTM benchmark comparison metrics
-            
-        Optional:
-            run_id: Override auto-generated run identifier
+    Attributes
+    ----------
+    ticker : str
+        Asset identifier (e.g., "MSFT", "AAPL")
+    bdelta : float
+        Backbone time bar duration in seconds
+    adelta : float
+        Adapter time bar duration in seconds
+    sdelta : float
+        Sampling time bar duration in seconds
+    seed : int
+        Random number generator seed for reproducibility
+    session_start : float
+        Trading session start timestamp
+    session_finish : float
+        Trading session end timestamp
+    target_col_name : str
+        Name of target variable column (default: 'micro_return')
+    architecture : str
+        Neural network architecture ('cnn_lstm' supported)
+    parsimonious_mode : bool
+        Use reduced feature set for backbone
+    neural_covariates_only : bool
+        Exclude manual/stationary features
+    manual_covariates_only : bool
+        Exclude neural network features
+    past_returns : bool
+        Use concurrent returns instead of forward-looking returns
+    epochs : int
+        Number of training epochs
+    batch_size : int
+        Training batch size
+    validation_proportion_backbone : float
+        Validation split proportion
+    buffer_proportion : float
+        Buffer zone proportion for temporal splits
+    adf_rejection_rate_threshold : float
+        Minimum ADF test rejection rate for stationarity
+    kpss_verification_threshold : float
+        Maximum KPSS test rejection rate
+    na_verification_threshold : float
+        Maximum proportion of missing values allowed
+    learning_rate : float
+        Optimizer learning rate
+    correlation_threshold : float
+        Maximum correlation for feature redundancy filtering
+    pretrained_scaler : Optional[StandardScaler]
+        Pre-fitted StandardScaler (prevents lookahead bias)
+    lower_bounds : Optional[Dict[str, float]]
+        Windsorization lower bounds per feature
+    upper_bounds : Optional[Dict[str, float]]
+        Windsorization upper bounds per feature
+    alpha_enet_grid : Optional[List[float]]
+        Elastic net alpha values (0=ridge, 1=lasso)
+    lambda_enet_grid : Optional[List[float]]
+        Elastic net regularization strengths
+    tau_adalasso_grid : Optional[List[float]]
+        Adaptive lasso tau exponents
+    lambda_adalasso_grid : Optional[List[float]]
+        Adaptive lasso regularization strengths
+    user_defined_variables : Optional[List[str]]
+        Bypass variable selection with fixed list
+    second_stage_mse : bool
+        Use MSE instead of BIC for hyperparameter selection
+    validation_proportion_interface : float
+        Validation split for variable selection
+    selection_threshold : float
+        Minimum coefficient magnitude for variable retention
+    tolerance_threshold : float
+        Convergence tolerance for optimization
+    ols_significance_level : float
+        P-value threshold for OLS coefficient testing
+    wald_significance_level : float
+        P-value threshold for Wald testing
+    n_lags : int
+        Number of autoregressive lags
+    update_method : str
+        Parameter update rule ('myopic', 'simple_average', 'power_law',
+        'exponential_smoothing', 'newton_raphson', 'fischer_scoring',
+        'gradient_ascent')
+    arma_order : Tuple[int, int]
+        ARMA(p,q) order for mean equation
+    garch_order : Tuple[int, int]
+        GARCH(m,s) order for volatility equation
+    dist : str
+        Error distribution ('norm', 'std', 'ged', 'snorm', 'sstd', 'sged')
+    model : str
+        GARCH variant ('sGARCH', 'eGARCH', 'gjrGARCH', etc.)
+    archm : bool
+        Include ARCH-in-mean term
+    update_parameters : dict
+        Additional parameters for update method (e.g., alpha, regularization)
+    compare_with_cnn_lstm : bool
+        Generate CNN-LSTM benchmark comparison metrics
+    run_id : Optional[str]
+        Override auto-generated run identifier
     """
     
     # Identity & timing
