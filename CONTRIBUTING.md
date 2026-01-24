@@ -49,3 +49,65 @@ pytest
 
 *   Follow standard Python PEP 8 guidelines.
 *   Ensure all new tests are properly marked as `lightweight` or `comprehensive`.
+## 📖 Documentation Standard
+
+We strictly use **NumPy-style docstrings** for all code documentation. This ensures compatibility with our automated documentation system (Sphinx).
+
+### Key Rules
+1.  **Format:** Use [NumPy Style](https://numpydoc.readthedocs.io/en/latest/format.html).
+2.  **Type Hints:** Place type hints in the function signature (Python 3.9+ standard), NOT in the docstring.
+3.  **Verbosity:** better to be verbose than vague. Explain *why*, not just *what*.
+
+### 📋 Templates (Copy & Paste)
+
+#### Function Template
+```python
+def function_name(param1: int, param2: str = "default") -> bool:
+    """
+    Short summary of what the function does.
+
+    Extended description including implementation details, edge cases,
+    or mathematical formulas if relevant.
+
+    Parameters
+    ----------
+    param1
+        Description of the first parameter.
+    param2
+        Description of the second parameter. 
+
+    Returns
+    -------
+    bool
+        True if successful, False otherwise.
+
+    Raises
+    ------
+    ValueError
+        If param1 is negative.
+    """
+    pass
+```
+
+#### Class Template
+```python
+class ClassName:
+    """
+    Short summary of the class purpose.
+
+    Attributes
+    ----------
+    attr1 : int
+        Description of attr1.
+    attr2 : str
+        Description of attr2.
+
+    Methods
+    -------
+    method_name(param1)
+        Description of what the method does.
+    """
+
+    def __init__(self, attr1: int):
+        self.attr1 = attr1
+```
