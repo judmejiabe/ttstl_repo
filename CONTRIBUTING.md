@@ -32,18 +32,61 @@ pytest -m lightweight
 pytest -m comprehensive
 ```
 
-**Run everything:**
+**Run all tests::**
 ```bash
 pytest
 ```
 
+## 🔧 R Dependency Handling in CI/CD
+
+The "Quality Check" CI/CD workflow runs in a Python-only environment to be fast and lightweight. Because of this, it does **not** have the R environment or R packages (`urca`, `fUnitRoots`, `rugarch`) installed.
+
+To ensure the package can be imported and linted in this environment:
+1.  **Top-level R imports are wrapped in `try-except` blocks** in modules like `src/ttstl/backbone.py` and `src/ttstl/adapter.py`.
+2.  If R packages are missing, the import variable (e.g., `urca`) is set to `None`.
+3.  **Smoke tests** verify that the package imports successfully even without R.
+4.  **Comprehensive tests** require the full Conda environment (with R) and will fail if run in the lightweight CI environment (which is expected).
+
+**For Contributors:**
+- Do **not** remove the `try-except` blocks around `rpy2` imports.
+- When adding new R dependencies, follow this pattern to keep the CI pipeline green.
+
 ## 📂 Project Structure
 
-*   `src/ttstl/`: Core package code.
-*   `tests/`: Test suite.
-    *   `unit/`: Unit tests and fast checks.
-    *   `integration/`: Long-running integration tests and paper reproduction scripts.
-*   `scripts/`: High-level entry points for experiments.
+* `manuscript/`: Contains the research paper and supplementary materials in LaTeX format.
+* `outputs/`: Directory for storing experiment outputs and post-processing results.
+    * `analysis_market_data_experiment_results/`: Original analysis of market data experiments results.
+    * `analysis_synthetic_data_experiment_results/`: Original analysis of synthetic data experiments results.
+* `src/ttstl/`: Core package source code.
+    * `adapter.py`: Adapter module implementation (Volatility modeling & Probabilistic forecasting, see image in the Architecture section).
+    * `backbone.py`: Backbone module implementation (Deep learning feature extractor, see image in the Architecture section).
+    * `interface.py`: Interface module implementation (Variable selection & R-Python bridging, see image in the Architecture section).
+    * `orchestrator.py`: Main API matching backbone, interface, and adapter modules.
+    * `architectures/`: Neural network architecture definitions (e.g., CNN-LSTM).
+    * `datasets/`: PyTorch dataset implementations for LOB data.
+    * `utils/`: Utility functions for data processing and metrics.
+    * `r_scripts/`: R scripts wrapped by the modules for statistical methodologies.
+* `scripts/`: Experiments and analysis.
+    * `analyze_market_data_experiment_results.py`: Post-processing and visualization for market experiments.
+    * `analyze_synthetic_data_experiment_results.py`: Post-processing and visualization for synthetic experiments.
+    * `market_data_cnn_lstm_pretraining.py`: Script for pretraining the CNN-LSTM backbone on market data.
+    * `market_data_experiments.py`: Main script for Intel (INTC) market data experiments.
+    * `synthetic_study_analysis.py`: Analysis script for synthetic study results (RelMAE plots, rankings).
+    * `synthetic_study_experiment.py`: Main script for synthetic data experiments.
+    * `utils_experiment_analysis.py`: Unified framework for analyzing experiment results.
+* `docs/`: Additional documentation and guides.
+* `tests/`: Test suite for the project.
+    * `integration/`: Integration tests and full reproduction scripts.
+    * `unit/`: Unit tests for package import and basic functionality.
+* `environment.yml`: Conda environment specification file.
+* `Dockerfile`: Docker container build configuration.
+* `CITATION.cff`: Citation metadata.
+* `CONTRIBUTING.md`: Development and testing guidelines.
+* `credentials.example.json`: Template for GCP credentials.
+* `LICENSE`: License text.
+* `pyproject.toml`: Build system requirements and dependencies.
+* `README.md`: The file you are reading.
+* `setup.py`: Package installation script.
 
 ## 📝 Code Style
 
