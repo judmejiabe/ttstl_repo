@@ -54,18 +54,18 @@ class ExperimentMetadata:
     # GCS data paths (optional - for data loading)
     gcs_bucket: Optional[str] = None
     gcs_credentials_path: str = "credentials.json"
-    gcs_ed_global_path: Optional[
-        str
-    ] = None  # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_0.parquet'
-    gcs_ptd_global_path: Optional[
-        str
-    ] = None  # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_0.parquet'
-    gcs_ed_local_path: Optional[
-        str
-    ] = None  # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_1.parquet'
-    gcs_ptd_local_path: Optional[
-        str
-    ] = None  # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_1.parquet'
+    gcs_ed_global_path: Optional[str] = (
+        None  # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_0.parquet'
+    )
+    gcs_ptd_global_path: Optional[str] = (
+        None  # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_0.parquet'
+    )
+    gcs_ed_local_path: Optional[str] = (
+        None  # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_1.parquet'
+    )
+    gcs_ptd_local_path: Optional[str] = (
+        None  # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_1.parquet'
+    )
 
     # Cached configuration (loaded on demand)
     _config: Optional[Dict[str, Any]] = field(default=None, repr=False, init=False)
@@ -111,14 +111,14 @@ class ExperimentMetadata:
     def get_config(self) -> Dict[str, Any]:
         """
         Load and return the Orchestrator configuration from config.yaml.
-        
+
         This method reads the config.yaml file in the run directory and returns
         the complete Orchestrator configuration as a dictionary. The configuration
         is cached after the first load.
-        
+
         Returns:
             Dictionary containing the full Orchestrator configuration
-            
+
         Raises:
             FileNotFoundError: If config.yaml doesn't exist in run_dir
             ValueError: If config.yaml cannot be parsed
@@ -142,14 +142,14 @@ class ExperimentMetadata:
     def get_config_value(self, key: str, default: Any = None) -> Any:
         """
         Get a specific value from the Orchestrator configuration.
-        
+
         Args:
             key: Configuration parameter name (e.g., 'run_id', 'epochs', 'seed')
             default: Value to return if key doesn't exist
-            
+
         Returns:
             Configuration value or default if key not found
-            
+
         Example:
             >>> metadata = ExperimentMetadata(run_dir=Path('outputs/runs/exp1'))
             >>> run_id = metadata.get_config_value('run_id')
@@ -169,12 +169,12 @@ class PerformanceData:
     backbone_bar: str  # Backbone bar identifier (e.g., 'bb_000', 'bb_001')
 
     # Convergence statistics (optional, populated from convergence_performance.json)
-    convergence_failed: Optional[
-        int
-    ] = None  # Count of adapter bars with 'failed' status
-    convergence_saddle_point: Optional[
-        int
-    ] = None  # Count of adapter bars with 'saddle_point_detected' status
+    convergence_failed: Optional[int] = (
+        None  # Count of adapter bars with 'failed' status
+    )
+    convergence_saddle_point: Optional[int] = (
+        None  # Count of adapter bars with 'saddle_point_detected' status
+    )
 
     # Required columns for performance data
     # Core metrics that must be present in the DataFrame
@@ -194,10 +194,10 @@ class PerformanceData:
     def validate(self) -> bool:
         """
         Check if DataFrame has required columns.
-        
+
         Returns:
             True if validation passes
-            
+
         Raises:
             ValueError: If required columns are missing or data is empty
         """
@@ -228,13 +228,13 @@ class PerformanceData:
     def compute_relative_performance_nn_baseline(self) -> pd.DataFrame:
         """
         Compute relative performance of GARCH model against NN baseline.
-        
+
         Creates a new column 'garch_relmae_nn_baseline' which is the ratio of
         garch_relmae to nn_relmae. Values < 1 indicate GARCH outperforms NN baseline.
-        
+
         Returns:
             DataFrame with additional 'garch_relmae_nn_baseline' column
-            
+
         Raises:
             ValueError: If required columns are missing
         """
@@ -262,7 +262,7 @@ class ExperimentLoader:
     def __init__(self, metadata: ExperimentMetadata):
         """
         Initialize loader with experiment metadata.
-        
+
         Args:
             metadata: ExperimentMetadata object containing run directory and GCS paths
         """
@@ -271,13 +271,13 @@ class ExperimentLoader:
     def load_data(self, mode: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Load and preprocess data from GCS.
-        
+
         Args:
             mode: Which data to load - 'global_update' or 'local_adapt'
-            
+
         Returns:
             Tuple of (ed_df, ptd_df) for the requested mode
-            
+
         Raises:
             ValueError: If GCS paths are not set or mode is invalid
             ImportError: If data_downloader module is not available
@@ -337,18 +337,18 @@ class ExperimentLoader:
     ) -> Optional[PerformanceData]:
         """
         Load performance metrics from performance.parquet file in adapter subdirectory.
-        
+
         Args:
             backbone_bar: Backbone bar identifier (e.g., 'bb_000', 'bb_001')
             mode: Which mode to load - 'global_update' or 'local_adapt'
-            
+
         Returns:
             PerformanceData object with performance metrics, or None if file doesn't exist
-            
+
         Raises:
             ValueError: If mode is invalid
             FileNotFoundError: If performance.parquet doesn't exist
-            
+
         Example:
             >>> loader = ExperimentLoader(metadata)
             >>> perf_global = loader.load_performance_data('bb_000', mode='global_update')
@@ -402,11 +402,11 @@ def compare_experiments(
 ) -> pd.DataFrame:
     """
     Compare multiple experiments side-by-side with average rankings.
-    
+
     Args:
         perf_data_list: List of PerformanceData objects to compare
         metric: Performance metric to compare (default: 'garch_relmae')
-    
+
     Returns:
         DataFrame with comparison statistics including:
         - experiment_id: Experiment identifier (from metadata.get_config_value('run_id'))
@@ -420,10 +420,10 @@ def compare_experiments(
         - times_in_top3: Number of times ranked in top 3
         - avg_metric: Average value of the metric
         - median_metric: Median value of the metric
-    
+
     Raises:
         ValueError: If perf_data_list is empty or contains mixed modes
-    
+
     Notes:
         - Ties are handled using pandas rank(method='average'), which assigns the
           average of the ranks that would have been assigned to tied values
@@ -431,12 +431,12 @@ def compare_experiments(
         - experiment_id is extracted from metadata.get_config_value('run_id')
         - IMPORTANT: All PerformanceData objects must have the same mode
           (global_update and local_adapt are not comparable)
-    
+
     Example:
         >>> # Compare local adaptation performance
         >>> perf_list = [perf_data_m01, perf_data_m02, perf_data_sa01]
         >>> comparison = compare_experiments(perf_list, metric='garch_relmae')
-        >>> 
+        >>>
         >>> # Compare global update performance separately
         >>> perf_list_global = [perf_data_global_01, perf_data_global_02]
         >>> comparison_global = compare_experiments(perf_list_global, metric='garch_relmae')
@@ -567,32 +567,32 @@ def plot_performance_time_series(
 ) -> plt.Figure:
     """
     Plot performance metric time series for multiple experiments.
-    
+
     Creates a line plot showing how the performance metric evolves across adapter bars
     for all experiments in the list. Missing adapter bars (due to numerical failures)
     are handled gracefully with gaps in the lines.
-    
+
     Args:
         perf_data_list: List of PerformanceData objects to plot
         metric: Performance metric to plot (default: 'garch_relmae')
         save_path: Optional path to save the figure (e.g., 'outputs/analysis/plot.png')
         figsize: Figure size as (width, height) in inches
         title: Optional custom title for the plot
-    
+
     Returns:
         Matplotlib Figure object
-    
+
     Raises:
         ValueError: If perf_data_list is empty or contains mixed modes
-    
+
     Notes:
         - All PerformanceData objects must have the same mode
           (global_update and local_adapt should be plotted separately)
-    
+
     Example:
         >>> perf_list = [perf_data_m01, perf_data_m02, perf_data_sa01]
         >>> fig = plot_performance_time_series(
-        ...     perf_list, 
+        ...     perf_list,
         ...     metric='garch_relmae',
         ...     save_path='outputs/analysis/performance_timeseries.png'
         ... )
@@ -723,11 +723,11 @@ def plot_performance_boxplot(
 ) -> plt.Figure:
     """
     Create grouped boxplots comparing the metric distribution across experiments.
-    
+
     Each key in perf_data_dict represents a group, and each group contains a list of
     PerformanceData objects. Boxplots for experiments within each group are plotted
     side-by-side for comparison.
-    
+
     Args:
         perf_data_dict: Dictionary mapping group names to lists of PerformanceData objects
                        e.g., {'Config_01': [perf_M_01, perf_SA_01, perf_PL3_01],
@@ -746,13 +746,13 @@ def plot_performance_boxplot(
                       If None, no legend is created. Example:
                       {'handles': [patch1, patch2], 'labels': ['A', 'B'], 'loc': 'upper right'}
         hline: Y-value at which to draw a horizontal dashed reference line (default: 1.0)
-        ylim: Tuple specifying y-axis limits (ymin, ymax). 
+        ylim: Tuple specifying y-axis limits (ymin, ymax).
               Default: (0.875, 1.075) for garch_relmae, (0.925, 1.1) for garch_relmae_nn_baseline
               Set to None to use automatic limits.
-    
+
     Returns:
         Matplotlib Figure object
-    
+
     Example:
         >>> perf_dict = {
         ...     'M': [perf_M_01, perf_M_02, perf_M_03],
@@ -961,17 +961,17 @@ def analyze_covariate_trends(
 ) -> pd.DataFrame:
     """
     Analyze trends in covariate statistics over time.
-    
+
     This function loads physical time-driven data, optionally extracts neural covariates,
     filters to a specific backbone_bar, and computes aggregate statistics per adapter_bar.
-    
+
     Implementation Plan (Multi-Stage):
-    
+
     Stage 1 - Data Loading and Preparation:
     - Load physical time-driven data using ExperimentLoader
     - Add backbone_bar and adapter_bar columns based on session timing
     - Filter to session bounds
-    
+
     Stage 2 (Implemented) - Generative Covariates:
     - Automatically detect neural covariates from covariate_list:
       * "hidden_activations_*" prefix → requires non-parsimonious mode (64 features)
@@ -980,7 +980,7 @@ def analyze_covariate_trends(
     - Load trained model weights for the specified mode
     - Extract neural network features as needed
     - Merge neural covariates with physical time-driven data using merge_asof
-    
+
     Stage 3 (Implemented) - Statistical Aggregation:
     - Filter data to specified backbone_bar
     - Compute aggregate statistics per adapter_bar using efficient pandas groupby:
@@ -990,7 +990,7 @@ def analyze_covariate_trends(
       * Kurtosis
       * Coefficient of variation (std/mean)
     - Return DataFrame with statistics
-    
+
     Args:
         experiment: ExperimentMetadata object for a single experiment (with GCS paths set)
         covariate_list: List of covariate names to analyze. Can include:
@@ -1012,21 +1012,21 @@ def analyze_covariate_trends(
                     at both positive and negative lags. Default is False (backward compatible).
         max_lags: Maximum absolute lag for CCF computation (e.g., max_lags=50 computes lags from -50 to +50).
                  Required if compute_ccf=True. Must be a positive integer.
-    
+
     Returns:
         pandas DataFrame with columns:
             - backbone_bar: Backbone bar index (only present if multiple adapters share same backbone)
             - adapter_bar: Adapter bar index
             - {covariate}_mean: Mean value per adapter_bar
-            - {covariate}_std: Standard deviation per adapter_bar  
+            - {covariate}_std: Standard deviation per adapter_bar
             - {covariate}_skewness: Skewness per adapter_bar
             - {covariate}_kurtosis: Kurtosis per adapter_bar
             - {covariate}_cv: Coefficient of variation per adapter_bar
-            - {covariate}_ccf_lag_{lag}: Cross-correlation with micro_return at specified lag 
+            - {covariate}_ccf_lag_{lag}: Cross-correlation with micro_return at specified lag
                                          (only present if compute_ccf=True)
                                          Positive lags: covariate leads micro_return
                                          Negative lags: micro_return leads covariate
-        
+
     Example:
         >>> # Basic usage with raw covariates only
         >>> stats_df = analyze_covariate_trends(
@@ -1035,13 +1035,13 @@ def analyze_covariate_trends(
         ...     backbone_bar='bb_000',
         ...     mode='local_adapt'
         ... )
-        >>> 
+        >>>
         >>> # With neural covariates (auto-detected)
         >>> from ttstl.utils.data_preprocessor import create_pretrained_scaler
         >>> loader = ExperimentLoader(metadata)
         >>> ed_df, _ = loader.load_data(mode='local_adapt')
         >>> scaler, lower_bounds, upper_bounds = create_pretrained_scaler(ed_df, quantile=0.005)
-        >>> 
+        >>>
         >>> stats_df = analyze_covariate_trends(
         ...     experiment=metadata,
         ...     covariate_list=['OFI0', 'hidden_activations_0', 'forward_pass'],
@@ -1053,12 +1053,12 @@ def analyze_covariate_trends(
         ...     device='cuda',
         ...     batch_size=512
         ... )
-        >>> 
+        >>>
         >>> # Inspect the resulting statistics
         >>> print(stats_df.columns)
         >>> # ['adapter_bar', 'OFI0_mean', 'OFI0_std', 'OFI0_skewness', 'OFI0_kurtosis', 'OFI0_cv', ...]
         >>> print(stats_df.head())
-        >>> 
+        >>>
         >>> # With CCF analysis (requires micro_return in data)
         >>> ccf_stats_df = analyze_covariate_trends(
         ...     experiment=metadata,
@@ -1068,7 +1068,7 @@ def analyze_covariate_trends(
         ...     compute_ccf=True,
         ...     max_lags=50  # Computes CCF from lag -50 to +50
         ... )
-        >>> 
+        >>>
         >>> # CCF columns will be added: OFI0_ccf_lag_-50, ..., OFI0_ccf_lag_0, ..., OFI0_ccf_lag_50
         >>> print([col for col in ccf_stats_df.columns if 'ccf' in col])
     """
@@ -1623,15 +1623,15 @@ def extract_generative_covariates(
 ) -> pd.DataFrame:
     """
     Extract generative (neural network) covariates from a trained experiment.
-    
+
     This function reconstructs the trained neural network from an experiment's saved
     weights and uses it to extract neural covariates for the physical time-driven data.
     It follows the exact preprocessing pipeline used during training to ensure consistency.
-    
+
     NOTE: This function is also integrated into analyze_covariate_trends() as Stage 2.
     Use this standalone function when you need neural covariates without plotting,
     or use analyze_covariate_trends(include_neural_covariates=True) for integrated analysis.
-    
+
     Implementation Steps:
     1. Load event-driven and physical time-driven data using ExperimentLoader
     2. Create preprocessing components (scaler, bounds) from event-driven data
@@ -1639,7 +1639,7 @@ def extract_generative_covariates(
     4. Load trained weights from best.pt file
     5. Create Backbone instance with proper configuration
     6. Extract neural covariates using backbone.extract_neural_covariates()
-    
+
     Args:
         experiment: ExperimentMetadata object with run_dir and GCS paths configured
         backbone_bar: Backbone bar identifier (e.g., 'bb_000', 'bb_001')
@@ -1647,17 +1647,17 @@ def extract_generative_covariates(
         device: Device for model inference ('cuda' or 'cpu')
         batch_size: Batch size for neural covariate extraction
         parsimonious_mode: If True, use forward pass output (1D); if False, use hidden activations (64D)
-    
+
     Returns:
         DataFrame with columns:
         - timestamp: Physical time timestamps
         - hidden_activations_0, hidden_activations_1, ... (if parsimonious_mode=False)
         - forward_pass_0 (if parsimonious_mode=True)
-    
+
     Raises:
         FileNotFoundError: If best.pt weights file doesn't exist
         ValueError: If mode is invalid or data loading fails
-    
+
     Example:
         >>> metadata = ExperimentMetadata(
         ...     run_dir=Path('outputs/runs_synthetic_study_covariance/2025-11-05_...'),
@@ -1667,13 +1667,13 @@ def extract_generative_covariates(
         ...     gcs_ptd_local_path='synthetic_data/...'
         ... )
         >>> neural_covs = extract_generative_covariates(
-        ...     metadata, 
-        ...     backbone_bar='bb_000', 
+        ...     metadata,
+        ...     backbone_bar='bb_000',
         ...     mode='local_adapt',
         ...     parsimonious_mode=False
         ... )
         >>> print(neural_covs.shape)  # (n_physical_timestamps, 65) # timestamp + 64 hidden features
-    
+
     Notes:
         - Uses the same preprocessing pipeline as during training (via create_pretrained_scaler)
         - Requires GCS paths to be set in the ExperimentMetadata

@@ -34,10 +34,10 @@ def find_experiment_runs(
 ) -> Dict[str, Path]:
     """
     Find all experiment run directories and map them to experiment IDs.
-    
+
     Args:
         runs_dir: Root directory containing experiment runs
-        
+
     Returns:
         Dictionary mapping experiment_id to run directory path
     """
@@ -68,12 +68,12 @@ def load_performance_data(
 ) -> Optional[pd.DataFrame]:
     """
     Load performance data from a specific backbone bar and mode.
-    
+
     Args:
         run_dir: Path to experiment run directory
         backbone_bar: Backbone bar identifier (e.g., 'bb_000', 'bb_001')
         mode: Update mode ('global_update' or 'local_adapt')
-        
+
     Returns:
         DataFrame with performance data or None if not found
     """
@@ -110,10 +110,10 @@ def load_performance_data(
 def extract_experiment_info(experiment_id: str) -> Tuple[str, str]:
     """
     Extract update method and covariate config from experiment ID.
-    
+
     Args:
         experiment_id: Experiment identifier (e.g., 'M_01', 'PL3_04')
-        
+
     Returns:
         Tuple of (update_method_key, covariate_key)
     """
@@ -126,11 +126,11 @@ def extract_experiment_info(experiment_id: str) -> Tuple[str, str]:
 def get_experiment_description(update_key: str, cov_key: str) -> str:
     """
     Get human-readable description for experiment configuration.
-    
+
     Args:
         update_key: Update method key (M, SA, PL3, ES010)
         cov_key: Covariate configuration key (01-07)
-        
+
     Returns:
         Human-readable description
     """
@@ -164,12 +164,12 @@ def collect_all_performance_data(
 ) -> pd.DataFrame:
     """
     Collect all performance data from experiments.
-    
+
     Args:
         runs_dir: Root directory containing experiment runs
         backbone_bars: List of backbone bars to analyze
         modes: List of modes to analyze
-        
+
     Returns:
         Combined DataFrame with all performance data
     """
@@ -201,16 +201,16 @@ def plot_relmae_time_series(
 ) -> None:
     """
     Create RelMAE time series plots for each update rule separately.
-    
+
     Creates separate plots for each update method:
     - Myopic (M)
-    - Simple Average (SA)  
+    - Simple Average (SA)
     - Power Law (PL3)
     - Exponential Smoothing (ES010)
-    
-    Each plot shows 2x2 subplots for mode/backbone combinations with only 
+
+    Each plot shows 2x2 subplots for mode/backbone combinations with only
     covariate configuration identifiers in the legend.
-    
+
     Args:
         runs_dir: Root directory containing experiment runs
         save_path: Optional path to save the plot (will create multiple files)
@@ -398,10 +398,10 @@ def create_summary_statistics(
 ) -> pd.DataFrame:
     """
     Create summary statistics for all experiments.
-    
+
     Args:
         runs_dir: Root directory containing experiment runs
-        
+
     Returns:
         DataFrame with summary statistics
     """
@@ -459,14 +459,14 @@ def create_adapter_bar_rankings(
 ) -> Dict[str, pd.DataFrame]:
     """
     Create ranking tables for experiment configurations at each adapter bar.
-    
+
     Creates separate ranking tables for each combination of:
     - Mode: global_update vs local_adapt
     - Backbone bar: bb_000 vs bb_001
-    
+
     Args:
         runs_dir: Root directory containing experiment runs
-        
+
     Returns:
         Dictionary of DataFrames with rankings for each mode/backbone combination
     """
@@ -577,7 +577,7 @@ def save_ranking_tables(
 ) -> None:
     """
     Save ranking tables to CSV files.
-    
+
     Args:
         ranking_tables: Dictionary of ranking DataFrames
         output_dir: Directory to save the files
@@ -603,13 +603,13 @@ def analyze_ranking_consistency(
 ) -> pd.DataFrame:
     """
     Analyze ranking consistency across adapter bars.
-    
+
     Calculates metrics like average rank, rank variance, and best/worst performance
     for each experiment across all adapter bars.
-    
+
     Args:
         ranking_tables: Dictionary of ranking DataFrames
-        
+
     Returns:
         DataFrame with consistency analysis
     """
@@ -675,7 +675,7 @@ def analyze_ranking_consistency(
 def print_ranking_summary(ranking_tables: Dict[str, pd.DataFrame]) -> None:
     """
     Print a summary of ranking results to console.
-    
+
     Args:
         ranking_tables: Dictionary of ranking DataFrames
     """

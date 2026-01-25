@@ -72,10 +72,10 @@ def load_may_training_data():
     """
     Loads May 2024 event-driven data for INTC and splits into train/validation sets.
     Uses May 2, 7, 9 for validation and remaining days for training.
-    
+
     Returns:
         Tuple of (train_ed_dfs, val_ed_dfs): Lists of individual day DataFrames
-        - train_ed_dfs: List of training day DataFrames 
+        - train_ed_dfs: List of training day DataFrames
         - val_ed_dfs: List of validation day DataFrames
     """
     logger = logging.getLogger(__name__)
@@ -235,22 +235,22 @@ def prepare_daily_training_data(
 ):
     """
     Prepare training data for CNN-LSTM using pretrained scaler approach to avoid lookahead bias.
-    
+
     This function creates a pretrained scaler from all training data, then uses it consistently
     for both training and validation preprocessing. This prevents lookahead bias by ensuring
     validation data preprocessing uses only information available during training.
-    
+
     Args:
         train_ed_dfs: List of training event-driven DataFrames (individual days)
         val_ed_dfs: List of validation event-driven DataFrames (individual days)
         delta: Time horizon for target computation (same as backbone's sdelta)
         batch_size: Batch size for data loaders
         past_returns: If True, compute past returns instead of future returns
-        
+
     Returns:
         Tuple of (train_loader, val_loader, feature_names, device, pretrained_scaler, lower_bounds, upper_bounds)
         - train_loader: DataLoader for training data
-        - val_loader: DataLoader for validation data  
+        - val_loader: DataLoader for validation data
         - feature_names: List of order flow feature names
         - device: PyTorch device being used
         - pretrained_scaler: Fitted StandardScaler for future use
@@ -434,7 +434,7 @@ def train_cnn_lstm_model(
 ):
     """
     Train CNN-LSTM model using backbone's architecture and training logic.
-    
+
     Args:
         train_loader: Training data loader
         val_loader: Validation data loader
@@ -442,7 +442,7 @@ def train_cnn_lstm_model(
         num_epochs: Number of training epochs
         learning_rate: Learning rate for optimizer
         seed: Random seed for reproducibility
-        
+
     Returns:
         Trained CNN-LSTM model
     """
@@ -592,7 +592,7 @@ def save_pretrained_model(
 ):
     """
     Save the pretrained CNN-LSTM model, its training history, and preprocessing components.
-    
+
     Args:
         model: Trained CNN-LSTM model with training_history_df attribute
         experiments_dir: Directory to save the model and history
@@ -648,33 +648,43 @@ def save_pretrained_model(
         "has_pretrained_scaler": pretrained_scaler is not None,
         "has_winsorization_bounds": lower_bounds is not None
         and upper_bounds is not None,
-        "feature_names": list(lower_bounds.keys())
-        if lower_bounds is not None
-        else None,
-        "num_epochs": len(model.training_history_df)
-        if hasattr(model, "training_history_df")
-        and model.training_history_df is not None
-        else None,
-        "best_validation_loss": model.training_history_df["validation_loss"].min()
-        if hasattr(model, "training_history_df")
-        and model.training_history_df is not None
-        and len(model.training_history_df) > 0
-        else None,
-        "best_epoch": (model.training_history_df["validation_loss"].idxmin() + 1)
-        if hasattr(model, "training_history_df")
-        and model.training_history_df is not None
-        and len(model.training_history_df) > 0
-        else None,
-        "final_train_loss": model.training_history_df["train_loss"].iloc[-1]
-        if hasattr(model, "training_history_df")
-        and model.training_history_df is not None
-        and len(model.training_history_df) > 0
-        else None,
-        "final_validation_loss": model.training_history_df["validation_loss"].iloc[-1]
-        if hasattr(model, "training_history_df")
-        and model.training_history_df is not None
-        and len(model.training_history_df) > 0
-        else None,
+        "feature_names": (
+            list(lower_bounds.keys()) if lower_bounds is not None else None
+        ),
+        "num_epochs": (
+            len(model.training_history_df)
+            if hasattr(model, "training_history_df")
+            and model.training_history_df is not None
+            else None
+        ),
+        "best_validation_loss": (
+            model.training_history_df["validation_loss"].min()
+            if hasattr(model, "training_history_df")
+            and model.training_history_df is not None
+            and len(model.training_history_df) > 0
+            else None
+        ),
+        "best_epoch": (
+            (model.training_history_df["validation_loss"].idxmin() + 1)
+            if hasattr(model, "training_history_df")
+            and model.training_history_df is not None
+            and len(model.training_history_df) > 0
+            else None
+        ),
+        "final_train_loss": (
+            model.training_history_df["train_loss"].iloc[-1]
+            if hasattr(model, "training_history_df")
+            and model.training_history_df is not None
+            and len(model.training_history_df) > 0
+            else None
+        ),
+        "final_validation_loss": (
+            model.training_history_df["validation_loss"].iloc[-1]
+            if hasattr(model, "training_history_df")
+            and model.training_history_df is not None
+            and len(model.training_history_df) > 0
+            else None
+        ),
         "past_returns": past_returns,
         "returns_direction": "past" if past_returns else "future",
     }
@@ -697,11 +707,11 @@ def save_pretrained_model(
 def load_pretrained_model(model_path, device=None):
     """
     Load a pretrained CNN-LSTM model from disk.
-    
+
     Args:
         model_path: Path to the saved model state dict (.pth file)
         device: PyTorch device to load the model on (if None, will auto-select)
-        
+
     Returns:
         Loaded CNN-LSTM model
     """
@@ -734,11 +744,11 @@ def load_pretrained_model(model_path, device=None):
 def load_preprocessing_components(scaler_path, bounds_path):
     """
     Load the pretrained scaler and winsorization bounds from disk.
-    
+
     Args:
         scaler_path: Path to the saved scaler (.pkl file)
         bounds_path: Path to the saved bounds (.json file)
-        
+
     Returns:
         Tuple of (pretrained_scaler, lower_bounds, upper_bounds)
     """
@@ -772,12 +782,12 @@ def load_preprocessing_components(scaler_path, bounds_path):
 def load_full_pretrained_setup(experiments_dir, model_name, device=None):
     """
     Load the complete pretrained setup: model, scaler, and bounds.
-    
+
     Args:
         experiments_dir: Directory containing the saved artifacts
         model_name: Base name of the saved files
         device: PyTorch device to load the model on (if None, will auto-select)
-        
+
     Returns:
         Tuple of (model, pretrained_scaler, lower_bounds, upper_bounds)
     """
@@ -802,7 +812,7 @@ def load_full_pretrained_setup(experiments_dir, model_name, device=None):
 def main(num_epochs=50, past_returns=False):
     """
     Main function to train and save CNN-LSTM model using May 2024 data.
-    
+
     Args:
         past_returns: If True, train on concurrent returns instead of future returns
     """

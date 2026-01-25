@@ -45,12 +45,12 @@ def setup_logging():
 def get_convergence_stats(run_dir: Path, backbone_bar: str, mode: str = "local_adapt"):
     """
     Extract convergence statistics from convergence_performance.json file.
-    
+
     Args:
         run_dir: Path to the experiment run directory
         backbone_bar: Backbone bar identifier (e.g., 'bb_000')
         mode: Mode to check ('local_adapt' or 'global_update')
-        
+
     Returns:
         Tuple of (failed_count, saddle_point_count) or (0, 0) if file not found
     """

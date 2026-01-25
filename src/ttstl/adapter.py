@@ -54,7 +54,7 @@ class Adapter:
 
     def _load_r_scripts(self):
         """Load R scripts once per class to avoid repeated file I/O.
-        
+
         This method loads the required R scripts into the R global environment.
         It only loads scripts once using a class-level flag to optimize performance
         during rolling forecasts and repeated model fitting.
@@ -119,8 +119,8 @@ class Adapter:
                 ell_seq = np.arange(1, ell) ** alpha
                 sum_ell_seq = np.sum(ell_seq)
                 self.parameters[key] = (
-                    sum_ell_seq / (sum_ell_seq + ell ** alpha) * self.parameters[key]
-                    + ell ** alpha / (sum_ell_seq + ell ** alpha) * new_parameters[key]
+                    sum_ell_seq / (sum_ell_seq + ell**alpha) * self.parameters[key]
+                    + ell**alpha / (sum_ell_seq + ell**alpha) * new_parameters[key]
                 )
 
     def _update_exponential_smoothing(self, new_parameters: dict, alpha: float = 0.1):
@@ -158,7 +158,7 @@ class Adapter:
     ):
         """
         Newton-Raphson parameter update: θ_new = θ_old - (H + λ I)^(-1) * ∇f
-        
+
         Parameters
         ----------
         new_parameters : dict
@@ -169,7 +169,7 @@ class Adapter:
             Hessian matrix from numderiv_garch (required).
         regularization : float
             Diagonal regularization for numerical stability (λ).
-        
+
         Raises
         ------
         ValueError
@@ -248,7 +248,7 @@ class Adapter:
             Information matrix from numderiv_garch (required).
         regularization : float
             Diagonal regularization for numerical stability (λ).
-        
+
         Raises
         ------
         ValueError
@@ -321,7 +321,7 @@ class Adapter:
             Gradient vector from numderiv_garch (required).
         alpha : float
             Step size for gradient descent.
-        
+
         Raises
         ------
         ValueError
@@ -369,7 +369,7 @@ class Adapter:
     ):
         """
         Print a Python summary of the GARCH model parameters.
-        
+
         Parameters
         ----------
         adapter_bar_number : int
@@ -443,7 +443,7 @@ class Adapter:
     ) -> dict:
         """
         Fit GARCH model using R's rugarch package through rpy2.
-        
+
         Parameters
         ----------
         y : array-like
@@ -455,9 +455,9 @@ class Adapter:
         out_sample : int, optional
             Number of out-of-sample observations to hold out during fitting. 0 by default.
         bypass_fit : bool, optional
-            If True, only create the GARCH specification without fitting. 
+            If True, only create the GARCH specification without fitting.
             Returns spec only, all other result fields will be None. False by default.
-            
+
         Returns
         -------
         dict
@@ -473,7 +473,7 @@ class Adapter:
             - 'saddle_point_indicator': int or None - 1 if saddle point detected, 0 otherwise
             - 'spec': R GARCH specification object (always returned)
             - 'model_info': dict - Model configuration metadata
-            
+
         Note
         ----
         When bypass_fit=True, only 'spec' and 'model_info' contain meaningful data.
@@ -569,7 +569,7 @@ class Adapter:
     ) -> pd.DataFrame:
         """
         Extract raw neural network outputs (forward pass) from the backbone model.
-        
+
         This method uses the backbone's extract_neural_covariates method with get_output=True
         to obtain the raw CNN-LSTM outputs instead of hidden activations. This is useful
         for comparison purposes and analysis of the model's direct predictions.
@@ -582,12 +582,12 @@ class Adapter:
             Physical time-driven data with timestamps.
         batch_size : int, optional
             Batch size for processing. 512 by default.
-            
+
         Returns
         -------
         pd.DataFrame
             DataFrame containing timestamps and raw neural network outputs with ``forward_pass_`` prefix.
-            
+
         Examples
         --------
         >>> nn_outputs = adapter.get_nn_output(event_df, phys_df)
@@ -740,7 +740,7 @@ class Adapter:
     ) -> dict:
         """
         Update adapter parameters by fitting ARMAX-GARCH model on new data from an adapter time bar.
-        
+
         Parameters
         ----------
         event_driven_adapter_time_bar_data : pd.DataFrame
@@ -755,7 +755,7 @@ class Adapter:
             Name of the target variable column. 'micro_return' by default.
         update_parameters : dict, optional
             Additional parameters for the update method.
-            
+
         Returns
         -------
         dict
@@ -1096,16 +1096,16 @@ class Adapter:
                     Relative contributions with columns ['timestamp', var1, var2, ...] where:
                     * 'timestamp': Time index matching forecast_df
                     * var1, var2, ...: Each selected variable's contribution (coefficient × feature_value)
-                    
+
         Note
         ----
         The returned DataFrames are independent objects. Changes to self.interface.selected_variables
         after this call will NOT affect the returned DataFrames, but subsequent calls to forecast()
         will use the updated selected_variables.
-            
+
         Examples
         --------
-        >>> result = adapter.forecast(in_sample_event, in_sample_phys, 
+        >>> result = adapter.forecast(in_sample_event, in_sample_phys,
         ...                           out_sample_event, out_sample_phys, scaler)
         >>> forecast_df = result['forecast_df']
         >>> contributions_df = result['relative_contributions_df']
@@ -1339,7 +1339,7 @@ class Adapter:
         out_of_sample_phys_df : pd.DataFrame
             Out-of-sample physical time data.
         benchmark_forecast : Union[float, pd.Series]
-            Benchmark forecast values for relative metric calculation. Can be a scalar 
+            Benchmark forecast values for relative metric calculation. Can be a scalar
             (constant forecast) or a Series matching the length of out-of-sample data.
         scaler : StandardScaler
             Fitted scaler for data preprocessing.
@@ -1366,18 +1366,18 @@ class Adapter:
                     DataFrame with columns ['timestamp', var1, var2, ...] containing
                     coefficient × feature_value for each selected variable across the
                     out-of-sample period.
-                    
+
         Examples
         --------
         >>> result = adapter.calculate_performance_metrics(
-        ...     in_event, in_phys, out_event, out_phys, 
+        ...     in_event, in_phys, out_event, out_phys,
         ...     benchmark_forecast=0.0, scaler=scaler)
-        >>> 
+        >>>
         >>> # Access metrics
         >>> metrics = result['metrics']
         >>> print(f"GARCH MAE: {metrics['garch_mae']:.6f}")
         >>> print(f"GARCH R²: {metrics['garch_r2']:.6f}")
-        >>> 
+        >>>
         >>> # Access relative contributions
         >>> contributions = result['relative_contributions']
         >>> print(contributions.head())

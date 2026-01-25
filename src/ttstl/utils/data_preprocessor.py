@@ -18,11 +18,11 @@ def create_pretrained_scaler(
 ) -> Tuple[StandardScaler, Optional[dict], Optional[dict]]:
     """
     Create a pretrained scaler on historical data to avoid lookahead bias.
-    
+
     This method fits a StandardScaler on order flow features from historical data
     and optionally computes quantile-based clipping bounds. The returned scaler
     and bounds can be reused for consistent preprocessing of future data.
-    
+
     Parameters
     ----------
     data : pd.DataFrame
@@ -33,7 +33,7 @@ def create_pretrained_scaler(
         - order flow features (any column whose name contains 'of').
 
     quantile : float, optional
-        If provided, computes winsorization bounds by calculating lower and upper 
+        If provided, computes winsorization bounds by calculating lower and upper
         quantiles for each standardized feature. If None, returns None for both bound dictionaries.
         Default is 0.005.
 
@@ -43,9 +43,9 @@ def create_pretrained_scaler(
         Tuple containing:
 
         - scaler (StandardScaler): Fitted scaler on order flow features.
-        - lower_bounds (dict or None): Dictionary mapping feature names to lower 
+        - lower_bounds (dict or None): Dictionary mapping feature names to lower
           quantile bounds for clipping. None if quantile is None.
-        - upper_bounds (dict or None): Dictionary mapping feature names to upper 
+        - upper_bounds (dict or None): Dictionary mapping feature names to upper
           quantile bounds for clipping. None if quantile is None.
 
     Raises

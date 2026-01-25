@@ -314,12 +314,12 @@ def load_market_data_experiments(
 ):
     """
     Load performance data for market data experiments.
-    
+
     Args:
         config_numbers: List of configuration numbers to load (e.g., ['01', '02', '03', '04', '05', '06'])
         pairs: List of date pair numbers to load (e.g., ['01', '02', ..., '10'])
         backbone_bar: Which backbone bar to analyze ('bb_000' or 'bb_001')
-        
+
     Returns:
         List of PerformanceData objects
     """
@@ -386,11 +386,11 @@ def load_market_data_experiments(
 def get_convergence_stats(run_dir, backbone_bar):
     """
     Extract convergence statistics from convergence_performance.json.
-    
+
     Args:
         run_dir: Path to experiment run directory
         backbone_bar: Backbone bar identifier (e.g., 'bb_000')
-        
+
     Returns:
         Tuple of (convergence_failed_count, convergence_saddle_point_count)
     """
@@ -892,7 +892,7 @@ def analyze_market_data_covariates():
 def plot_covariate_aggregate_measures():
     """
     Create boxplots for covariate aggregate measures.
-    
+
     For each aggregate measure (mean, std, skewness, kurtosis, cv):
         - Create one plot with 3 vertically stacked subplots (one per backbone bar)
         - X-axis: Date pairs
@@ -1149,7 +1149,7 @@ def plot_covariate_aggregate_measures():
 def plot_ofi_aggregate_measures_separately():
     """
     Create separate boxplots for OFI mean and std aggregate measures.
-    
+
     OFI has a very different scale compared to other variables, so we plot it separately
     for better visualization. Creates plots for mean and std only (the most important measures).
     """
@@ -1323,9 +1323,9 @@ def plot_ofi_aggregate_measures_separately():
 def plot_vix_aggregate_measures_separately():
     """
     Create separate boxplots for all VIX aggregate measures across all maturities.
-    
+
     VIX has a different scale compared to other variables, so we plot it separately
-    for better visualization. Creates plots for all aggregate measures (mean, std, 
+    for better visualization. Creates plots for all aggregate measures (mean, std,
     skewness, kurtosis, cv) with all four maturities (1d, 9d, 30d, 3m).
     """
     logger = logging.getLogger(__name__)
@@ -1558,7 +1558,7 @@ def plot_vix_aggregate_measures_separately():
 def plot_ccf_sequential_boxplots():
     """
     Plot CCF results as sequential boxplots for each covariate.
-    
+
     For each covariate:
         - Create a 10x2 grid of subplots (one per date pair)
         - Each subplot shows boxplots across all lags (-max_lags to +max_lags)

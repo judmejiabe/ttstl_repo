@@ -19,7 +19,7 @@ from ttstl.utils.data_downloader import import_to_pandas
 def setup_experiment_logging(log_filename_prefix, past_returns=False):
     """
     Setup logging to see operations.
-    
+
     Args:
         log_filename_prefix: Prefix for the log filename (e.g., 'market_data_experiments')
         past_returns: Whether the experiment uses past returns (adds suffix)
@@ -52,7 +52,7 @@ def setup_experiment_logging(log_filename_prefix, past_returns=False):
 def set_trained_model_to_orchestrator(orchestrator_obj, trained_model):
     """
     Set the trained CNN-LSTM model to all backbone bars in the orchestrator.
-    
+
     Args:
         orchestrator_obj: TTSTL Orchestrator instance
         trained_model: Trained CNN-LSTM model
@@ -272,12 +272,12 @@ def load_date_data(date_str, ticker="INTC", past_returns=False):
     """
     Load data for a specific date, dynamically resolving the GCS bucket.
     Priority: 1. Environment Var -> 2. credentials.json -> 3. Hardcoded Default
-        
+
     Args:
         date_str: Date string in format MMDDYYYY (e.g., "06032024")
         ticker: Stock ticker
         past_returns: If True, compute past returns instead of future returns
-        
+
     Returns:
         Tuple of (ed_df, ptd_df) or (None, None) if loading fails
     """
@@ -387,11 +387,11 @@ def select_random_gpu():
 def load_pretrained_model(model_path, device=None):
     """
     Load a pretrained CNN-LSTM model from disk.
-    
+
     Args:
         model_path: Path to the saved model state dict (.pth file)
         device: PyTorch device to load the model on (if None, will auto-select)
-        
+
     Returns:
         Loaded CNN-LSTM model
     """
@@ -424,11 +424,11 @@ def load_pretrained_model(model_path, device=None):
 def load_preprocessing_components(scaler_path, bounds_path):
     """
     Load the pretrained scaler and winsorization bounds from disk.
-    
+
     Args:
         scaler_path: Path to the saved scaler (.pkl file)
         bounds_path: Path to the saved bounds (.json file)
-        
+
     Returns:
         Tuple of (pretrained_scaler, lower_bounds, upper_bounds)
     """
@@ -462,12 +462,12 @@ def load_preprocessing_components(scaler_path, bounds_path):
 def load_full_pretrained_setup(experiments_dir, model_name, device=None):
     """
     Load the complete pretrained setup: model, scaler, and bounds.
-    
+
     Args:
         experiments_dir: Directory containing the saved artifacts
         model_name: Base name of the saved files
         device: PyTorch device to load the model on (if None, will auto-select)
-        
+
     Returns:
         Tuple of (model, pretrained_scaler, lower_bounds, upper_bounds)
     """
@@ -492,11 +492,11 @@ def load_full_pretrained_setup(experiments_dir, model_name, device=None):
 def load_pretrained_model_for_experiments(pretraining_dir):
     """
     Load a pretrained CNN-LSTM model and preprocessing components for use in TTSTL experiments.
-    
+
     Args:
         pretraining_dir: Path to the directory containing the pretrained model files.
                         Should contain .pth, _bounds.json, and _metadata.json files.
-        
+
     Returns:
         Tuple of (trained_model, scaler, lower_bounds, upper_bounds) or None if loading fails
     """

@@ -61,7 +61,7 @@ class Backbone:
         past_returns: bool = False,
     ) -> None:
         """Initialize the Backbone with a model and delta adapter.
-        
+
         Parameters
         ----------
         model : nn.Module
@@ -131,10 +131,10 @@ class Backbone:
     ) -> None:
         """
         Set or update the preprocessing components (scaler and bounds).
-        
+
         This method allows setting preprocessing components after backbone initialization,
         which is useful when the scaler is created during training or loaded from disk.
-        
+
         Parameters
         ----------
         pretrained_scaler : StandardScaler
@@ -160,7 +160,7 @@ class Backbone:
     def has_preprocessing_components(self) -> bool:
         """
         Check if all preprocessing components are available.
-        
+
         Returns
         -------
         bool
@@ -179,7 +179,7 @@ class Backbone:
         optimizer: Optional[torch.optim.Optimizer] = None,
     ) -> float:
         """Performs batch gradient descent on the provided dataset.
-        
+
         Parameters
         ----------
         train_loader : DataLoader
@@ -229,7 +229,7 @@ class Backbone:
         checkpoint_dir: Optional[str] = None,
     ) -> float:
         """Train the model for specified epochs with optional checkpoint saving.
-        
+
         Parameters
         ----------
         train_loader : DataLoader
@@ -246,7 +246,7 @@ class Backbone:
             Whether to save checkpoints every epoch. False by default.
         checkpoint_dir : str, optional
             Directory to save checkpoints.
-            
+
         Returns
         -------
         float
@@ -305,9 +305,9 @@ class Backbone:
                 checkpoint_data = {
                     "epoch": epoch + 1,
                     "model_state_dict": self.model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict()
-                    if optimizer
-                    else None,
+                    "optimizer_state_dict": (
+                        optimizer.state_dict() if optimizer else None
+                    ),
                     "train_loss": this_train_loss,
                     "validation_loss": this_validation_loss,
                     "best_validation_loss": best_validation_loss,
@@ -343,21 +343,21 @@ class Backbone:
 
     def _run_stationarity_tests(self, series: pd.Series) -> dict:
         """Conducts the Augmented Dickey-Fuller (ADF), Philips Perron (PP), and
-        Kwiatkowski-Phillips-Schmidt-Shin (KPSS) stationarity tests on a given 
+        Kwiatkowski-Phillips-Schmidt-Shin (KPSS) stationarity tests on a given
         Pandas series. The results are returned in dictionary with keys 'ADF',
         'PP', 'KPSS', and 'NA' where the value corresponds to 1 if rejection
         and zero otherwise. If any of the tests fail, the 'NA' key will be set
         to 1.
-        
+
         Parameters
         ----------
         series : pd.Series
             Pandas Series to test for stationarity.
-            
+
         Returns
         -------
         dict
-            Dictionary with keys 'ADF', 'PP', 'KPSS', and 'NA' with 
+            Dictionary with keys 'ADF', 'PP', 'KPSS', and 'NA' with
             values indicating test results.
         """
 
@@ -382,17 +382,16 @@ class Backbone:
     def _run_multiple_stationarity_tests(
         self, data: pd.DataFrame, session_start: float = 0.0
     ) -> pd.DataFrame:
-
-        """Perform multiple stationarity tests on the provided data. 
+        """Perform multiple stationarity tests on the provided data.
         The testing frequency is determined by the delta_adapter attribute.
-        
+
         Parameters
         ----------
         data : pd.DataFrame
             Dataframe containing Phyisical Time Driven data.
         session_start : float, optional
             Session start time. 0.0 by default.
-            
+
         Returns
         -------
         pd.DataFrame
@@ -453,7 +452,7 @@ class Backbone:
         session_start: float = 0.0,
     ) -> pd.DataFrame:
         """Select stationary variables from the DataFrame.
-        
+
         Parameters
         ----------
         data : pd.DataFrame
@@ -472,7 +471,7 @@ class Backbone:
             Directory to save stationarity test results.
         session_start : float, optional
             Session start time. 0.0 by default.
-            
+
         Returns
         -------
         pd.DataFrame
@@ -568,7 +567,7 @@ class Backbone:
 
     def _add_covariate_set(self, extra_covariate_set: list) -> None:
         """Add extra covariate set to the full variable set.
-        
+
         Parameters
         ----------
         extra_covariate_set : list
@@ -588,14 +587,14 @@ class Backbone:
         self, data: pd.DataFrame, threshold: float = 0.95
     ) -> pd.DataFrame:
         """Drops highly correlated variables from data at a random order.
-        
+
         Parameters
         ----------
         data : pd.DataFrame
             DataFrame containing the time series data.
         threshold : float, optional
             Correlation threshold. 0.95 by default.
-            
+
         Returns
         -------
         pd.DataFrame
@@ -664,11 +663,11 @@ class Backbone:
         get_output: bool = False,
     ) -> pd.DataFrame:
         """Extract neural network covariates from event-driven data for physical time-driven data.
-        
+
         For each timestamp in the physical time-driven data, find the last row in the event-driven
         data with a timestamp smaller than the physical timestamp, and extract neural network
         features (hidden activations or forward pass output) for that row.
-        
+
         Parameters
         ----------
         event_driven_data : pd.DataFrame
@@ -679,7 +678,7 @@ class Backbone:
             Batch size for processing. 512 by default.
         get_output : bool, optional
             If True, get model output instead of hidden activations. False by default.
-            
+
         Returns
         -------
         pd.DataFrame
@@ -817,7 +816,7 @@ class Backbone:
     ) -> None:
         """
         Compute and store correlation matrices for neural and manually extracted covariates.
-        
+
         Parameters
         ----------
         data : pd.DataFrame
@@ -897,8 +896,8 @@ class Backbone:
                     target_col_name
                 ] + microstructural_covariates_names
                 microstructural_data = correlation_data[microstructural_with_target]
-                self.manually_extracted_covariates_correlation = microstructural_data.corr(
-                    method="pearson"
+                self.manually_extracted_covariates_correlation = (
+                    microstructural_data.corr(method="pearson")
                 )
                 self.logger.info(
                     f"Computed microstructural covariates correlation matrix with shape: {self.manually_extracted_covariates_correlation.shape}."
@@ -960,53 +959,53 @@ class Backbone:
             correlation_matrices = dict()
 
             if self.parsimonious_mode:
-                correlation_matrices[
-                    "all_covariates_correlation"
-                ] = self.neural_covariates_correlation.values
-                correlation_matrices[
-                    "all_covariates_columns"
-                ] = self.neural_covariates_correlation.columns.tolist()
-                correlation_matrices[
-                    "all_covariates_index"
-                ] = self.neural_covariates_correlation.index.tolist()
+                correlation_matrices["all_covariates_correlation"] = (
+                    self.neural_covariates_correlation.values
+                )
+                correlation_matrices["all_covariates_columns"] = (
+                    self.neural_covariates_correlation.columns.tolist()
+                )
+                correlation_matrices["all_covariates_index"] = (
+                    self.neural_covariates_correlation.index.tolist()
+                )
 
             else:
 
                 # Add neural covariates correlation matrix if not None
                 if self.neural_covariates_correlation is not None:
-                    correlation_matrices[
-                        "neural_covariates_correlation"
-                    ] = self.neural_covariates_correlation.values
-                    correlation_matrices[
-                        "neural_covariates_columns"
-                    ] = self.neural_covariates_correlation.columns.tolist()
-                    correlation_matrices[
-                        "neural_covariates_index"
-                    ] = self.neural_covariates_correlation.index.tolist()
+                    correlation_matrices["neural_covariates_correlation"] = (
+                        self.neural_covariates_correlation.values
+                    )
+                    correlation_matrices["neural_covariates_columns"] = (
+                        self.neural_covariates_correlation.columns.tolist()
+                    )
+                    correlation_matrices["neural_covariates_index"] = (
+                        self.neural_covariates_correlation.index.tolist()
+                    )
 
                 # Add manually extracted covariates correlation matrix if not None
                 if self.manually_extracted_covariates_correlation is not None:
-                    correlation_matrices[
-                        "microstructural_covariates_correlation"
-                    ] = self.manually_extracted_covariates_correlation.values
-                    correlation_matrices[
-                        "microstructural_covariates_columns"
-                    ] = self.manually_extracted_covariates_correlation.columns.tolist()
-                    correlation_matrices[
-                        "microstructural_covariates_index"
-                    ] = self.manually_extracted_covariates_correlation.index.tolist()
+                    correlation_matrices["microstructural_covariates_correlation"] = (
+                        self.manually_extracted_covariates_correlation.values
+                    )
+                    correlation_matrices["microstructural_covariates_columns"] = (
+                        self.manually_extracted_covariates_correlation.columns.tolist()
+                    )
+                    correlation_matrices["microstructural_covariates_index"] = (
+                        self.manually_extracted_covariates_correlation.index.tolist()
+                    )
 
                 # Add cross correlation matrix if not None
                 if self.cross_correlation_matrix is not None:
-                    correlation_matrices[
-                        "cross_correlation_matrix"
-                    ] = self.cross_correlation_matrix.values
-                    correlation_matrices[
-                        "cross_correlation_columns"
-                    ] = self.cross_correlation_matrix.columns.tolist()
-                    correlation_matrices[
-                        "cross_correlation_index"
-                    ] = self.cross_correlation_matrix.index.tolist()
+                    correlation_matrices["cross_correlation_matrix"] = (
+                        self.cross_correlation_matrix.values
+                    )
+                    correlation_matrices["cross_correlation_columns"] = (
+                        self.cross_correlation_matrix.columns.tolist()
+                    )
+                    correlation_matrices["cross_correlation_index"] = (
+                        self.cross_correlation_matrix.index.tolist()
+                    )
 
             # Save all correlation matrices to npz file
             if correlation_matrices:
@@ -1051,7 +1050,7 @@ class Backbone:
 
     def _save_correlation_heatmaps(self, save_dir: Path) -> None:
         """Save correlation heatmaps to disk. This function will handle parsimonious mode and full mode automatically.
-        
+
         Parameters
         ----------
         save_dir : Path
@@ -1106,7 +1105,7 @@ class Backbone:
 
     def save_training_history(self, save_dir: str) -> None:
         """Save training history to parquet file.
-        
+
         Parameters
         ----------
         save_dir : str
@@ -1126,7 +1125,7 @@ class Backbone:
 
     def save_model_weights(self, save_dir: str) -> None:
         """Save the best model weights to disk.
-        
+
         Parameters
         ----------
         save_dir : str
@@ -1184,7 +1183,7 @@ class Backbone:
 
     def save_nn_weights(self, save_dir: str) -> None:  # Checked
         """Save neural network weights in portable numpy format.
-        
+
         Parameters
         ----------
         save_dir : str
@@ -1214,7 +1213,7 @@ class Backbone:
 
     def save_test_results(self, save_dir: str, test_loss: float) -> None:
         """Save test results for out-of-sample evaluation.
-        
+
         Parameters
         ----------
         save_dir : str
@@ -1246,7 +1245,7 @@ class Backbone:
         save_dir: Optional[str] = None,
     ) -> float:
         """Evaluate the trained model on out-of-sample data.
-        
+
         Parameters
         ----------
         event_driven_data : pd.DataFrame
@@ -1257,7 +1256,7 @@ class Backbone:
             Batch size for evaluation. 32 by default.
         save_dir : str, optional
             Directory to save test results. None by default.
-            
+
         Returns
         -------
         float
@@ -1367,11 +1366,11 @@ class Backbone:
         session_start: float = 0.0,
     ) -> float:
         """Perform global update of the model with time-based train/validation split.
-        
+
         Creates a 90/10% (configurable) partition of the backbone interval event driven data.
-        The validation interval is selected uniformly at random from the start of the bar to 
+        The validation interval is selected uniformly at random from the start of the bar to
         train_proportion of the bar. Buffer zones are applied to avoid data leakage.
-        
+
         Parameters
         ----------
         event_driven_backbone_time_bar_data : pd.DataFrame
@@ -1404,7 +1403,7 @@ class Backbone:
             Name of the target variable column. Defaults to 'micro_return'.
         save_dir : str, optional
             Directory to save results of the global_update
-            
+
         Returns
         -------
         float
@@ -1661,10 +1660,10 @@ class Backbone:
                         "Neural covariates only mode - using neural covariates without manual features"
                     )
                     # Need to merge target variable from physical data for stationarity testing
-                    physical_time_driven_backbone_time_bar_data[
-                        "timestamp"
-                    ] = physical_time_driven_backbone_time_bar_data["timestamp"].astype(
-                        float
+                    physical_time_driven_backbone_time_bar_data["timestamp"] = (
+                        physical_time_driven_backbone_time_bar_data["timestamp"].astype(
+                            float
+                        )
                     )
                     augmented_physical_data = pd.merge_asof(
                         neural_covariates,
@@ -1680,10 +1679,10 @@ class Backbone:
                     )
                 else:
                     # Standard mode - merge neural covariates with physical data
-                    physical_time_driven_backbone_time_bar_data[
-                        "timestamp"
-                    ] = physical_time_driven_backbone_time_bar_data["timestamp"].astype(
-                        float
+                    physical_time_driven_backbone_time_bar_data["timestamp"] = (
+                        physical_time_driven_backbone_time_bar_data["timestamp"].astype(
+                            float
+                        )
                     )
                     self.logger.info(
                         "Merging neural covariates with physical time data"

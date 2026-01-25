@@ -45,11 +45,11 @@ from ttstl.interface import Interface
 class OrchestratorConfig:
     """
     Configuration for the TTSTL Orchestrator.
-    
+
     This dataclass contains all configuration parameters for the Two Time-Scale Transfer
     Learning framework, including backbone neural network training, interface variable
     selection, and adapter ARMAX-GARCH modeling.
-    
+
     Attributes
     ----------
     ticker : str
@@ -154,16 +154,26 @@ class OrchestratorConfig:
     adelta: float  # Defines adapter time bar length
     sdelta: float  # Defines sampling time bar length
     seed: int  # RNG seed
-    session_start: float  # start of the session in the same units as the recorded timestamp
-    session_finish: float  # end of the session in the same units as the recorded timestamp
+    session_start: (
+        float  # start of the session in the same units as the recorded timestamp
+    )
+    session_finish: (
+        float  # end of the session in the same units as the recorded timestamp
+    )
     target_col_name: str = "micro_return"  # Target variable column name in all datasets
 
     # Backbone knobs
     architecture: str = "cnn_lstm"
     parsimonious_mode: bool = False
-    neural_covariates_only: bool = False  # Use only neural covariates (no manual/stationary features)
-    manual_covariates_only: bool = False  # Use only manual/stationary covariates (no neural features)
-    past_returns: bool = False  # Whether to use past returns (concurrent returns) instead of future returns
+    neural_covariates_only: bool = (
+        False  # Use only neural covariates (no manual/stationary features)
+    )
+    manual_covariates_only: bool = (
+        False  # Use only manual/stationary covariates (no neural features)
+    )
+    past_returns: bool = (
+        False  # Whether to use past returns (concurrent returns) instead of future returns
+    )
     epochs: int = 12
     batch_size: int = 32
     validation_proportion_backbone: float = 0.1
@@ -175,9 +185,9 @@ class OrchestratorConfig:
     correlation_threshold: float = 0.95  # Correlation threshold for feature filtering
 
     # Preprocessing components for lookahead bias prevention
-    pretrained_scaler: Optional[
-        StandardScaler
-    ] = None  # Pretrained scaler from preprocessing
+    pretrained_scaler: Optional[StandardScaler] = (
+        None  # Pretrained scaler from preprocessing
+    )
     lower_bounds: Optional[Dict[str, float]] = None  # Lower windsorization bounds
     upper_bounds: Optional[Dict[str, float]] = None  # Upper windsorization bounds
 
@@ -197,10 +207,12 @@ class OrchestratorConfig:
     )
 
     # Variable selection
-    user_defined_variables: Optional[
-        List[str]
-    ] = None  # Bypass adalasso with user-defined variables
-    second_stage_mse: bool = False  # Use MSE instead of BIC for adalasso hyperparameter selection
+    user_defined_variables: Optional[List[str]] = (
+        None  # Bypass adalasso with user-defined variables
+    )
+    second_stage_mse: bool = (
+        False  # Use MSE instead of BIC for adalasso hyperparameter selection
+    )
 
     validation_proportion_interface: float = 0.2
     selection_threshold: float = 0.40
@@ -217,7 +229,9 @@ class OrchestratorConfig:
     model: str = "sGARCH"
     archm: bool = False
     update_parameters: dict = field(default_factory=dict)
-    compare_with_cnn_lstm: bool = False  # Whether to compare TTSTL performance with raw CNN-LSTM outputs
+    compare_with_cnn_lstm: bool = (
+        False  # Whether to compare TTSTL performance with raw CNN-LSTM outputs
+    )
 
     # Optional run-id override
     run_id: Optional[str] = None
@@ -226,7 +240,7 @@ class OrchestratorConfig:
 class Orchestrator:
     """
     TTSTL Orchestrator - Coordinates backbone, interface, and adapter modules.
-    
+
     Manages the execution flow of the Two Time-Scale Transfer Learning framework,
     including:
     - Training neural network backbone models on event-driven data
@@ -234,30 +248,30 @@ class Orchestrator:
     - Adaptive ARMAX-GARCH parameter estimation via adapter module
     - Artifact persistence and provenance tracking
     - Model interpretability through SHAP-style contribution visualizations
-    
+
     The orchestrator operates in two primary modes:
-    
+
     1. Global Update Mode:
        - Trains backbone neural networks on in-sample data
        - Selects relevant features via interface
        - Fits ARMAX-GARCH models across adapter bars
        - Generates performance metrics and interpretability plots
        - Saves all artifacts to structured directories
-       
+
     2. Local Adaptation Mode:
        - Uses frozen backbone models for out-of-sample evaluation
        - Applies pre-fitted scalers and target statistics from global update
        - Updates adapter parameters on new data
        - Generates forecasts and performance metrics
        - Prevents lookahead bias through consistent preprocessing
-    
+
     Key Features:
     - Multi-scale temporal decomposition (backbone, adapter, sampling bars)
     - Reproducible random seeding across Python, NumPy, and PyTorch
     - Automatic GPU selection when CUDA is available
     - Comprehensive artifact generation (plots, data, metadata)
     - JSON manifest tracking for provenance
-    
+
     Attributes
     ----------
     runs_root : Path
@@ -281,7 +295,7 @@ class Orchestrator:
     def __init__(self, runs_root: Path = None, cfg: OrchestratorConfig = None) -> None:
         """
         Initialize the Orchestrator.
-        
+
         Parameters
         ----------
         runs_root : Path, optional
@@ -337,8 +351,8 @@ class Orchestrator:
 
         # Generate independent seeds for each library
         python_seed = self.cfg.seed  # Use base seed for Python
-        numpy_seed = base_rng.randint(0, 2 ** 32 - 1)  # Independent seed for NumPy
-        torch_seed = base_rng.randint(0, 2 ** 32 - 1)  # Independent seed for PyTorch
+        numpy_seed = base_rng.randint(0, 2**32 - 1)  # Independent seed for NumPy
+        torch_seed = base_rng.randint(0, 2**32 - 1)  # Independent seed for PyTorch
 
         # Seed Python RNG
         random.seed(python_seed)
@@ -557,19 +571,19 @@ class Orchestrator:
     ) -> None:
         """
         Import backbone modules from another orchestrator instance.
-        
+
         This method copies the trained backbone modules from a source orchestrator
         and integrates them into the current orchestrator's stacks, effectively
         enabling transfer learning by reusing pre-trained backbone models.
-        
+
         Parameters
         ----------
         source_orchestrator : Orchestrator
             Another Orchestrator instance with trained backbone modules
         keep_epochs : bool, optional
-            Whether to keep the existing epoch count (True) or reset to 0 (False). 
+            Whether to keep the existing epoch count (True) or reset to 0 (False).
             Default is False.
-            
+
         Raises
         ------
         ValueError
@@ -736,14 +750,14 @@ class Orchestrator:
     ) -> List[Dict[str, Any]]:
         """
         Perform global update for all backbone bars in the session automatically.
-        
+
         Parameters
         ----------
         event_df : pd.DataFrame
             Full event-driven trading session data
         phys_df : pd.DataFrame
             Full physical-time trading session data
-            
+
         Returns
         -------
         List[Dict[str, Any]]
@@ -829,16 +843,16 @@ class Orchestrator:
     ) -> Dict[str, Any]:
         """
         Perform global update for a single backbone bar.
-        
+
         Note: This method is intended for internal use by the orchestrator.
-        
+
         Parameters
         ----------
         event_df : pd.DataFrame
             Event-driven data for one backbone bar
         phys_df : pd.DataFrame
             Physical-time data for one backbone bar
-            
+
         Returns
         -------
         Dict[str, Any]
@@ -910,10 +924,10 @@ class Orchestrator:
     ) -> None:
         """
         Fit scalers and compute target variable scales for use in local adaptation.
-        
+
         This method extracts the scaler fitting logic from _run_adapter_global_update
         so it can be reused in local adaptation without recomputing the scalers.
-        
+
         Parameters
         ----------
         event_df : pd.DataFrame
@@ -1101,11 +1115,11 @@ class Orchestrator:
     ) -> Dict[str, Any]:
         """
         Run adapter global update step.
-        
+
         This method performs ARMAX-GARCH model fitting across all adapter bars within
         a backbone bar, evaluates forecast performance, and generates interpretability
         visualizations.
-        
+
         Parameters
         ----------
         event_df : pd.DataFrame
@@ -1114,7 +1128,7 @@ class Orchestrator:
             Physical time data for the current backbone bar
         bb_dir : Path
             Directory for saving artifacts
-            
+
         Returns
         -------
         Dict[str, Any]
@@ -1352,9 +1366,9 @@ class Orchestrator:
                         features_df["adapter_bar"] = next_adapter_bar
                         scaled_features.append(features_df)
 
-                        metrics[
-                            "adapter_bar"
-                        ] = next_adapter_bar  # Log metrics against the bar they were tested on
+                        metrics["adapter_bar"] = (
+                            next_adapter_bar  # Log metrics against the bar they were tested on
+                        )
                         performance_metrics.append(metrics)
 
                     # Store results
@@ -1433,12 +1447,12 @@ class Orchestrator:
                     processing_stats[adapter_bar] = {
                         "status": "failed",
                         "error": str(e),
-                        "physical_samples": len(bar_ptdata)
-                        if "bar_ptdata" in locals()
-                        else 0,
-                        "event_samples": len(bar_edlob)
-                        if "bar_edlob" in locals()
-                        else 0,
+                        "physical_samples": (
+                            len(bar_ptdata) if "bar_ptdata" in locals() else 0
+                        ),
+                        "event_samples": (
+                            len(bar_edlob) if "bar_edlob" in locals() else 0
+                        ),
                     }
                     continue
 
@@ -1512,9 +1526,9 @@ class Orchestrator:
                 "total_adapter_bars": len(adapter_bars),
                 "successful_updates": successful_updates,
                 "failed_updates": failed_updates,
-                "success_rate": successful_updates / len(adapter_bars)
-                if adapter_bars
-                else 0.0,
+                "success_rate": (
+                    successful_updates / len(adapter_bars) if adapter_bars else 0.0
+                ),
                 "processing_stats": processing_stats_serializable,  # Include detailed stats for each bar
             }
 
@@ -1640,14 +1654,14 @@ class Orchestrator:
     ) -> List[Dict[str, Any]]:
         """
         Perform local adaptation for all backbone bars in the session automatically.
-        
+
         Parameters
         ----------
         event_df : pd.DataFrame
             Full event-driven trading session data
         phys_df : pd.DataFrame
             Full physical-time trading session data
-            
+
         Returns
         -------
         List[Dict[str, Any]]
@@ -1750,17 +1764,17 @@ class Orchestrator:
     ) -> Dict[str, Any]:
         """
         Perform local adaptation for a single backbone bar.
-        
+
         Note: This is the original local_adapt behavior. Most users should use
         local_adapt() which handles all backbone bars automatically.
-        
+
         Parameters
         ----------
         event_df : pd.DataFrame
             Event-driven data for one backbone bar
         phys_df : pd.DataFrame
             Physical-time data for one backbone bar
-            
+
         Returns
         -------
         Dict[str, Any]
@@ -1819,7 +1833,7 @@ class Orchestrator:
     ) -> Dict[str, Any]:
         """
         Run backbone local adaptation step - backbone remains FROZEN (no updates).
-        
+
         In local adaptation, the backbone model is not retrained or updated.
         We use the frozen model for out-of-sample evaluation and save test results.
         """
@@ -1933,9 +1947,9 @@ class Orchestrator:
             return {
                 "status": "failed",
                 "error": str(e),
-                "event_samples": len(current_bb_event_df)
-                if "current_bb_event_df" in locals()
-                else 0,
+                "event_samples": (
+                    len(current_bb_event_df) if "current_bb_event_df" in locals() else 0
+                ),
                 "test_loss": None,
                 "artifacts_created": 1,
             }
@@ -2005,16 +2019,16 @@ class Orchestrator:
         event_df : pd.DataFrame
             Event-driven data for the current backbone bar
         phys_df : pd.DataFrame
-            Physical-time data for the current backbone bar 
+            Physical-time data for the current backbone bar
         bb_dir : Path
             Directory for saving artifacts
-            
+
         Returns
         -------
         Dict[str, Any]
             Dict containing adapter local adaptation results (same structure as
             _run_adapter_global_update)
-            
+
         Note
         ----
         The covariate scalers (self.scalers) and target variable statistics
@@ -2031,13 +2045,13 @@ class Orchestrator:
     ) -> None:
         """
         Create and save a SHAP-style summary plot showing relative contributions.
-        
+
         This plot displays feature contributions (coefficient × feature_value) with:
         - One horizontal strip per feature (y-axis)
         - Contribution values on x-axis
         - Point colors representing feature values (blue=low, red=high)
         - Vertical jitter for visibility when many points overlap
-        
+
         Parameters
         ----------
         contributions_df : pd.DataFrame
@@ -2328,7 +2342,7 @@ class Orchestrator:
     ) -> None:
         """
         Create a corridor plot for GARCH model validity diagnostics.
-        
+
         Parameters
         ----------
         diagnostics_df : pd.DataFrame
@@ -2436,12 +2450,12 @@ class Orchestrator:
     def _get_backbone_bar_bounds(self, bb_idx: int) -> tuple[float, float]:
         """
         Calculate the start and end timestamp bounds for a given backbone bar index.
-        
+
         Parameters
         ----------
         bb_idx : int
             Backbone bar index (0-based)
-            
+
         Returns
         -------
         tuple[float, float]

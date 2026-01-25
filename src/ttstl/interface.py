@@ -46,7 +46,7 @@ except Exception as e:
 class Interface:
     """
     Interface module for Two Time-Scale Transfer Learning (TTSTL) framework.
-    
+
     This module performs model subspace selection and structural break detection
     between the Backbone and Adapter modules.
     """
@@ -63,7 +63,7 @@ class Interface:
     ):
         """
         Initialize the Interface module.
-        
+
         Parameters
         ----------
         backbone_module : Backbone
@@ -115,10 +115,10 @@ class Interface:
     ) -> StandardScaler:
         """
         Create and fit a scaler on the training data to avoid look-ahead bias.
-        
+
         This method should be called during global_update to fit the scaler,
         and the fitted scaler should be reused during local_adapt.
-        
+
         Parameters
         ----------
         event_driven_backbone_time_bar_data : pd.DataFrame
@@ -129,7 +129,7 @@ class Interface:
             Name of target variable column. 'micro_return' by default.
         n_lags : int, optional
             Number of lagged values of target variable to include. 5 by default.
-            
+
         Returns
         -------
         StandardScaler
@@ -177,12 +177,12 @@ class Interface:
         n_lags: int = 5,
     ) -> pd.DataFrame:
         """
-        Prepare data by augmenting with neural covariates, adding adapter bars, 
+        Prepare data by augmenting with neural covariates, adding adapter bars,
         and including lagged target values WITHOUT scaling.
-        
+
         This method is used to prepare data structure for scaler fitting and
         for data preparation when a pre-fitted scaler is available.
-        
+
         Parameters
         ----------
         event_driven_backbone_time_bar_data : pd.DataFrame
@@ -193,7 +193,7 @@ class Interface:
             Name of target variable column. 'micro_return' by default.
         n_lags : int, optional
             Number of lagged values of target variable to include. 5 by default.
-            
+
         Returns
         -------
         pd.DataFrame
@@ -217,9 +217,9 @@ class Interface:
 
         # Ensure timestamp columns are float type for proper merging
         neural_covariates["timestamp"] = neural_covariates["timestamp"].astype(float)
-        physical_time_driven_backbone_time_bar_data[
-            "timestamp"
-        ] = physical_time_driven_backbone_time_bar_data["timestamp"].astype(float)
+        physical_time_driven_backbone_time_bar_data["timestamp"] = (
+            physical_time_driven_backbone_time_bar_data["timestamp"].astype(float)
+        )
 
         number_of_neural_covariates = len(neural_covariates.columns) - 1
 
@@ -288,9 +288,9 @@ class Interface:
         scaler: StandardScaler = None,
     ) -> pd.DataFrame:
         """
-        Prepare data by augmenting with neural covariates, adding adapter bars, 
+        Prepare data by augmenting with neural covariates, adding adapter bars,
         including lagged target values, and applying standard scaling using a pre-fitted scaler.
-        
+
         Parameters
         ----------
         event_driven_backbone_time_bar_data : pd.DataFrame
@@ -303,7 +303,7 @@ class Interface:
             Number of lagged values of target variable to include. 5 by default.
         scaler : StandardScaler, optional
             Pre-fitted StandardScaler object. If None, will use self.data_scaler.
-            
+
         Returns
         -------
         pd.DataFrame
@@ -359,7 +359,7 @@ class Interface:
     ) -> Tuple[pd.DataFrame, pd.DataFrame, List[int]]:
         """
         Split augmented data into training and validation sets by adapter bars.
-        
+
         Parameters
         ----------
         augmented_data : pd.DataFrame
@@ -368,7 +368,7 @@ class Interface:
             Proportion of adapter bars to use for validation. 0.2 by default.
         target_col_name : str, optional
             Name of target variable column. 'micro_return' by default.
-            
+
         Returns
         -------
         Tuple[pd.DataFrame, pd.DataFrame, List[int]]
@@ -451,18 +451,18 @@ class Interface:
     ) -> Dict:
         """
         Fit an Elastic Net model using R's glmnet via R script.
-        
+
         Parameters
         ----------
         X : np.ndarray
             Feature matrix
         y : np.ndarray
-            Target vector  
+            Target vector
         lambda_enet : float, optional
             Regularization parameter. 0.0 by default.
         alpha_enet : float, optional
             Elastic net mixing parameter. 1.0 by default.
-            
+
         Returns
         -------
         Dict
@@ -499,7 +499,7 @@ class Interface:
     ) -> Tuple[float, float]:
         """
         Find the best elastic net hyperparameters using grid search.
-        
+
         Parameters
         ----------
         physical_time_train_data : pd.DataFrame
@@ -510,7 +510,7 @@ class Interface:
             Name of target variable column. 'micro_return' by default.
         save_dir : str, optional
             Directory to save results.
-            
+
         Returns
         -------
         Tuple[float, float]
@@ -625,7 +625,7 @@ class Interface:
     ) -> Dict:
         """
         Fit an Adaptive Lasso model using R script with GARCH modeling.
-        
+
         Parameters
         ----------
         X : np.ndarray
@@ -644,7 +644,7 @@ class Interface:
             GARCH order as tuple (p, q). (1, 1) by default.
         distribution_model : str, optional
             Distribution model for GARCH ('sstd', 'norm', etc.)
-            
+
         Returns
         -------
         Dict
@@ -743,7 +743,7 @@ class Interface:
     ) -> Dict:
         """
         Find the best adaptive lasso hyperparameters using BIC across adapter time bars.
-        
+
         Parameters
         ----------
         physical_time_driven_backbone_time_bar_data : pd.DataFrame
@@ -758,7 +758,7 @@ class Interface:
             Distribution model for GARCH fitting.
         save_dir : str, optional
             Directory to save results.
-            
+
         Returns
         -------
         Dict
@@ -925,10 +925,10 @@ class Interface:
     ) -> Dict:
         """
         Find the best adaptive lasso hyperparameters using MSE on validation data.
-        
+
         This method follows the same approach as elastic net hyperparameter tuning,
         using MSE as the criterion instead of BIC across adapter time bars.
-        
+
         Parameters
         ----------
         physical_time_train_data : pd.DataFrame
@@ -945,7 +945,7 @@ class Interface:
             Distribution model for GARCH fitting.
         save_dir : str, optional
             Directory to save results.
-            
+
         Returns
         -------
         Dict
@@ -1096,13 +1096,13 @@ class Interface:
     ) -> Dict:
         """
         Complete hyperparameter tuning procedure for both Elastic Net and Adaptive Lasso.
-        
+
         This function implements the full hyperparameter tuning workflow:
         1. Prepare data with neural covariates, adapter bars, lagged targets, and scaling
         2. Split data into training and validation sets
         3. Tune Elastic Net hyperparameters (alpha, lambda) using MSE on validation set
         4. Keeping Elastic Net parameters fixed, tune Adaptive Lasso hyperparameters (tau, lambda) using BIC or MSE
-        
+
         Parameters
         ----------
         event_driven_backbone_time_bar_data : pd.DataFrame
@@ -1121,7 +1121,7 @@ class Interface:
             Directory to save results.
         second_stage_mse : bool, optional
             If True, use MSE-based criterion for Adaptive Lasso tuning instead of BIC. False by default.
-            
+
         Returns
         -------
         Dict
@@ -1240,14 +1240,14 @@ class Interface:
     ) -> sm.regression.linear_model.RegressionResultsWrapper:
         """
         Fit OLS model with heteroskedasticity-robust standard errors.
-        
+
         Parameters
         ----------
         X : np.ndarray
             Feature matrix (should include constant if needed)
         y : np.ndarray
             Target vector
-            
+
         Returns
         -------
         sm.regression.linear_model.RegressionResultsWrapper
@@ -1492,7 +1492,7 @@ class Interface:
     ) -> Dict:
         """
         Perform global variable selection for the TTSTL Interface module.
-        
+
         This method implements the complete global variable selection workflow:
         1. Run hyperparameter tuning to find optimal Elastic Net and Adaptive Lasso parameters
         2. Apply Flexible Adaptive Lasso and OLS with heteroskedasticity correction to each adapter time bar using optimal hyperparameters
@@ -1985,7 +1985,7 @@ class Interface:
     ) -> Dict:
         """
         Perform local adaptation for the TTSTL Interface module.
-        
+
         This method implements the local adaptation workflow:
         1. Use the same data preparation as global_update
         2. For each adapter time bar, apply Flexible Adaptive Lasso with globally optimal hyperparameters (no hyperparameter tuning)
@@ -1993,7 +1993,7 @@ class Interface:
         4. Perform Wald test on each adapter bar to test for structural breaks
         5. Generate corridor plots for both Elastic Net and Adaptive Lasso coefficients
         6. Save structural break results
-        
+
         Parameters
         ----------
         event_driven_backbone_time_bar_data : pd.DataFrame
@@ -2014,7 +2014,7 @@ class Interface:
             Significance level for Wald tests. 0.05 by default.
         save_dir : str, optional
             Directory to save results and plots
-            
+
         Returns
         -------
         Dict
@@ -2437,14 +2437,14 @@ class Interface:
     ) -> Dict:
         """
         Perform Wald test to check if newly selected variables are jointly significant.
-        
+
         Args:
             X_full: Full feature matrix
             y: Target vector
             global_variables: List of globally selected variable names
             newly_selected_variables: List of newly selected variable names
             significance_level: Significance level for the test
-            
+
         Returns:
             Dictionary with Wald test results
         """

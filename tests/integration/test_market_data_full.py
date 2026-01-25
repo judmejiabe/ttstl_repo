@@ -51,7 +51,7 @@ def setup_logging():
 def load_market_data():
     """
     Loads market data for INTC for the test date pair: June 10, 2024 and June 11, 2024 (PAIR05).
-    
+
     Returns:
         Tuple of (global_update_ed_df, global_update_ptd_df, local_update_ed_df, local_update_ptd_df)
     """
@@ -86,7 +86,7 @@ def plot_microreturns_analysis(
 ):
     """
     Create time series and histogram plots for microreturns within session bounds.
-    
+
     Args:
         ptd_df: Physical time-driven DataFrame with timestamp and micro_return columns
         session_start: Session start timestamp (nanoseconds)
@@ -217,7 +217,7 @@ def plot_microreturns_analysis(
 def test_market_data_full():
     """
     Main function to test the market data TTSTL system with a single date pair.
-    
+
     This test follows the same logic as market_data_experiments.py but runs only
     configuration ES010_05 on the date pair 06102024 → 06112024 (PAIR05).
     """

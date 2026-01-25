@@ -40,7 +40,7 @@ def run_single_date_pair_experiment(
 ):
     """
     Run a single date pair experiment with the given configuration.
-    
+
     Args:
         config: Orchestrator configuration for this specific date pair
         global_date: Date string for global update (e.g., "05312024")
@@ -50,7 +50,7 @@ def run_single_date_pair_experiment(
         previous_orchestrator: Previous orchestrator from same config type (for state transfer)
         trained_model: Pretrained CNN-LSTM model (only for first main config)
         past_returns: If True, use concurrent returns; if False, use future returns
-        
+
     Returns:
         Orchestrator instance if successful, None if failed
     """
@@ -176,7 +176,7 @@ def run_independent_ttstl_experiments(
     """
     Run TTSTL experiments date-pair by date-pair following synthetic study design.
     For each date pair: run config 01 (trains backbone), then other configurations import it.
-    
+
     Args:
         base_config: Base orchestrator configuration
         experiment_configs: Dictionary of experiment configurations
@@ -247,7 +247,7 @@ def run_independent_ttstl_experiments(
 
         # Generate random seed for this date pair to vary validation split
         # This same seed will be used for all configurations in this date pair
-        date_pair_seed = np.random.randint(0, 2 ** 31 - 1)
+        date_pair_seed = np.random.randint(0, 2**31 - 1)
         logger.info(
             f"Using randomly generated seed {date_pair_seed} for ALL configurations in date pair {pair_idx+1}"
         )
@@ -433,11 +433,11 @@ def run_independent_ttstl_experiments(
 def main(past_returns=False):
     """
     Main function to orchestrate the market data TTSTL experiments.
-    
+
     This script focuses only on running TTSTL experiments with different configurations
-    using a pretrained CNN-LSTM model. The model should be pretrained using the 
+    using a pretrained CNN-LSTM model. The model should be pretrained using the
     cnn_lstm_pretraining.py script first.
-    
+
     Args:
         past_returns: If True, run experiments with concurrent returns; if False, use future returns
     """

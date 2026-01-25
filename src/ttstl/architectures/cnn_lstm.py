@@ -5,11 +5,11 @@ import torch.nn as nn
 class CNNLSTM(nn.Module):
     """
     CNN-LSTM neural network architecture for time series forecasting.
-    
+
     This model combines 1D convolutions for feature extraction from multiple
     input channels with LSTM-based temporal modeling. It includes Inception-like
     modules to capture features at different scales.
-    
+
     Architecture:
     1. Initial convolution block (Conv2d -> LeakyReLU -> BatchNorm)
     2. Deep convolution block with varying kernel sizes
@@ -18,12 +18,12 @@ class CNNLSTM(nn.Module):
     5. Permutation and dimensions adjustment
     6. LSTM layer processing the feature sequence
     7. Linear output layer mapping to scalar prediction
-    
+
     Parameters
     ----------
     None
         Parameters are hardcoded in the current implementation.
-        
+
     Attributes
     ----------
     conv1 : nn.Sequential
@@ -115,7 +115,7 @@ class CNNLSTM(nn.Module):
     def _extract_features(self, x, h0=torch.zeros(1, 64), c0=torch.zeros(1, 64)):
         """
         Extract features from input tensor using CNN and LSTM layers.
-        
+
         Parameters
         ----------
         x : torch.Tensor
@@ -124,7 +124,7 @@ class CNNLSTM(nn.Module):
             Initial hidden state for LSTM. Default is zeros.
         c0 : torch.Tensor, optional
             Initial cell state for LSTM. Default is zeros.
-            
+
         Returns
         -------
         torch.Tensor
@@ -156,12 +156,12 @@ class CNNLSTM(nn.Module):
     def forward(self, x):
         """
         Forward pass of the network.
-        
+
         Parameters
         ----------
         x : torch.Tensor
             Input tensor.
-            
+
         Returns
         -------
         torch.Tensor
@@ -174,12 +174,12 @@ class CNNLSTM(nn.Module):
     def hidden_activations(self, x):
         """
         Extract hidden activations (features) without the final linear layer.
-        
+
         Parameters
         ----------
         x : torch.Tensor
             Input tensor.
-            
+
         Returns
         -------
         torch.Tensor
