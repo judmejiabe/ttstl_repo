@@ -246,24 +246,36 @@ class Orchestrator:
     - Comprehensive artifact generation (plots, data, metadata)
     - JSON manifest tracking for provenance
     
-    Attributes:
-        runs_root (Path): Root directory for all experiment runs
-        cfg (OrchestratorConfig): Configuration object with all parameters
-        run_slug (str): Auto-generated unique identifier for this run
-        run_dir (Path): Directory for this specific run's artifacts
-        stacks (Dict): Dictionary of Adapter instances (one per backbone bar)
-        scalers (Dict): Pre-fitted StandardScalers for each backbone bar
-        target_scales (Dict): Target variable statistics for each backbone bar
-        logger (Logger): Logging instance for orchestrator
+    Attributes
+    ----------
+    runs_root : Path
+        Root directory for all experiment runs
+    cfg : OrchestratorConfig
+        Configuration object with all parameters
+    run_slug : str
+        Auto-generated unique identifier for this run
+    run_dir : Path
+        Directory for this specific run's artifacts
+    stacks : Dict
+        Dictionary of Adapter instances (one per backbone bar)
+    scalers : Dict
+        Pre-fitted StandardScalers for each backbone bar
+    target_scales : Dict
+        Target variable statistics for each backbone bar
+    logger : Logger
+        Logging instance for orchestrator
     """
 
     def __init__(self, runs_root: Path = None, cfg: OrchestratorConfig = None) -> None:
         """
         Initialize the Orchestrator.
         
-        Args:
-            runs_root: Root directory for all runs (defaults to 'runs' at project root)
-            cfg: Configuration object containing all parameters
+        Parameters
+        ----------
+        runs_root : Path, optional
+            Root directory for all runs (defaults to 'runs' at project root)
+        cfg : OrchestratorConfig, optional
+            Configuration object containing all parameters
         """
         if runs_root is None:
             # Default to 'runs' directory at project root
@@ -520,12 +532,20 @@ class Orchestrator:
         and integrates them into the current orchestrator's stacks, effectively
         enabling transfer learning by reusing pre-trained backbone models.
         
-        Args:
-            source_orchestrator: Another Orchestrator instance with trained backbone modules
+        Parameters
+        ----------
+        source_orchestrator : Orchestrator
+            Another Orchestrator instance with trained backbone modules
+        keep_epochs : bool, optional
+            Whether to keep the existing epoch count (True) or reset to 0 (False). 
+            Default is False.
             
-        Raises:
-            ValueError: If source orchestrator doesn't have trained backbones
-            RuntimeError: If there's a mismatch in stack configurations
+        Raises
+        ------
+        ValueError
+            If source orchestrator doesn't have trained backbones
+        RuntimeError
+            If there's a mismatch in stack configurations
         """
         if not hasattr(source_orchestrator, 'stacks') or not source_orchestrator.stacks:
             raise ValueError("Source orchestrator has no initialized stacks")
@@ -666,11 +686,16 @@ class Orchestrator:
         """
         Perform global update for all backbone bars in the session automatically.
         
-        Args:
-            event_df: Full event-driven trading session data
-            phys_df: Full physical-time trading session data
+        Parameters
+        ----------
+        event_df : pd.DataFrame
+            Full event-driven trading session data
+        phys_df : pd.DataFrame
+            Full physical-time trading session data
             
-        Returns:
+        Returns
+        -------
+        List[Dict[str, Any]]
             List of results for each backbone bar processed
         """
         self.logger.info("=" * 80)
@@ -743,11 +768,16 @@ class Orchestrator:
         
         Note: This method is intended for internal use by the orchestrator.
         
-        Args:
-            event_df: Event-driven data for one backbone bar
-            phys_df: Physical-time data for one backbone bar
+        Parameters
+        ----------
+        event_df : pd.DataFrame
+            Event-driven data for one backbone bar
+        phys_df : pd.DataFrame
+            Physical-time data for one backbone bar
             
-        Returns:
+        Returns
+        -------
+        Dict[str, Any]
             Dict containing key metrics, selected variables, and artifact paths
         """
         # Increment backbone index and create directory structure
@@ -814,9 +844,12 @@ class Orchestrator:
         This method extracts the scaler fitting logic from _run_adapter_global_update
         so it can be reused in local adaptation without recomputing the scalers.
         
-        Args:
-            event_df: Event-driven data for the current backbone bar
-            phys_df: Physical-time data for the current backbone bar
+        Parameters
+        ----------
+        event_df : pd.DataFrame
+            Event-driven data for the current backbone bar
+        phys_df : pd.DataFrame
+            Physical-time data for the current backbone bar
         """
         self.logger.info(f"Fitting scalers and target scales for backbone bar {self._bb_idx}")
         
@@ -971,12 +1004,18 @@ class Orchestrator:
         a backbone bar, evaluates forecast performance, and generates interpretability
         visualizations.
         
-        Args:
-            event_df: Event-driven data for the current backbone bar
-            phys_df: Physical time data for the current backbone bar
-            bb_dir: Directory for saving artifacts
+        Parameters
+        ----------
+        event_df : pd.DataFrame
+            Event-driven data for the current backbone bar
+        phys_df : pd.DataFrame
+            Physical time data for the current backbone bar
+        bb_dir : Path
+            Directory for saving artifacts
             
-        Returns:
+        Returns
+        -------
+        Dict[str, Any]
             Dict containing adapter global update results with keys:
                 - 'status': 'completed' or 'failed'
                 - 'total_adapter_bars': Number of adapter bars processed
@@ -986,18 +1025,6 @@ class Orchestrator:
                 - 'parameters_by_bar': Dict mapping adapter_bar to parameter dict
                 - 'processing_stats': Processing statistics for each bar
                 - 'artifacts_created': Number of artifacts generated
-                
-        Artifacts Generated:
-            - param_series.png: Time series plot of all adapter parameters
-            - armax_garch_corridor.png: Significance corridor plot for ARMAX-GARCH coefficients
-            - model_validity_corridor.png: GARCH diagnostic test results (if available)
-            - param_series.parquet: Parameter series data
-            - performance.parquet: Forecast performance metrics
-            - shap_summary.png: SHAP-style feature contribution visualization
-            
-        Note:
-            Relative contribution values are computed for visualization but not stored
-            as parquet files. Only the SHAP-style summary plot is saved for interpretability.
         """
         
         
@@ -1424,11 +1451,16 @@ class Orchestrator:
         """
         Perform local adaptation for all backbone bars in the session automatically.
         
-        Args:
-            event_df: Full event-driven trading session data
-            phys_df: Full physical-time trading session data
+        Parameters
+        ----------
+        event_df : pd.DataFrame
+            Full event-driven trading session data
+        phys_df : pd.DataFrame
+            Full physical-time trading session data
             
-        Returns:
+        Returns
+        -------
+        List[Dict[str, Any]]
             List of results for each backbone bar processed
         """
         if self._bb_idx < 0:
@@ -1506,11 +1538,16 @@ class Orchestrator:
         Note: This is the original local_adapt behavior. Most users should use
         local_adapt() which handles all backbone bars automatically.
         
-        Args:
-            event_df: Event-driven data for one backbone bar
-            phys_df: Physical-time data for one backbone bar
+        Parameters
+        ----------
+        event_df : pd.DataFrame
+            Event-driven data for one backbone bar
+        phys_df : pd.DataFrame
+            Physical-time data for one backbone bar
             
-        Returns:
+        Returns
+        -------
+        Dict[str, Any]
             Dict containing OOS metrics, adapter bar specific coeffs, and break decisions
         """
         self._bb_idx += 1
@@ -1720,19 +1757,26 @@ class Orchestrator:
         than recomputing them. This ensures consistent preprocessing between training
         (global update) and testing (local adaptation).
 
-        Args:
-            event_df: Event-driven data for the current backbone bar
-            phys_df: Physical-time data for the current backbone bar 
-            bb_dir: Directory for saving artifacts
+        Parameters
+        ----------
+        event_df : pd.DataFrame
+            Event-driven data for the current backbone bar
+        phys_df : pd.DataFrame
+            Physical-time data for the current backbone bar 
+        bb_dir : Path
+            Directory for saving artifacts
             
-        Returns:
+        Returns
+        -------
+        Dict[str, Any]
             Dict containing adapter local adaptation results (same structure as
             _run_adapter_global_update)
             
-        Note:
-            The covariate scalers (self.scalers) and target variable statistics
-            (self.target_scales) are retrieved from global update, not recomputed.
-            This prevents lookahead bias in local adaptation.
+        Note
+        ----
+        The covariate scalers (self.scalers) and target variable statistics
+        (self.target_scales) are retrieved from global update, not recomputed.
+        This prevents lookahead bias in local adaptation.
         """
         return self._run_adapter_global_update(event_df, phys_df, bb_dir)
 
@@ -1749,12 +1793,16 @@ class Orchestrator:
         - Point colors representing feature values (blue=low, red=high)
         - Vertical jitter for visibility when many points overlap
         
-        Args:
-            contributions_df: DataFrame with columns ['timestamp', 'adapter_bar', var1, var2, ...]
-                containing relative contributions (coefficient × feature_value)
-            scaled_features_df: DataFrame with columns ['timestamp', 'adapter_bar', var1, var2, ...]
-                containing scaled feature values for color mapping
-            save_path: Path to save the plot
+        Parameters
+        ----------
+        contributions_df : pd.DataFrame
+            DataFrame with columns ['timestamp', 'adapter_bar', var1, var2, ...]
+            containing relative contributions (coefficient × feature_value)
+        scaled_features_df : pd.DataFrame
+            DataFrame with columns ['timestamp', 'adapter_bar', var1, var2, ...]
+            containing scaled feature values for color mapping
+        save_path : Path
+            Path to save the plot
         """
         self.logger.info(f"Generating SHAP-style summary plot and saving to {save_path}")
         
@@ -1840,10 +1888,14 @@ class Orchestrator:
         """
         Create and save a time series plot of adapter parameters, with one panel per parameter.
 
-        Args:
-            all_parameters_df: DataFrame of combined parameters (solid lines).
-            all_adapter_bar_specific_parameters_df: DataFrame of bar-specific parameters (dashed lines).
-            save_path: The file path to save the plot to.
+        Parameters
+        ----------
+        all_parameters_df : pd.DataFrame
+            DataFrame of combined parameters (solid lines).
+        all_adapter_bar_specific_parameters_df : pd.DataFrame
+            DataFrame of bar-specific parameters (dashed lines).
+        save_path : Path
+            The file path to save the plot to.
         """
         self.logger.info(f"Generating multi-panel parameter series plot and saving to {save_path}")
         
@@ -1902,12 +1954,18 @@ class Orchestrator:
         """
         Generate and save a corridor plot for adapter parameters, showing significance.
 
-        Args:
-            parameters_df (pd.DataFrame): DataFrame of parameters (adapter bars x variables).
-            p_values_df (pd.DataFrame): DataFrame of p-values for the parameters.
-            title (str): The title for the plot.
-            save_path (Path): The full path (including filename) to save the plot.
-            significance_level (float): The p-value threshold for significance.
+        Parameters
+        ----------
+        parameters_df : pd.DataFrame
+            DataFrame of parameters (adapter bars x variables).
+        p_values_df : pd.DataFrame
+            DataFrame of p-values for the parameters.
+        title : str
+            The title for the plot.
+        save_path : Path
+            The full path (including filename) to save the plot.
+        significance_level : float, optional
+            The p-value threshold for significance. Default is 0.05.
         """
 
         if parameters_df.empty:
@@ -1970,9 +2028,12 @@ class Orchestrator:
         """
         Create a corridor plot for GARCH model validity diagnostics.
         
-        Args:
-            diagnostics_df: DataFrame with adapter_bar as index and diagnostic test p-values as columns
-            save_path: Path to save the plot
+        Parameters
+        ----------
+        diagnostics_df : pd.DataFrame
+            DataFrame with adapter_bar as index and diagnostic test p-values as columns
+        save_path : Path
+            Path to save the plot
         """
         if diagnostics_df.empty:
             self.logger.warning("No GARCH diagnostics data available for corridor plot")
@@ -2046,10 +2107,14 @@ class Orchestrator:
         """
         Calculate the start and end timestamp bounds for a given backbone bar index.
         
-        Args:
-            bb_idx: Backbone bar index (0-based)
+        Parameters
+        ----------
+        bb_idx : int
+            Backbone bar index (0-based)
             
-        Returns:
+        Returns
+        -------
+        tuple[float, float]
             Tuple of (start_timestamp, end_timestamp)
         """
         bb_start = self.cfg.session_start + (bb_idx * self.cfg.bdelta)

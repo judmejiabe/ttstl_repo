@@ -134,17 +134,21 @@ class Adapter:
         """
         Newton-Raphson parameter update: θ_new = θ_old - (H + λ I)^(-1) * ∇f
         
-        Parameters:
-        -----------
-        new_parameters : dict - Current fitted parameters (θ_old)
-        gradient : np.ndarray - Gradient vector from numderiv_garch (required)
-        hessian : np.ndarray - Hessian matrix from numderiv_garch (required)
-        param_names : list - Parameter names ensuring consistent ordering
-        regularization : float - Diagonal regularization for numerical stability (λ)
+        Parameters
+        ----------
+        new_parameters : dict
+            Current fitted parameters (θ_old).
+        gradient : np.ndarray
+            Gradient vector from numderiv_garch (required).
+        hessian : np.ndarray
+            Hessian matrix from numderiv_garch (required).
+        regularization : float
+            Diagonal regularization for numerical stability (λ).
         
-        Raises:
-        -------
-        ValueError : If gradient or hessian is None
+        Raises
+        ------
+        ValueError
+            If gradient or hessian is None.
         """
         
         if not self.parameters:
@@ -193,17 +197,21 @@ class Adapter:
         """
         Fisher scoring parameter update: θ_new = θ_old + (I_FS + λ I)^(-1) * ∇f
 
-        Parameters:
-        -----------
-        new_parameters : dict - Current fitted parameters (θ_old)
-        gradient : np.ndarray - Gradient vector from numderiv_garch (required)
-        info_mat : np.ndarray - Information matrix from numderiv_garch (required)
-        param_names : list - Parameter names ensuring consistent ordering
-        regularization : float - Diagonal regularization for numerical stability (λ)
+        Parameters
+        ----------
+        new_parameters : dict
+            Current fitted parameters (θ_old).
+        gradient : np.ndarray
+            Gradient vector from numderiv_garch (required).
+        info_mat : np.ndarray
+            Information matrix from numderiv_garch (required).
+        regularization : float
+            Diagonal regularization for numerical stability (λ).
         
-        Raises:
-        -------
-        ValueError : If gradient or info_mat is None
+        Raises
+        ------
+        ValueError
+            If gradient or info_mat is None.
         """
 
         if not self.parameters:
@@ -249,16 +257,19 @@ class Adapter:
         """
         Gradient ascent parameter update: θ_new = θ_old + α ∇f
 
-        Parameters:
-        -----------
-        new_parameters : dict - Current fitted parameters (θ_old)
-        gradient : np.ndarray - Gradient vector from numderiv_garch (required)
-        param_names : list - Parameter names ensuring consistent ordering
-        alpha : float - Step size for gradient descent
+        Parameters
+        ----------
+        new_parameters : dict
+            Current fitted parameters (θ_old).
+        gradient : np.ndarray
+            Gradient vector from numderiv_garch (required).
+        alpha : float
+            Step size for gradient descent.
         
-        Raises:
-        -------
-        ValueError : If gradient is None
+        Raises
+        ------
+        ValueError
+            If gradient is None.
         """
 
         if not self.parameters:
@@ -293,14 +304,14 @@ class Adapter:
         """
         Print a Python summary of the GARCH model parameters.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         adapter_bar_number : int
-            The adapter bar number for labeling
+            The adapter bar number for labeling.
         new_parameters : dict
-            Dictionary containing the newly fitted parameters
+            Dictionary containing the newly fitted parameters.
         garch_results : dict
-            Dictionary containing GARCH fitting results including standard errors and p-values
+            Dictionary containing GARCH fitting results including standard errors and p-values.
         """
         self.logger.info(f"=" * 80)
         self.logger.info(f"GARCH Model Parameters")
@@ -358,26 +369,27 @@ class Adapter:
         """
         Fit GARCH model using R's rugarch package through rpy2.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         y : array-like
-            The time series data to fit
+            The time series data to fit.
         X : array-like, optional
-            External regressors for the mean model (default: None)
-        Z : array-like, optional  
-            External regressors for the variance model (default: None)
+            External regressors for the mean model. None by default.
+        Z : array-like, optional
+            External regressors for the variance model. None by default.
         out_sample : int, optional
-            Number of out-of-sample observations to hold out during fitting (default: 0)
+            Number of out-of-sample observations to hold out during fitting. 0 by default.
         bypass_fit : bool, optional
             If True, only create the GARCH specification without fitting. 
-            Returns spec only, all other result fields will be None (default: False)
+            Returns spec only, all other result fields will be None. False by default.
             
-        Returns:
-        --------
-        dict : Dictionary containing GARCH model results with the following keys:
-            - 'coefficients': np.ndarray or None - Fitted parameter values
-            - 'se_coefficients': np.ndarray or None - Standard errors of coefficients
-            - 'p_values': np.ndarray or None - P-values for coefficient tests
+        Returns
+        -------
+        dict
+            Dictionary containing GARCH model results with the following keys:
+                - 'coefficients': np.ndarray or None - Fitted parameter values
+                - 'se_coefficients': np.ndarray or None - Standard errors of coefficients
+                - 'p_values': np.ndarray or None - P-values for coefficient tests
             - 'coefficient_names': list or None - Names of coefficients
             - 'gof_pval': np.ndarray or None - Goodness-of-fit test p-values
             - 'lb_pval': np.ndarray or None - Ljung-Box test p-values
@@ -387,8 +399,8 @@ class Adapter:
             - 'spec': R GARCH specification object (always returned)
             - 'model_info': dict - Model configuration metadata
             
-        Note:
-        -----
+        Note
+        ----
         When bypass_fit=True, only 'spec' and 'model_info' contain meaningful data.
         All other fields will be None since no actual fitting is performed.
         """
@@ -485,7 +497,7 @@ class Adapter:
         This method uses the backbone's extract_neural_covariates method with get_output=True
         to obtain the raw CNN-LSTM outputs instead of hidden activations. This is useful
         for comparison purposes and analysis of the model's direct predictions.
-        
+
         Parameters
         ----------
         event_driven_adapter_time_bar_data : pd.DataFrame
@@ -493,15 +505,15 @@ class Adapter:
         physical_time_driven_adapter_time_bar_data : pd.DataFrame
             Physical time-driven data with timestamps.
         batch_size : int, optional
-            Batch size for processing. Defaults to 512.
+            Batch size for processing. 512 by default.
             
         Returns
         -------
         pd.DataFrame
             DataFrame containing timestamps and raw neural network outputs with ``forward_pass_`` prefix.
             
-        Example
-        -------
+        Examples
+        --------
         >>> nn_outputs = adapter.get_nn_output(event_df, phys_df)
         >>> print(nn_outputs.columns)
         ['timestamp', 'forward_pass_0']  # For single output CNN-LSTM
@@ -532,7 +544,25 @@ class Adapter:
                      physical_time_driven_adapter_time_bar_data : pd.DataFrame,
                      scaler : Optional[StandardScaler] = None,
                      target_col_name : str = 'micro_return'):
-        """Augments the physical_time_driven_adapter_time_bar_data with neural covariates."""
+        """
+        Augment the physical_time_driven_adapter_time_bar_data with neural covariates.
+
+        Parameters
+        ----------
+        event_driven_adapter_time_bar_data : pd.DataFrame
+            Event-driven data for neural covariate extraction.
+        physical_time_driven_adapter_time_bar_data : pd.DataFrame
+            Physical time-driven data to augment.
+        scaler : StandardScaler, optional
+            Fitted scaler for data preprocessing. None by default.
+        target_col_name : str, optional
+            Name of the target variable column. 'micro_return' by default.
+
+        Returns
+        -------
+        pd.DataFrame
+            Augmented DataFrame containing physical time data merged with neural covariates.
+        """
 
         self.logger.info("Augmenting physical time data with neural covariates")
 
@@ -611,22 +641,25 @@ class Adapter:
         """
         Update adapter parameters by fitting ARMAX-GARCH model on new data from an adapter time bar.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         event_driven_adapter_time_bar_data : pd.DataFrame
-            Event-driven data for neural covariate extraction
+            Event-driven data for neural covariate extraction.
         physical_time_driven_adapter_time_bar_data : pd.DataFrame
-            Physical time-driven data for a specific adapter time bar containing the target variable
+            Physical time-driven data for a specific adapter time bar containing the target variable.
+        scaler : StandardScaler
+            Fitted scaler for data preprocessing.
         adapter_bar_number : int
-            The adapter bar number (used for averaging schemes)
+            The adapter bar number (used for averaging schemes).
         target_col_name : str, optional
-            Name of the target variable column (default: 'micro_return')
+            Name of the target variable column. 'micro_return' by default.
         update_parameters : dict, optional
-            Additional parameters for the update method
+            Additional parameters for the update method.
             
-        Returns:
-        --------
-        dict : Dictionary containing GARCH fitting results and updated parameters
+        Returns
+        -------
+        dict
+            Dictionary containing GARCH fitting results and updated parameters.
         """
         if update_parameters is None:
             update_parameters = {}
@@ -869,16 +902,25 @@ class Adapter:
         out-of-sample data. Also computes relative contributions (coefficient × feature_value)
         for each selected variable to enable SHAP-style interpretability.
 
-        Args:
-            in_sample_event_df (pd.DataFrame): In-sample event-driven data.
-            in_sample_phys_df (pd.DataFrame): In-sample physical time data.
-            out_of_sample_event_df (pd.DataFrame): Out-of-sample event-driven data.
-            out_of_sample_phys_df (pd.DataFrame): Out-of-sample physical time data.
-            scaler (StandardScaler): Fitted scaler for preprocessing.
-            target_col_name (str): The name of the target variable column (default: 'micro_return').
+        Parameters
+        ----------
+        in_sample_event_df : pd.DataFrame
+            In-sample event-driven data.
+        in_sample_phys_df : pd.DataFrame
+            In-sample physical time data.
+        out_of_sample_event_df : pd.DataFrame
+            Out-of-sample event-driven data.
+        out_of_sample_phys_df : pd.DataFrame
+            Out-of-sample physical time data.
+        scaler : StandardScaler
+            Fitted scaler for preprocessing.
+        target_col_name : str, optional
+            The name of the target variable column. default: 'micro_return'.
 
-        Returns:
-            dict: A dictionary containing:
+        Returns
+        -------
+        dict
+            A dictionary containing:
                 - 'forecast_df': pd.DataFrame
                     Forecast results with columns ['timestamp', 'mean', 'vol'] where:
                     * 'timestamp': Time index for each forecast
@@ -889,18 +931,20 @@ class Adapter:
                     * 'timestamp': Time index matching forecast_df
                     * var1, var2, ...: Each selected variable's contribution (coefficient × feature_value)
                     
-        Note:
-            The returned DataFrames are independent objects. Changes to self.interface.selected_variables
-            after this call will NOT affect the returned DataFrames, but subsequent calls to forecast()
-            will use the updated selected_variables.
+        Note
+        ----
+        The returned DataFrames are independent objects. Changes to self.interface.selected_variables
+        after this call will NOT affect the returned DataFrames, but subsequent calls to forecast()
+        will use the updated selected_variables.
             
-        Example:
-            >>> result = adapter.forecast(in_sample_event, in_sample_phys, 
-            ...                           out_sample_event, out_sample_phys, scaler)
-            >>> forecast_df = result['forecast_df']
-            >>> contributions_df = result['relative_contributions_df']
-            >>> print(forecast_df.head())
-            >>> print(contributions_df.head())
+        Examples
+        --------
+        >>> result = adapter.forecast(in_sample_event, in_sample_phys, 
+        ...                           out_sample_event, out_sample_phys, scaler)
+        >>> forecast_df = result['forecast_df']
+        >>> contributions_df = result['relative_contributions_df']
+        >>> print(forecast_df.head())
+        >>> print(contributions_df.head())
         """
         self.logger.info("Starting forecast generation with full data preparation.")
 
@@ -1092,50 +1136,48 @@ class Adapter:
         out_of_sample_phys_df : pd.DataFrame
             Out-of-sample physical time data.
         benchmark_forecast : Union[float, pd.Series]
-            Benchmark forecast values for relative metric calculation. Can be a scalar (constant forecast) or a 
-            Series matching the length of out-of-sample data.
+            Benchmark forecast values for relative metric calculation. Can be a scalar 
+            (constant forecast) or a Series matching the length of out-of-sample data.
         scaler : StandardScaler
             Fitted scaler for data preprocessing.
-        target_col_name : str
-            The name of the target variable column (default: 'micro_return').
+        target_col_name : str, optional
+            The name of the target variable column. default: 'micro_return'.
 
         Returns
         -------
         dict
             A dictionary containing:
-            
-            - 'metrics': dict
-                Performance metrics dictionary with the following keys:
-                
-                * 'garch_mae' (float): Mean Absolute Error (always present)
-                * 'garch_mse' (float): Mean Squared Error (always present)
-                * 'garch_relmae' (float): Relative MAE vs benchmark (always present)
-                * 'garch_relmse' (float): Relative MSE vs benchmark (always present)
-                * 'garch_r2' (float): R² score (1 - relmse) (always present)
-                * 'nn_mae' (float): NN MAE (only if compare_with_cnn_lstm=True)
-                * 'nn_mse' (float): NN MSE (only if compare_with_cnn_lstm=True)
-                * 'nn_relmae' (float): NN Relative MAE (only if compare_with_cnn_lstm=True)
-                * 'nn_relmse' (float): NN Relative MSE (only if compare_with_cnn_lstm=True)
-                * 'nn_r2' (float): NN R² score (only if compare_with_cnn_lstm=True)
-
-            - 'relative_contributions': pd.DataFrame
-                DataFrame with columns ['timestamp', var1, var2, ...] containing
+                - 'metrics': dict
+                    Performance metrics dictionary with the following keys:
+                    * 'garch_mae': float - Mean Absolute Error (always present)
+                    * 'garch_mse': float - Mean Squared Error (always present)
+                    * 'garch_relmae': float - Relative MAE vs benchmark (always present)
+                    * 'garch_relmse': float - Relative MSE vs benchmark (always present)
+                    * 'garch_r2': float - R² score (1 - relmse) (always present)
+                    * 'nn_mae': float - NN MAE (only if compare_with_cnn_lstm=True)
+                    * 'nn_mse': float - NN MSE (only if compare_with_cnn_lstm=True)
+                    * 'nn_relmae': float - NN Relative MAE (only if compare_with_cnn_lstm=True)
+                    * 'nn_relmse': float - NN Relative MSE (only if compare_with_cnn_lstm=True)
+                    * 'nn_r2': float - NN R² score (only if compare_with_cnn_lstm=True)
+                - 'relative_contributions': pd.DataFrame
+                    DataFrame with columns ['timestamp', var1, var2, ...] containing
                     coefficient × feature_value for each selected variable across the
                     out-of-sample period.
                     
-        Example:
-            >>> result = adapter.calculate_performance_metrics(
-            ...     in_event, in_phys, out_event, out_phys, 
-            ...     benchmark_forecast=0.0, scaler=scaler)
-            >>> 
-            >>> # Access metrics
-            >>> metrics = result['metrics']
-            >>> print(f"GARCH MAE: {metrics['garch_mae']:.6f}")
-            >>> print(f"GARCH R²: {metrics['garch_r2']:.6f}")
-            >>> 
-            >>> # Access relative contributions
-            >>> contributions = result['relative_contributions']
-            >>> print(contributions.head())
+        Examples
+        --------
+        >>> result = adapter.calculate_performance_metrics(
+        ...     in_event, in_phys, out_event, out_phys, 
+        ...     benchmark_forecast=0.0, scaler=scaler)
+        >>> 
+        >>> # Access metrics
+        >>> metrics = result['metrics']
+        >>> print(f"GARCH MAE: {metrics['garch_mae']:.6f}")
+        >>> print(f"GARCH R²: {metrics['garch_r2']:.6f}")
+        >>> 
+        >>> # Access relative contributions
+        >>> contributions = result['relative_contributions']
+        >>> print(contributions.head())
         """
         if self.compare_with_cnn_lstm:
             self.logger.info("Calculating MAE and MSE using the forecast method and raw neural network outputs.")

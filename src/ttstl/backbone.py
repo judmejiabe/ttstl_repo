@@ -51,26 +51,27 @@ class Backbone():
                  upper_bounds: Optional[Dict[str, float]] = None,
                  past_returns: bool = False) -> None:
         """Initialize the Backbone with a model and delta adapter.
+        
         Parameters
         ----------
         model : nn.Module
             The neural network model to be used.
         delta_adapter : float, optional
-            Adapter time bar length in the same units of time as the data.
+            Adapter time bar length in the same units of time as the data. 0.0 by default.
         delta_sample : float, optional
-            Sample time bar length in the same units of time as the data.
+            Sample time bar length in the same units of time as the data. 0.0 by default.
         parsimonious_mode : bool, optional
-            Whether to use parsimonious mode for neural covariate extraction.
+            Whether to use parsimonious mode for neural covariate extraction. False by default.
         neural_covariates_only : bool, optional
-            Whether to use only neural covariates (no manual/stationary features).
+            Whether to use only neural covariates (no manual/stationary features). False by default.
         manual_covariates_only : bool, optional
-            Whether to use only manual/stationary features (no neural covariates).
-        pretrained_scaler : Optional[StandardScaler], optional
-            Pretrained scaler for consistent preprocessing.
-        lower_bounds : Optional[Dict[str, float]], optional
-            Lower quantile bounds for winsorization.
-        upper_bounds : Optional[Dict[str, float]], optional
-            Upper quantile bounds for winsorization.
+            Whether to use only manual/stationary features (no neural covariates). False by default.
+        pretrained_scaler : StandardScaler, optional
+            Pretrained scaler for consistent preprocessing. None by default.
+        lower_bounds : Dict[str, float], optional
+            Lower quantile bounds for winsorization. None by default.
+        upper_bounds : Dict[str, float], optional
+            Upper quantile bounds for winsorization. None by default.
         past_returns : bool, optional
             Whether to use past returns (concurrent returns) instead of future returns. Defaults to False.
         """
@@ -118,10 +119,14 @@ class Backbone():
         This method allows setting preprocessing components after backbone initialization,
         which is useful when the scaler is created during training or loaded from disk.
         
-        Args:
-            pretrained_scaler: Fitted StandardScaler for feature preprocessing
-            lower_bounds: Dictionary mapping feature names to lower quantile bounds
-            upper_bounds: Dictionary mapping feature names to upper quantile bounds
+        Parameters
+        ----------
+        pretrained_scaler : StandardScaler
+            Fitted StandardScaler for feature preprocessing
+        lower_bounds : Dict[str, float]
+            Dictionary mapping feature names to lower quantile bounds
+        upper_bounds : Dict[str, float]
+            Dictionary mapping feature names to upper quantile bounds
         """
         self.pretrained_scaler = pretrained_scaler
         self.lower_bounds = lower_bounds
@@ -136,8 +141,10 @@ class Backbone():
         """
         Check if all preprocessing components are available.
         
-        Returns:
-            bool: True if scaler and bounds are available, False otherwise
+        Returns
+        -------
+        bool
+            True if scaler and bounds are available, False otherwise
         """
         return (self.pretrained_scaler is not None and 
                 self.lower_bounds is not None and 
@@ -148,11 +155,15 @@ class Backbone():
                    criterion : nn.modules.loss,
                    optimizer : Optional[torch.optim.Optimizer] = None) -> float:
         """Performs batch gradient descent on the provided dataset.
-        Args:
-            train_loader (DataLoader): DataLoader for the training data.
-            criterion (nn.modules.loss, optional): Loss function.
-            optimizer (torch.optim.Optimizer, optional): Optimizer for the model.
-            batch_size (int, optional): Size of each batch. Defaults to 32.
+        
+        Parameters
+        ----------
+        train_loader : DataLoader
+            DataLoader for the training data.
+        criterion : nn.modules.loss
+            Loss function.
+        optimizer : torch.optim.Optimizer, optional
+            Optimizer for the model.
         """
 
         is_train = optimizer is not None
@@ -193,6 +204,7 @@ class Backbone():
         save_checkpoints: bool = False,
         checkpoint_dir: Optional[str] = None) -> float:
         """Train the model for specified epochs with optional checkpoint saving.
+        
         Parameters
         ----------
         train_loader : DataLoader
@@ -203,13 +215,13 @@ class Backbone():
             Optimizer for the model.
         epochs : int
             Number of training epochs.
-        validation_loader : DataLoader
+        validation_loader : DataLoader, optional
             DataLoader for validation data.
-        save_checkpoints : bool
-            Whether to save checkpoints every epoch.
-        checkpoint_dir : str
+        save_checkpoints : bool, optional
+            Whether to save checkpoints every epoch. False by default.
+        checkpoint_dir : str, optional
             Directory to save checkpoints.
-
+            
         Returns
         -------
         float
@@ -302,11 +314,17 @@ class Backbone():
         'PP', 'KPSS', and 'NA' where the value corresponds to 1 if rejection
         and zero otherwise. If any of the tests fail, the 'NA' key will be set
         to 1.
-        Args:
-            series (pd.Series): Pandas Series to test for stationarity.
-        Returns:
-            dict: Dictionary with keys 'ADF', 'PP', 'KPSS', and 'NA' with 
-                  values indicating test results.
+        
+        Parameters
+        ----------
+        series : pd.Series
+            Pandas Series to test for stationarity.
+            
+        Returns
+        -------
+        dict
+            Dictionary with keys 'ADF', 'PP', 'KPSS', and 'NA' with 
+            values indicating test results.
         """
 
         alpha = 0.05
@@ -331,10 +349,18 @@ class Backbone():
 
         """Perform multiple stationarity tests on the provided data. 
         The testing frequency is determined by the delta_adapter attribute.
-        Args:
-            data (pd.DataFrame): Dataframe containing Phyisical Time Driven data.
-        Returns:
-            pd.DataFrame: DataFrame containing the results of the stationarity tests.
+        
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Dataframe containing Phyisical Time Driven data.
+        session_start : float, optional
+            Session start time. 0.0 by default.
+            
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing the results of the stationarity tests.
         """
         
         columns = data.columns.tolist()
@@ -388,25 +414,26 @@ class Backbone():
                                      save_dir: Optional[str] = None,
                                      session_start: float = 0.0) -> pd.DataFrame:
         """Select stationary variables from the DataFrame.
+        
         Parameters
         ----------
         data : pd.DataFrame
             DataFrame containing the time series data.
-        adf_rejection_rate_threshold : float
-            ADF rejection rate threshold for stationarity.
-        kpss_verification_threshold : float
-            KPSS verification threshold.
-        na_verification_threshold : float
-            NA verification threshold.
-        kpss_drop : bool
-            Whether to use strict KPSS dropping.
-        target_col_name : str
-            Name of the target variable column.
-        save_dir : Optional[str]
+        adf_rejection_rate_threshold : float, optional
+            ADF rejection rate threshold for stationarity. 0.8 by default.
+        kpss_verification_threshold : float, optional
+            KPSS verification threshold. 0.2 by default.
+        na_verification_threshold : float, optional
+            NA verification threshold. 0.1 by default.
+        kpss_drop : bool, optional
+            Whether to use strict KPSS dropping. True by default.
+        target_col_name : str, optional
+            Name of the target variable column. 'micro_return' by default.
+        save_dir : str, optional
             Directory to save stationarity test results.
-        session_start : float
-            Session start timestamp.
-
+        session_start : float, optional
+            Session start time. 0.0 by default.
+            
         Returns
         -------
         pd.DataFrame
@@ -487,8 +514,11 @@ class Backbone():
     def _add_covariate_set(self, 
                           extra_covariate_set: list) -> None:
         """Add extra covariate set to the full variable set.
-        Args:
-            extra_covariate_set (list): List of additional covariates to add.
+        
+        Parameters
+        ----------
+        extra_covariate_set : list
+            List of additional covariates to add.
         """
         if self.full_covariate_list is None:
             self.full_covariate_list = extra_covariate_set
@@ -502,13 +532,14 @@ class Backbone():
                                     data: pd.DataFrame, 
                                     threshold : float = 0.95) -> pd.DataFrame:
         """Drops highly correlated variables from data at a random order.
+        
         Parameters
         ----------
         data : pd.DataFrame
             DataFrame containing the time series data.
-        threshold : float
-            Correlation threshold.
-
+        threshold : float, optional
+            Correlation threshold. 0.95 by default.
+            
         Returns
         -------
         pd.DataFrame
@@ -579,14 +610,21 @@ class Backbone():
         data with a timestamp smaller than the physical timestamp, and extract neural network
         features (hidden activations or forward pass output) for that row.
         
-        Args:
-            event_driven_data (pd.DataFrame): Event-driven data with timestamps.
-            physical_time_data (pd.DataFrame): Physical time-driven data with timestamps.
-            batch_size (int): Batch size for processing.
-            get_output (bool): If True, get model output instead of hidden activations. Defaults to False.
+        Parameters
+        ----------
+        event_driven_data : pd.DataFrame
+            Event-driven data with timestamps.
+        physical_time_data : pd.DataFrame
+            Physical time-driven data with timestamps.
+        batch_size : int, optional
+            Batch size for processing. 512 by default.
+        get_output : bool, optional
+            If True, get model output instead of hidden activations. False by default.
             
-        Returns:
-            dict: DataFrame containing the extracted neural covariates.
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing the extracted neural covariates.
         """
         try:
             self.logger.info(f"Extracting neural covariates in {'parsimonious' if self.parsimonious_mode else 'full'} mode")
@@ -704,6 +742,19 @@ class Backbone():
                                       target_col_name, save_dir : Path) -> None:
         """
         Compute and store correlation matrices for neural and manually extracted covariates.
+        
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Input data.
+        neural_covariates_names : List
+            List of names of neural covariates.
+        microstructural_covariates_names : List
+            List of names of microstructural covariates.
+        target_col_name : str
+            Name of the target column.
+        save_dir : Path
+            Directory to save results.
         """
 
         self.logger.info(f'Computing correlation matrices for {len(neural_covariates_names)} neural covariates and {len(microstructural_covariates_names)} microstructural covariates.')
@@ -824,9 +875,14 @@ class Backbone():
                                     save_path : Path) -> None:
         """Create and save correlation heatmap.
 
-        Args:
-            correlation_matrix (pd.DataFrame): Correlation matrix to visualize.
-            main_title (str): Title for the heatmap.
+        Parameters
+        ----------
+        correlation_matrix : pd.DataFrame
+            Correlation matrix to visualize.
+        main_title : str
+            Title for the heatmap.
+        save_path : Path
+            Path to save the plot.
         """
 
         self.logger.info(f"Creating correlation heatmap with title {main_title}")
@@ -850,9 +906,11 @@ class Backbone():
     def _save_correlation_heatmaps(self, 
                                    save_dir: Path) -> None:
         """Save correlation heatmaps to disk. This function will handle parsimonious mode and full mode automatically.
-
-        Args:
-            save_dir (Path): Directory to save plots.
+        
+        Parameters
+        ----------
+        save_dir : Path
+            Directory to save plots.
         """
         
         if self.parsimonious_mode:
@@ -888,8 +946,10 @@ class Backbone():
     def save_training_history(self, save_dir: str) -> None:
         """Save training history to parquet file.
         
-        Args:
-            save_dir (str): Directory to save the training history file.
+        Parameters
+        ----------
+        save_dir : str
+            Directory to save the training history file.
         """
         if not hasattr(self, 'training_history_df') or self.training_history_df is None:
             self.logger.error("No training history available for saving.")
@@ -906,8 +966,10 @@ class Backbone():
     def save_model_weights(self, save_dir: str) -> None:
         """Save the best model weights to disk.
         
-        Args:
-            save_dir (str): Directory to save the model weights.
+        Parameters
+        ----------
+        save_dir : str
+            Directory to save the model weights.
         """
         if self.model is None:
             self.logger.error("No model available for saving.")
@@ -952,8 +1014,10 @@ class Backbone():
     def save_nn_weights(self, save_dir: str) -> None: # Checked
         """Save neural network weights in portable numpy format.
         
-        Args:
-            save_dir (str): Directory to save the weights.
+        Parameters
+        ----------
+        save_dir : str
+            Directory to save the weights.
         """
         if self.model is None:
             print("Warning: No model available to save.")
@@ -978,9 +1042,12 @@ class Backbone():
     def save_test_results(self, save_dir: str, test_loss: float) -> None:
         """Save test results for out-of-sample evaluation.
         
-        Args:
-            save_dir (str): Directory to save test results.
-            test_loss (float): Test loss value.
+        Parameters
+        ----------
+        save_dir : str
+            Directory to save test results.
+        test_loss : float
+            Test loss value.
         """
         save_path = Path(save_dir)
         save_path.mkdir(parents=True, exist_ok=True)
@@ -1005,14 +1072,21 @@ class Backbone():
                                save_dir: Optional[str] = None) -> float:
         """Evaluate the trained model on out-of-sample data.
         
-        Args:
-            event_driven_data (pd.DataFrame): Event-driven data for evaluation.
-            criterion (nn.modules.loss): Loss function.
-            batch_size (int): Batch size for evaluation.
-            save_dir (Optional[str]): Directory to save test results.
+        Parameters
+        ----------
+        event_driven_data : pd.DataFrame
+            Event-driven data for evaluation.
+        criterion : nn.modules.loss, optional
+            Loss function. MSELoss by default.
+        batch_size : int, optional
+            Batch size for evaluation. 32 by default.
+        save_dir : str, optional
+            Directory to save test results. None by default.
             
-        Returns:
-            float: Test loss.
+        Returns
+        -------
+        float
+            Test loss.
         """
         if self.model is None:
             raise ValueError("No model available for evaluation. Run global_update first.")
@@ -1113,24 +1187,43 @@ class Backbone():
         The validation interval is selected uniformly at random from the start of the bar to 
         train_proportion of the bar. Buffer zones are applied to avoid data leakage.
         
-        Args:
-            event_driven_backbone_time_bar_data (pd.DataFrame): Event-driven data for the current time bar.
-            physical_time_driven_backbone_time_bar_data (pd.DataFrame): Physical time-driven data for stationarity analysis.
-            criterion (nn.modules.loss): Loss function. Defaults to MSELoss with sum reduction.
-            optimizer (torch.optim.Optimizer): Optimizer for the model. Defaults to Adam with lr=0.0001.
-            epochs (int, optional): Number of epochs to train. Defaults to 10.
-            validation_proportion (float, optional): Proportion of data for validation. Defaults to 0.1.
-            buffer_proportion (float, optional): Buffer proportion to avoid data leakage. Defaults to 0.05.
-            batch_size (int, optional): Batch size for data loaders. Defaults to 32.
-            adf_rejection_rate_threshold (float, optional): ADF rejection rate threshold for stationarity. Defaults to 0.8.
-            kpss_verification_threshold (float, optional): KPSS verification threshold. Defaults to 0.2.
-            na_verification_threshold (float, optional): NA verification threshold. Defaults to 0.1.
-            kpss_drop (bool, optional): Whether to use strict KPSS dropping. Defaults to True.
-            correlation_threshold (float, optional): Threshold for dropping highly correlated variables. Defaults to 0.95.
-            target_col_name (str, optional): Name of the target variable column. Defaults to 'micro_return'.
-            save_dir (Optional[str], optional): Directory to save results of the global_update
-        Returns:
-            float: Best validation loss achieved during training.
+        Parameters
+        ----------
+        event_driven_backbone_time_bar_data : pd.DataFrame
+            Event-driven data for the current time bar.
+        physical_time_driven_backbone_time_bar_data : pd.DataFrame
+            Physical time-driven data for stationarity analysis.
+        criterion : nn.modules.loss, optional
+            Loss function. Defaults to MSELoss with sum reduction.
+        optimizer : torch.optim.Optimizer, optional
+            Optimizer for the model. Defaults to Adam with lr=0.0001.
+        epochs : int, optional
+            Number of epochs to train. Defaults to 10.
+        validation_proportion : float, optional
+            Proportion of data for validation. Defaults to 0.1.
+        buffer_proportion : float, optional
+            Buffer proportion to avoid data leakage. Defaults to 0.05.
+        batch_size : int, optional
+            Batch size for data loaders. Defaults to 32.
+        adf_rejection_rate_threshold : float, optional
+            ADF rejection rate threshold for stationarity. Defaults to 0.8.
+        kpss_verification_threshold : float, optional
+            KPSS verification threshold. Defaults to 0.2.
+        na_verification_threshold : float, optional
+            NA verification threshold. Defaults to 0.1.
+        kpss_drop : bool, optional
+            Whether to use strict KPSS dropping. Defaults to True.
+        correlation_threshold : float, optional
+            Threshold for dropping highly correlated variables. Defaults to 0.95.
+        target_col_name : str, optional
+            Name of the target variable column. Defaults to 'micro_return'.
+        save_dir : str, optional
+            Directory to save results of the global_update
+            
+        Returns
+        -------
+        float
+            Best validation loss achieved during training.
         """
 
         if save_dir is None:

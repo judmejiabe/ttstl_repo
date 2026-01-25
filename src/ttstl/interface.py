@@ -61,16 +61,22 @@ class Interface:
         """
         Initialize the Interface module.
         
-        Args:
-            backbone_module: The backbone module containing the trained model and covariates
-            alpha_grid: Grid of alpha values for elastic net hyperparameter tuning
-            lambda_grid: Grid of lambda values for adaptive lasso hyperparameter tuning  
-            gamma_grid: Grid of gamma values for adaptive lasso weights
-            significance_threshold: Threshold for statistical significance tests
-            min_significant_bars: Minimum number of adapter bars where a variable must be significant
-            structural_break_threshold: Number of rejections to flag structural break
-            user_defined_variables: Optional list of variable names to use instead of adaptive LASSO selection
-            session_start: Session start timestamp for adapter bar normalization
+        Parameters
+        ----------
+        backbone_module : Backbone
+            The backbone module containing the trained model and covariates
+        alpha_enet_grid : List[float], optional
+            Grid of alpha values for elastic net hyperparameter tuning
+        lambda_enet_grid : List[float], optional
+            Grid of lambda values for elastic net hyperparameter tuning
+        tau_adalasso_grid : List[float], optional
+            Grid of tau values for adaptive lasso hyperparameter tuning
+        lambda_adalasso_grid : List[float], optional
+            Grid of lambda values for adaptive lasso hyperparameter tuning
+        user_defined_variables : List[str], optional
+            Optional list of variable names to use instead of adaptive LASSO selection
+        session_start : float, optional
+            Session start timestamp for adapter bar normalization. 0.0 by default.
         """
         self.backbone = backbone_module
         
@@ -108,13 +114,20 @@ class Interface:
         This method should be called during global_update to fit the scaler,
         and the fitted scaler should be reused during local_adapt.
         
-        Args:
-            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
-            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            target_col_name: Name of target variable column
-            n_lags: Number of lagged values of target variable to include
+        Parameters
+        ----------
+        event_driven_backbone_time_bar_data : pd.DataFrame
+            Event-driven data for neural covariate extraction
+        physical_time_driven_backbone_time_bar_data : pd.DataFrame
+            Physical time-driven data to augment
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        n_lags : int, optional
+            Number of lagged values of target variable to include. 5 by default.
             
-        Returns:
+        Returns
+        -------
+        StandardScaler
             Fitted StandardScaler object
         """
         self.logger.info("Creating and fitting scaler on training data to avoid look-ahead bias")
@@ -159,13 +172,20 @@ class Interface:
         This method is used to prepare data structure for scaler fitting and
         for data preparation when a pre-fitted scaler is available.
         
-        Args:
-            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
-            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            target_col_name: Name of target variable column
-            n_lags: Number of lagged values of target variable to include
+        Parameters
+        ----------
+        event_driven_backbone_time_bar_data : pd.DataFrame
+            Event-driven data for neural covariate extraction
+        physical_time_driven_backbone_time_bar_data : pd.DataFrame
+            Physical time-driven data to augment
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        n_lags : int, optional
+            Number of lagged values of target variable to include. 5 by default.
             
-        Returns:
+        Returns
+        -------
+        pd.DataFrame
             DataFrame with neural covariates, adapter bars, and lagged targets (unscaled)
         """
         if self.backbone.full_covariate_list is None:
@@ -237,14 +257,22 @@ class Interface:
         Prepare data by augmenting with neural covariates, adding adapter bars, 
         including lagged target values, and applying standard scaling using a pre-fitted scaler.
         
-        Args:
-            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
-            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            target_col_name: Name of target variable column
-            n_lags: Number of lagged values of target variable to include
-            scaler: Pre-fitted StandardScaler object. If None, will use self.data_scaler
+        Parameters
+        ----------
+        event_driven_backbone_time_bar_data : pd.DataFrame
+            Event-driven data for neural covariate extraction
+        physical_time_driven_backbone_time_bar_data : pd.DataFrame
+            Physical time-driven data to augment
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        n_lags : int, optional
+            Number of lagged values of target variable to include. 5 by default.
+        scaler : StandardScaler, optional
+            Pre-fitted StandardScaler object. If None, will use self.data_scaler.
             
-        Returns:
+        Returns
+        -------
+        pd.DataFrame
             DataFrame with neural covariates, adapter bars, lagged targets, and standardized variables
         """
         # Get unscaled data first
@@ -290,12 +318,18 @@ class Interface:
         """
         Split augmented data into training and validation sets by adapter bars.
         
-        Args:
-            augmented_data: DataFrame with neural covariates and adapter bars
-            validation_proportion: Proportion of adapter bars to use for validation
-            target_col_name: Name of target variable column
+        Parameters
+        ----------
+        augmented_data : pd.DataFrame
+            DataFrame with neural covariates and adapter bars
+        validation_proportion : float, optional
+            Proportion of adapter bars to use for validation. 0.2 by default.
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
             
-        Returns:
+        Returns
+        -------
+        Tuple[pd.DataFrame, pd.DataFrame, List[int]]
             Tuple of (train_data, validation_data, validation_bars)
         """
         self.logger.info("Splitting data into training and validation by adapter bars")
@@ -355,13 +389,20 @@ class Interface:
         """
         Fit an Elastic Net model using R's glmnet via R script.
         
-        Args:
-            X: Feature matrix
-            y: Target vector  
-            alpha_enet: Elastic net mixing parameter
-            lambda_enet: Regularization parameter
+        Parameters
+        ----------
+        X : np.ndarray
+            Feature matrix
+        y : np.ndarray
+            Target vector  
+        lambda_enet : float, optional
+            Regularization parameter. 0.0 by default.
+        alpha_enet : float, optional
+            Elastic net mixing parameter. 1.0 by default.
             
-        Returns:
+        Returns
+        -------
+        Dict
             Dictionary with fit object and coefficients
         """
         if glmnet is None:
@@ -398,12 +439,20 @@ class Interface:
         """
         Find the best elastic net hyperparameters using grid search.
         
-        Args:
-            physical_time_train_data: Training data DataFrame
-            physical_time_validation_data: Validation data DataFrame
-            target_col_name: Name of target variable column
+        Parameters
+        ----------
+        physical_time_train_data : pd.DataFrame
+            Training data DataFrame
+        physical_time_validation_data : pd.DataFrame
+            Validation data DataFrame
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        save_dir : str, optional
+            Directory to save results.
             
-        Returns:
+        Returns
+        -------
+        Tuple[float, float]
             Tuple of (best_alpha, best_lambda)
         """
         best_mse = float('inf')
@@ -487,17 +536,28 @@ class Interface:
         """
         Fit an Adaptive Lasso model using R script with GARCH modeling.
         
-        Args:
-            X: Feature matrix
-            y: Target vector
-            alpha_enet: Elastic net mixing parameter for initial fit
-            lambda_enet: Elastic net regularization parameter for initial fit
-            tau_adalasso: Power parameter for adaptive weights
-            lambda_adalasso: Adaptive lasso regularization parameter
-            garch_order: GARCH order as tuple (p, q)
-            distribution_model: Distribution model for GARCH ('sstd', 'norm', etc.)
+        Parameters
+        ----------
+        X : np.ndarray
+            Feature matrix
+        y : np.ndarray
+            Target vector
+        alpha_enet : float
+            Elastic net mixing parameter for initial fit
+        lambda_enet : float
+            Elastic net regularization parameter for initial fit
+        tau_adalasso : float, optional
+            Power parameter for adaptive weights. 1.0 by default.
+        lambda_adalasso : float, optional
+            Adaptive lasso regularization parameter. 0.0 by default.
+        garch_order : tuple, optional
+            GARCH order as tuple (p, q). (1, 1) by default.
+        distribution_model : str, optional
+            Distribution model for GARCH ('sstd', 'norm', etc.)
             
-        Returns:
+        Returns
+        -------
+        Dict
             Dictionary with adaptive lasso fit, GARCH fit, coefficients, and information criteria
         """
         # Debugging
@@ -579,13 +639,24 @@ class Interface:
         """
         Find the best adaptive lasso hyperparameters using BIC across adapter time bars.
         
-        Args:
-            physical_time_driven_backbone_time_bar_data: Prepared data with neural covariates and adapter bars
-            alpha_enet: Elastic net mixing parameter for initial fit
-            lambda_enet: Elastic net regularization parameter for initial fit
-            target_col_name: Name of target variable column
+        Parameters
+        ----------
+        physical_time_driven_backbone_time_bar_data : pd.DataFrame
+            Prepared data with neural covariates and adapter bars
+        alpha_enet : float, optional
+            Elastic net mixing parameter for initial fit. 1.0 by default.
+        lambda_enet : float, optional
+            Elastic net regularization parameter for initial fit. 0.0 by default.
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        distribution_model : str, optional
+            Distribution model for GARCH fitting.
+        save_dir : str, optional
+            Directory to save results.
             
-        Returns:
+        Returns
+        -------
+        Dict
             Dictionary with best hyperparameters and BIC results
         """
 
@@ -716,16 +787,26 @@ class Interface:
         This method follows the same approach as elastic net hyperparameter tuning,
         using MSE as the criterion instead of BIC across adapter time bars.
         
-        Args:
-            physical_time_train_data: Training data DataFrame
-            physical_time_validation_data: Validation data DataFrame
-            alpha_enet: Elastic net mixing parameter for initial fit
-            lambda_enet: Elastic net regularization parameter for initial fit
-            target_col_name: Name of target variable column
-            distribution_model: Distribution model for GARCH fitting (optional)
-            save_dir: Directory to save results (optional)
+        Parameters
+        ----------
+        physical_time_train_data : pd.DataFrame
+            Training data DataFrame
+        physical_time_validation_data : pd.DataFrame
+            Validation data DataFrame
+        alpha_enet : float, optional
+            Elastic net mixing parameter for initial fit. 1.0 by default.
+        lambda_enet : float, optional
+            Elastic net regularization parameter for initial fit. 0.0 by default.
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        distribution_model : str, optional
+            Distribution model for GARCH fitting.
+        save_dir : str, optional
+            Directory to save results.
             
-        Returns:
+        Returns
+        -------
+        Dict
             Dictionary with best hyperparameters and MSE results
         """
         
@@ -843,17 +924,28 @@ class Interface:
         3. Tune Elastic Net hyperparameters (alpha, lambda) using MSE on validation set
         4. Keeping Elastic Net parameters fixed, tune Adaptive Lasso hyperparameters (tau, lambda) using BIC or MSE
         
-        Args:
-            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
-            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            target_col_name: Name of target variable column
-            n_lags: Number of lagged values of target variable to include
-            validation_proportion: Proportion of adapter bars to use for validation
-            distribution_model: Distribution model for GARCH fitting (optional)
-            save_dir: Directory to save results (optional)
-            second_stage_mse: If True, use MSE-based criterion for Adaptive Lasso tuning instead of BIC
+        Parameters
+        ----------
+        event_driven_backbone_time_bar_data : pd.DataFrame
+            Event-driven data for neural covariate extraction
+        physical_time_driven_backbone_time_bar_data : pd.DataFrame
+            Physical time-driven data to augment
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        n_lags : int, optional
+            Number of lagged values of target variable to include. 5 by default.
+        validation_proportion : float, optional
+            Proportion of adapter bars to use for validation. 0.2 by default.
+        distribution_model : str, optional
+            Distribution model for GARCH fitting.
+        save_dir : str, optional
+            Directory to save results.
+        second_stage_mse : bool, optional
+            If True, use MSE-based criterion for Adaptive Lasso tuning instead of BIC. False by default.
             
-        Returns:
+        Returns
+        -------
+        Dict
             Dictionary with all hyperparameter tuning results
         """
         self.logger.info("Starting full hyperparameter tuning")
@@ -955,11 +1047,16 @@ class Interface:
         """
         Fit OLS model with heteroskedasticity-robust standard errors.
         
-        Args:
-            X: Feature matrix (should include constant if needed)
-            y: Target vector
+        Parameters
+        ----------
+        X : np.ndarray
+            Feature matrix (should include constant if needed)
+        y : np.ndarray
+            Target vector
             
-        Returns:
+        Returns
+        -------
+        sm.regression.linear_model.RegressionResultsWrapper
             Fitted OLS model with robust standard errors
         """
         try:
@@ -979,11 +1076,16 @@ class Interface:
         """
         Generate and save a corridor plot for adaptive lasso coefficients.
 
-        Args:
-            ada_coef_df (pd.DataFrame): DataFrame of adaptive lasso coefficients (adapter bars x variables).
-            sig_coefs_df (pd.DataFrame): DataFrame of booleans indicating significance (adapter bars x variables).
-            title (str): The title for the plot.
-            save_path (Path): The full path (including filename) to save the plot.
+        Parameters
+        ----------
+        ada_coef_df : pd.DataFrame
+            DataFrame of adaptive lasso coefficients (adapter bars x variables).
+        sig_coefs_df : pd.DataFrame
+            DataFrame of booleans indicating significance (adapter bars x variables).
+        title : str
+            The title for the plot.
+        save_path : Path
+            The full path (including filename) to save the plot.
         """
 
         if ada_coef_df.empty:
@@ -1052,12 +1154,18 @@ class Interface:
         Generate and save a corridor plot for elastic net coefficients,
         annotated with the sign of the adaptive lasso coefficients.
 
-        Args:
-            enet_coef_df (pd.DataFrame): DataFrame of elastic net coefficients (adapter bars x variables).
-            adalasso_coef_df (pd.DataFrame): DataFrame of adaptive lasso coefficients for sign annotation.
-            title (str): The title for the plot.
-            save_path (Path): The full path (including filename) to save the plot.
-            tolerance (float): The tolerance to determine if a coefficient is non-zero.
+        Parameters
+        ----------
+        enet_coef_df : pd.DataFrame
+            DataFrame of elastic net coefficients (adapter bars x variables).
+        adalasso_coef_df : pd.DataFrame
+            DataFrame of adaptive lasso coefficients for sign annotation.
+        title : str
+            The title for the plot.
+        save_path : Path
+            The full path (including filename) to save the plot.
+        tolerance : float, optional
+            The tolerance to determine if a coefficient is non-zero. 1e-6 by default.
         """
 
         if enet_coef_df.empty or adalasso_coef_df.empty:
@@ -1130,19 +1238,34 @@ class Interface:
         2. Apply Flexible Adaptive Lasso and OLS with heteroskedasticity correction to each adapter time bar using optimal hyperparameters
         3. Select variables that appear as statistically significant beyond a threshold number of adapter bars
 
-        Args:
-            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
-            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            target_col_name: Name of target variable column
-            n_lags: Number of lagged values of target variable to include
-            validation_proportion: Proportion of adapter bars to use for validation in hyperparameter tuning
-            selection_threshold: Minimum proportion of adapter bars where variable must be significant
-            tolerance_threshold: Minimum absolute coefficient value to consider in Adaptive Lasso
-            ols_significance_level: Significance level for OLS heteroskedasticity-robust tests
-            save_dir: Directory to save results and plots
-            second_stage_mse: If True, use MSE-based criterion for Adaptive Lasso tuning instead of BIC
+        Parameters
+        ----------
+        event_driven_backbone_time_bar_data : pd.DataFrame
+            Event-driven data for neural covariate extraction
+        physical_time_driven_backbone_time_bar_data : pd.DataFrame
+            Physical time-driven data to augment
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        distribution_model : str, optional
+            Distribution model for GARCH fitting. 'norm' by default.
+        n_lags : int, optional
+            Number of lagged values of target variable to include. 5 by default.
+        validation_proportion : float, optional
+            Proportion of adapter bars to use for validation in hyperparameter tuning. 0.2 by default.
+        selection_threshold : float, optional
+            Minimum proportion of adapter bars where variable must be significant. 0.5 by default.
+        tolerance_threshold : float, optional
+            Minimum absolute coefficient value to consider in Adaptive Lasso. 1e-6 by default.
+        ols_significance_level : float, optional
+            Significance level for OLS heteroskedasticity-robust tests. 0.05 by default.
+        save_dir : str, optional
+            Directory to save results and plots
+        second_stage_mse : bool, optional
+            If True, use MSE-based criterion for Adaptive Lasso tuning instead of BIC. False by default.
 
-        Returns:
+        Returns
+        -------
+        Dict
             Dictionary with selected variables and global update results
         """
 
@@ -1538,18 +1661,30 @@ class Interface:
         5. Generate corridor plots for both Elastic Net and Adaptive Lasso coefficients
         6. Save structural break results
         
-        Args:
-            event_driven_backbone_time_bar_data: Event-driven data for neural covariate extraction
-            physical_time_driven_backbone_time_bar_data: Physical time-driven data to augment
-            target_col_name: Name of target variable column
-            distribution_model: Distribution model for GARCH ('sstd', 'norm', etc.)
-            n_lags: Number of lagged values of target variable to include
-            tolerance_threshold: Minimum absolute coefficient value to consider in Adaptive Lasso
-            ols_significance_level: Significance level for OLS heteroskedasticity-robust tests
-            wald_significance_level: Significance level for Wald tests
-            save_dir: Directory to save results and plots
+        Parameters
+        ----------
+        event_driven_backbone_time_bar_data : pd.DataFrame
+            Event-driven data for neural covariate extraction
+        physical_time_driven_backbone_time_bar_data : pd.DataFrame
+            Physical time-driven data to augment
+        target_col_name : str, optional
+            Name of target variable column. 'micro_return' by default.
+        distribution_model : str, optional
+            Distribution model for GARCH ('sstd', 'norm', etc.). 'sstd' by default.
+        n_lags : int, optional
+            Number of lagged values of target variable to include. 5 by default.
+        tolerance_threshold : float, optional
+            Minimum absolute coefficient value to consider in Adaptive Lasso. 1e-6 by default.
+        ols_significance_level : float, optional
+            Significance level for OLS heteroskedasticity-robust tests. 0.05 by default.
+        wald_significance_level : float, optional
+            Significance level for Wald tests. 0.05 by default.
+        save_dir : str, optional
+            Directory to save results and plots
             
-        Returns:
+        Returns
+        -------
+        Dict
             Dictionary with local adaptation results including structural break test results
         """
         
