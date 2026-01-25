@@ -251,6 +251,7 @@ pytest -m comprehensive
 #### Synthetic Study
 
 1.  **Run Experiments**: Execute the following command to run the 28 configurations described in the paper on the synthetic dataset:
+> **Note:** If you decided to generate fresh synthetic data, make sure that you modify the file names `08042025_long_event_driven_recorded_lob_{id}.parquet` and `08042025_long_physical_time_driven_recorded_data_{id}.parquet` in `scripts/synthetic_study_experiment.py` to match the names of your generated files with the corresponding names in your GCS bucket.
     ```bash
     python scripts/synthetic_study_experiment.py
     ```
@@ -283,43 +284,6 @@ pytest -m comprehensive
     python scripts/analyze_market_data_experiment_results.py
     ```
     *   **Output**: Boxplots and statistics are saved in `outputs/analysis_market_data_experiment_results/`.
-
-## 📂 Repository Structure
-
-* `manuscript/`: Contains the research paper and supplementary materials in LaTeX format.
-* `outputs/`: Directory for storing experiment outputs and post-processing results.
-    * `analysis_market_data_experiment_results/`: Original analysis of market data experiments results.
-    * `analysis_synthetic_data_experiment_results/`: Original analysis of synthetic data experiments results.
-* `src/ttstl/`: Core package source code.
-    * `adapter.py`: Adapter module implementation (Volatility modeling & Probabilistic forecasting, see image in the Architecture section).
-    * `backbone.py`: Backbone module implementation (Deep learning feature extractor, see image in the Architecture section).
-    * `interface.py`: Interface module implementation (Variable selection & R-Python bridging, see image in the Architecture section).
-    * `orchestrator.py`: Main API matching backbone, interface, and adapter modules.
-    * `architectures/`: Neural network architecture definitions (e.g., CNN-LSTM).
-    * `datasets/`: PyTorch dataset implementations for LOB data.
-    * `utils/`: Utility functions for data processing and metrics.
-    * `r_scripts/`: R scripts wrapped by the modules for statistical methodologies.
-* `scripts/`: Experiments and analysis.
-    * `analyze_market_data_experiment_results.py`: Post-processing and visualization for market experiments.
-    * `analyze_synthetic_data_experiment_results.py`: Post-processing and visualization for synthetic experiments.
-    * `market_data_cnn_lstm_pretraining.py`: Script for pretraining the CNN-LSTM backbone on market data.
-    * `market_data_experiments.py`: Main script for Intel (INTC) market data experiments.
-    * `synthetic_study_analysis.py`: Analysis script for synthetic study results (RelMAE plots, rankings).
-    * `synthetic_study_experiment.py`: Main script for synthetic data experiments.
-    * `utils_experiment_analysis.py`: Unified framework for analyzing experiment results.
-* `docs/`: Additional documentation and guides.
-* `tests/`: Test suite for the project.
-    * `integration/`: Integration tests and full reproduction scripts.
-    * `unit/`: Unit tests for package import and basic functionality.
-* `environment.yml`: Conda environment specification file.
-* `Dockerfile`: Docker container build configuration.
-* `CITATION.cff`: Citation metadata.
-* `CONTRIBUTING.md`: Development and testing guidelines.
-* `credentials.example.json`: Template for GCP credentials.
-* `LICENSE`: License text.
-* `pyproject.toml`: Build system requirements and dependencies.
-* `README.md`: The file you are reading.
-* `setup.py`: Package installation script.
 
 ## 🔗 Citation
 If you use this code in your research, please cite the following working paper:

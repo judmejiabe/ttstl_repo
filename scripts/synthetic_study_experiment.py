@@ -40,8 +40,9 @@ def setup_logging():
 
 def load_synthetic_data(id: int = 0):
     """
-    Loads synthetic data for the study from the 'evolving-microstructural-tk-data' bucket.
-    The method downloads the 08042025_long_event_driven_recorded_lob_[id].parquet file
+    Loads synthetic data for the study from the configured gcs bucket.
+    The method downloads the 08042025_long_event_driven_recorded_lob_[id].parquet and 
+    08042025_long_physical_time_driven_recorded_data_{id}.parquet files.
 
     Arguments:
     id : int
