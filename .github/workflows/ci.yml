@@ -29,8 +29,8 @@ jobs:
           activate-environment: ttstl_dev
           environment-file: environment.yml
           auto-activate-base: false
+          miniforge-version: latest
           use-mamba: true
-          miniforge-variant: Mambaforge
           use-only-tar-bz2: true
 
       - name: Install Dev Dependencies
@@ -67,8 +67,8 @@ jobs:
           activate-environment: ttstl_dev
           environment-file: environment.yml
           auto-activate-base: false
+          miniforge-version: latest
           use-mamba: true
-          miniforge-variant: Mambaforge
           use-only-tar-bz2: true
 
       - name: Install Dev Dependencies
