@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class CNNLSTM(nn.Module):
     """
     CNN-LSTM neural network architecture for time series forecasting.
@@ -40,13 +41,13 @@ class CNNLSTM(nn.Module):
     output_layer : nn.Linear
         Final fully connected layer.
     """
+
     def __init__(self):
         super(CNNLSTM, self).__init__()
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(
-                in_channels=1, out_channels=32, 
-                kernel_size=(1, 2), stride=(1, 2)
+                in_channels=1, out_channels=32, kernel_size=(1, 2), stride=(1, 2)
             ),
             nn.LeakyReLU(negative_slope=0.01),
             nn.BatchNorm2d(32),
@@ -59,9 +60,7 @@ class CNNLSTM(nn.Module):
         )
 
         self.conv2 = nn.Sequential(
-            nn.Conv2d(
-                in_channels=32, out_channels=32, kernel_size=(1, 10)
-            ),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(1, 10)),
             nn.LeakyReLU(negative_slope=0.01),
             nn.BatchNorm2d(32),
             nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(4, 1)),
@@ -75,28 +74,24 @@ class CNNLSTM(nn.Module):
         # Inception modules.
         self.inp1 = nn.Sequential(
             nn.Conv2d(
-                in_channels=32, out_channels=64, 
-                kernel_size=(1, 1), padding="same"
+                in_channels=32, out_channels=64, kernel_size=(1, 1), padding="same"
             ),
             nn.LeakyReLU(negative_slope=0.01),
             nn.BatchNorm2d(64),
             nn.Conv2d(
-                in_channels=64, out_channels=64, 
-                kernel_size=(3, 1), padding="same"
+                in_channels=64, out_channels=64, kernel_size=(3, 1), padding="same"
             ),
             nn.LeakyReLU(negative_slope=0.01),
             nn.BatchNorm2d(64),
         )
         self.inp2 = nn.Sequential(
             nn.Conv2d(
-                in_channels=32, out_channels=64, 
-                kernel_size=(1, 1), padding="same"
+                in_channels=32, out_channels=64, kernel_size=(1, 1), padding="same"
             ),
             nn.LeakyReLU(negative_slope=0.01),
             nn.BatchNorm2d(64),
             nn.Conv2d(
-                in_channels=64, out_channels=64, 
-                kernel_size=(5, 1), padding="same"
+                in_channels=64, out_channels=64, kernel_size=(5, 1), padding="same"
             ),
             nn.LeakyReLU(negative_slope=0.01),
             nn.BatchNorm2d(64),
@@ -104,8 +99,7 @@ class CNNLSTM(nn.Module):
         self.inp3 = nn.Sequential(
             nn.MaxPool2d((3, 1), stride=(1, 1), padding=(1, 0)),
             nn.Conv2d(
-                in_channels=32, out_channels=64, 
-                kernel_size=(1, 1), padding="same"
+                in_channels=32, out_channels=64, kernel_size=(1, 1), padding="same"
             ),
             nn.LeakyReLU(negative_slope=0.01),
             nn.BatchNorm2d(64),
@@ -117,10 +111,8 @@ class CNNLSTM(nn.Module):
         )
 
         self.output_layer = nn.Linear(64, 1)
-    
-    def _extract_features(self, x, 
-                h0 = torch.zeros(1, 64), 
-                c0 = torch.zeros(1, 64)):
+
+    def _extract_features(self, x, h0=torch.zeros(1, 64), c0=torch.zeros(1, 64)):
         """
         Extract features from input tensor using CNN and LSTM layers.
         
@@ -139,7 +131,7 @@ class CNNLSTM(nn.Module):
             Feature vector extracted from the last LSTM step.
         """
 
-        #Add a channel dimension
+        # Add a channel dimension
         x = x.unsqueeze(1)
 
         x = self.conv1(x)
@@ -160,7 +152,7 @@ class CNNLSTM(nn.Module):
         x = x[:, -1, :]
 
         return x
-    
+
     def forward(self, x):
         """
         Forward pass of the network.

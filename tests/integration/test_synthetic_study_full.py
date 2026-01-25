@@ -1,12 +1,12 @@
-import pytest
-from pathlib import Path
-import logging
-from datetime import datetime
 import json
+import logging
 import os
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from ttstl import orchestrator
 from ttstl.orchestrator import Orchestrator, OrchestratorConfig
@@ -16,28 +16,29 @@ from ttstl.utils.data_preprocessor import create_pretrained_scaler
 
 def setup_logging():
     """Setup logging to see orchestrator operations."""
-    
+
     # Create logs directory
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
-    
+
     # Create log filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = log_dir / f"synthetic_study_test_{timestamp}.log"
-    
+
     # Configure logging to both console and file
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(log_file),  # Write to file
-            logging.StreamHandler()         # Also show in terminal
-        ]
+            logging.StreamHandler(),  # Also show in terminal
+        ],
     )
-    
+
     print(f"📝 Logs will be saved to: {log_file}")
 
-def load_synthetic_data(id : int = 0):
+
+def load_synthetic_data(id: int = 0):
     """
     Loads synthetic data for the study from the 'evolving-microstructural-tk-data' bucket.
     The method downloads the 08042025_long_event_driven_recorded_lob_[id].parquet file
@@ -48,23 +49,25 @@ def load_synthetic_data(id : int = 0):
     """
     logger = logging.getLogger(__name__)
     logger.info("Loading synthetic data")
-    
+
     # Locate credentials.json
-    credentials_path = 'credentials.json'
+    credentials_path = "credentials.json"
     if not os.path.exists(credentials_path):
         project_root = Path(__file__).resolve().parent.parent.parent
-        credentials_path = project_root / 'credentials.json'
+        credentials_path = project_root / "credentials.json"
 
     # Strict loading from credentials.json
     bucket_name = None
     if os.path.exists(credentials_path):
         try:
-            with open(credentials_path, 'r') as f:
+            with open(credentials_path, "r") as f:
                 creds = json.load(f)
-                bucket_name = creds.get('bucket_name')
+                bucket_name = creds.get("bucket_name")
         except Exception as e:
             logger.error(f"Failed to read credentials.json: {e}")
-            raise ValueError(f"Failed to read credentials.json: {e}. Please ensure it is a valid JSON file.")
+            raise ValueError(
+                f"Failed to read credentials.json: {e}. Please ensure it is a valid JSON file."
+            )
 
     if not bucket_name:
         error_msg = (
@@ -75,72 +78,85 @@ def load_synthetic_data(id : int = 0):
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    gcs_synthetic_data_folder = 'synthetic_data/'
+    gcs_synthetic_data_folder = "synthetic_data/"
 
-    ed_df = import_to_pandas(blob_name = gcs_synthetic_data_folder + \
-                                 f"08042025_long_event_driven_recorded_lob_{id}.parquet",
-                                 credentials_path=str(credentials_path),
-                                 bucket_name=bucket_name)
-    
+    ed_df = import_to_pandas(
+        blob_name=gcs_synthetic_data_folder
+        + f"08042025_long_event_driven_recorded_lob_{id}.parquet",
+        credentials_path=str(credentials_path),
+        bucket_name=bucket_name,
+    )
+
     # Filter for testing purposes
-    #ed_df = ed_df[ed_df['timestamp'] < 1_000_000]
+    # ed_df = ed_df[ed_df['timestamp'] < 1_000_000]
 
     logger.info(
         "Loaded event driven synthetic data with shape %s from %s in bucket %s",
         ed_df.shape,
         f"{gcs_synthetic_data_folder}08042025_long_event_driven_recorded_lob_{id}.parquet",
-        bucket_name
+        bucket_name,
     )
 
-    ptd_df = import_to_pandas(blob_name = gcs_synthetic_data_folder + \
-                                 f"08042025_long_physical_time_driven_recorded_data_{id}.parquet",
-                                 credentials_path=str(credentials_path),
-                                 bucket_name=bucket_name)
+    ptd_df = import_to_pandas(
+        blob_name=gcs_synthetic_data_folder
+        + f"08042025_long_physical_time_driven_recorded_data_{id}.parquet",
+        credentials_path=str(credentials_path),
+        bucket_name=bucket_name,
+    )
 
     # Check if timestamp is an index and convert to column if needed
-    if ptd_df.index.name == 'timestamp' or 'timestamp' in ptd_df.index.names:
-        logger.info("Converting timestamp from index to column for physical time-driven data")
+    if ptd_df.index.name == "timestamp" or "timestamp" in ptd_df.index.names:
+        logger.info(
+            "Converting timestamp from index to column for physical time-driven data"
+        )
         ptd_df = ptd_df.reset_index()
-    elif 'timestamp' not in ptd_df.columns:
-        logger.error("No timestamp found in either index or columns for physical time-driven data")
-        raise ValueError("No timestamp found in either index or columns for physical time-driven data")
+    elif "timestamp" not in ptd_df.columns:
+        logger.error(
+            "No timestamp found in either index or columns for physical time-driven data"
+        )
+        raise ValueError(
+            "No timestamp found in either index or columns for physical time-driven data"
+        )
 
-    ptd_df['micro_return'] = ptd_df['micro'].pct_change() * 1e3
-    ptd_df['micro_return'] = ptd_df['micro_return'].shift(-1)
+    ptd_df["micro_return"] = ptd_df["micro"].pct_change() * 1e3
+    ptd_df["micro_return"] = ptd_df["micro_return"].shift(-1)
     ptd_df = ptd_df.iloc[:-1]
 
-    #ptd_df = ptd_df[ptd_df['timestamp'] < 1_000_000]  # Filter for testing purposes
-    
+    # ptd_df = ptd_df[ptd_df['timestamp'] < 1_000_000]  # Filter for testing purposes
 
     logger.info(
         "Loaded physical time-driven synthetic data with shape %s from %s in bucket %s",
         ptd_df.shape,
         f"{gcs_synthetic_data_folder}08042025_long_physical_time_driven_recorded_data_{id}.parquet",
-        bucket_name
+        bucket_name,
     )
 
     return ed_df, ptd_df
 
+
 def log_orchestrator_config(cfg: OrchestratorConfig):
     """Log the orchestrator configuration in a readable format."""
     logger = logging.getLogger(__name__)
-    
+
     logger.info("=" * 80)
     logger.info("Orchestrator configuration")
     logger.info("=" * 80)
-    
+
     # Convert config to dictionary for easy logging
-    config_dict = cfg.__dict__ if hasattr(cfg, '__dict__') else vars(cfg)
-    
+    config_dict = cfg.__dict__ if hasattr(cfg, "__dict__") else vars(cfg)
+
     for key, value in config_dict.items():
         if isinstance(value, (list, tuple)) and len(value) > 10:
             logger.info(f"{key}: {value}")
             # For long lists/tuples, show only first few and last few elements
-            logger.info(f"{key}: [{value[0]}, {value[1]}, ..., {value[-2]}, {value[-1]}] (length: {len(value)})")
+            logger.info(
+                f"{key}: [{value[0]}, {value[1]}, ..., {value[-2]}, {value[-1]}] (length: {len(value)})"
+            )
         else:
             logger.info(f"{key}: {value}")
-    
+
     logger.info("=" * 80)
+
 
 @pytest.mark.comprehensive
 def test_synthetic_study_full():
@@ -149,7 +165,7 @@ def test_synthetic_study_full():
     """
 
     print("🚀 Starting synthetic study...")
-    print("="*80)
+    print("=" * 80)
 
     setup_logging()
     logger = logging.getLogger(__name__)
@@ -159,7 +175,7 @@ def test_synthetic_study_full():
     ed_df_1, ptd_df_1 = load_synthetic_data(1)
 
     logger.info("Creating preprocessing components from synthetic data")
-    
+
     # Create preprocessing components from the first dataset to avoid lookahead bias
     # Use ed_df_0 as the "historical" data for creating scaler and bounds
     try:
@@ -167,8 +183,12 @@ def test_synthetic_study_full():
             ed_df_0, quantile=0.005
         )
         logger.info("Successfully created preprocessing components from synthetic data")
-        logger.info(f"Scaler fitted on {len([col for col in ed_df_0.columns if 'of' in col])} order flow features")
-        logger.info(f"Bounds computed for winsorization: {len(lower_bounds) if lower_bounds else 0} features")
+        logger.info(
+            f"Scaler fitted on {len([col for col in ed_df_0.columns if 'of' in col])} order flow features"
+        )
+        logger.info(
+            f"Bounds computed for winsorization: {len(lower_bounds) if lower_bounds else 0} features"
+        )
     except Exception as e:
         logger.error(f"Failed to create preprocessing components: {str(e)}")
         logger.info("Continuing without preprocessing components (may cause issues)")
@@ -178,23 +198,22 @@ def test_synthetic_study_full():
 
     cfg = OrchestratorConfig(
         # General settings
-        ticker='SIM',
-        #bdelta=5_000_000.0,
+        ticker="SIM",
+        # bdelta=5_000_000.0,
         bdelta=500_000.0,  # For testing purposes
         adelta=100_000.0,
         sdelta=100.0,
         seed=19991810,
         session_start=0.0,
-        #session_finish=10_000_000.0,
+        # session_finish=10_000_000.0,
         session_finish=1_000_000.0,  # For testing purposes
-        target_col_name='micro_return',
-        
+        target_col_name="micro_return",
         # Backbone knobs
         parsimonious_mode=False,
         neural_covariates_only=False,
         manual_covariates_only=False,
-        #epochs=5,
-        epochs=2,  # For testing purposes 
+        # epochs=5,
+        epochs=2,  # For testing purposes
         batch_size=32,
         validation_proportion_backbone=0.1,
         buffer_proportion=0.05,
@@ -203,53 +222,50 @@ def test_synthetic_study_full():
         na_verification_threshold=0.1,
         learning_rate=0.0001,
         correlation_threshold=0.95,
-        
         # Preprocessing components (created from synthetic data)
-        pretrained_scaler=scaler,       # Created from ed_df_0
-        lower_bounds=lower_bounds,      # Created from ed_df_0
-        upper_bounds=upper_bounds,      # Created from ed_df_0
-
+        pretrained_scaler=scaler,  # Created from ed_df_0
+        lower_bounds=lower_bounds,  # Created from ed_df_0
+        upper_bounds=upper_bounds,  # Created from ed_df_0
         # Interface knobs
-        #user_defined_variables=['forward_pass_0'],  # Test user-defined variables bypass with consistently available names
+        # user_defined_variables=['forward_pass_0'],  # Test user-defined variables bypass with consistently available names
         second_stage_mse=False,  # Use MSE instead of BIC for adalasso hyperparameter selection if true
         alpha_enet_grid=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0],
-        #alpha_enet_grid=[0.0],  # For testing purposes
+        # alpha_enet_grid=[0.0],  # For testing purposes
         lambda_enet_grid=np.logspace(-4, 1, 25).tolist(),
-        #lambda_enet_grid=[0.0],  # For testing purposes
+        # lambda_enet_grid=[0.0],  # For testing purposes
         tau_adalasso_grid=[0.25, 0.5, 1.0, 1.5, 2.0],
-        #tau_adalasso_grid=[1.0], # For testing purposes
+        # tau_adalasso_grid=[1.0], # For testing purposes
         lambda_adalasso_grid=np.logspace(0, 1, 25).tolist(),
-        #lambda_adalasso_grid=[0.0],  # For testing purposes
+        # lambda_adalasso_grid=[0.0],  # For testing purposes
         validation_proportion_interface=0.2,
         selection_threshold=0.17,
         tolerance_threshold=1e-6,
         ols_significance_level=0.05,
         wald_significance_level=0.05,
         n_lags=5,
-
         # Adapter knobs
-        update_method='power_law',
+        update_method="power_law",
         arma_order=(1, 1),
         garch_order=(1, 1),
-        dist='sstd',
-        model='sGARCH',
+        dist="sstd",
+        model="sGARCH",
         archm=False,
-        update_parameters={'alpha' : 3.0},
-        compare_with_cnn_lstm=True  # Enable comparison with raw CNN-LSTM outputs
+        update_parameters={"alpha": 3.0},
+        compare_with_cnn_lstm=True,  # Enable comparison with raw CNN-LSTM outputs
     )
-    
-    runs_dir = Path('outputs/runs_synthetic_study_test')
+
+    runs_dir = Path("outputs/runs_synthetic_study_test")
     runs_dir.mkdir(parents=True, exist_ok=True)
 
     orchestrator = Orchestrator(runs_dir, cfg)
 
     log_orchestrator_config(cfg)
 
-    
     orchestrator.global_update(ed_df_0, ptd_df_0)
     orchestrator.local_adapt(ed_df_1, ptd_df_1)
 
     print("🛬 Finishing synthetic study...")
+
 
 if __name__ == "__main__":
     test_synthetic_study_full()

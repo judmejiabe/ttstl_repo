@@ -1,9 +1,9 @@
-__author__ = 'Juan Diego Mejia Becerra'
-__email__ = 'juanmejia.7565@gmail.com'
+__author__ = "Juan Diego Mejia Becerra"
+__email__ = "juanmejia.7565@gmail.com"
 
-import os
-from typing import List, Optional, Tuple, Dict
 import copy
+import os
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -12,9 +12,10 @@ from sklearn.preprocessing import StandardScaler
 
 from ..datasets.cnn_lstm_dataset import CNNLSTMDataset
 
-def create_pretrained_scaler(data: pd.DataFrame, 
-                           quantile: Optional[float] = 0.005) \
-                              -> Tuple[StandardScaler, Optional[dict], Optional[dict]]:
+
+def create_pretrained_scaler(
+    data: pd.DataFrame, quantile: Optional[float] = 0.005
+) -> Tuple[StandardScaler, Optional[dict], Optional[dict]]:
     """
     Create a pretrained scaler on historical data to avoid lookahead bias.
     
@@ -59,48 +60,49 @@ def create_pretrained_scaler(data: pd.DataFrame,
     - This method should be called once on historical data, then reused
     """
     df = copy.deepcopy(data)
-    
+
     # Select order flow columns for standardization
-    columns_to_standardize = [col for col in df.columns if 'of' in col]
-    
+    columns_to_standardize = [col for col in df.columns if "of" in col]
+
     if not columns_to_standardize:
         raise ValueError("No order flow columns were provided.")
-    
+
     # Fit scaler on order flow columns
     df_to_standardize = df[columns_to_standardize]
     scaler = StandardScaler()
     scaler.fit(df_to_standardize)
-    
+
     # Compute quantile bounds if requested
     lower_bounds = None
     upper_bounds = None
-    
+
     if quantile is not None:
         # Transform data to get standardized features for quantile computation
         standardized_data = pd.DataFrame(
             scaler.transform(df_to_standardize),
             index=df_to_standardize.index,
-            columns=df_to_standardize.columns
+            columns=df_to_standardize.columns,
         )
-        
+
         # Compute quantile bounds for each feature
         lower_bounds = {}
         upper_bounds = {}
-        
+
         for col in standardized_data.columns:
             lower_bounds[col] = standardized_data[col].quantile(quantile)
             upper_bounds[col] = standardized_data[col].quantile(1 - quantile)
-    
+
     return scaler, lower_bounds, upper_bounds
 
 
-def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame, 
-                                 delta : float, 
-                                 pretrained_scaler: StandardScaler,
-                                 lower_bounds: Dict[str, float],
-                                 upper_bounds: Dict[str, float],
-                                 past_returns: bool = False) \
-                                    -> Tuple[pd.DataFrame, pd.DataFrame]:
+def preprocess_mbo_data_cnn_lstm(
+    data: pd.DataFrame,
+    delta: float,
+    pretrained_scaler: StandardScaler,
+    lower_bounds: Dict[str, float],
+    upper_bounds: Dict[str, float],
+    past_returns: bool = False,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Preprocesses MBO data for a CNN-LSTM model.
 
@@ -159,112 +161,115 @@ def preprocess_mbo_data_cnn_lstm(data : pd.DataFrame,
     """
 
     df = copy.deepcopy(data)
-    
+
     # Convert to numpy arrays for faster operations
-    timestamps = df['timestamp'].values
-    micro_values = df['micro'].values
-    
+    timestamps = df["timestamp"].values
+    micro_values = df["micro"].values
+
     if past_returns:
         # Calculate past returns: (current_micro / past_micro - 1) * 1e3
         # Calculate past timestamps vectorized
         past_timestamps = timestamps - delta
         min_ts = timestamps[0]
-        
+
         # Use searchsorted for all lookups at once (vectorized)
-        indices = np.searchsorted(timestamps, past_timestamps, side='right')
-        
+        indices = np.searchsorted(timestamps, past_timestamps, side="right")
+
         # Handle edge cases vectorized - for past returns, valid when past_timestamps >= min_ts
         valid_mask = past_timestamps >= min_ts
         indices = np.where(valid_mask, indices - 1, 0)
-        
+
         # Get past micro values vectorized
         past_micro = np.full(len(micro_values), np.nan)
         valid_indices = indices[valid_mask]
         past_micro[valid_mask] = micro_values[valid_indices]
-        
+
         # Calculate micro returns vectorized: current / past - 1
         micro_returns = np.where(
             ~np.isnan(past_micro) & (past_micro != 0),
             (micro_values / past_micro - 1) * 1e3,
-            np.nan
+            np.nan,
         )
-        
+
     else:
         # Calculate future returns: (future_micro / current_micro - 1) * 1e3
         # Calculate future timestamps vectorized
         future_timestamps = timestamps + delta
-        max_ts = timestamps[-1]  
-        
+        max_ts = timestamps[-1]
+
         # Use searchsorted for all lookups at once (vectorized)
-        indices = np.searchsorted(timestamps, future_timestamps, side='right')
-        
+        indices = np.searchsorted(timestamps, future_timestamps, side="right")
+
         # Handle edge cases vectorized
         valid_mask = future_timestamps <= max_ts
         indices = np.where(valid_mask, indices - 1, -1)
-        
+
         # Get future micro values vectorized
         future_micro = np.full(len(micro_values), np.nan)
         valid_indices = indices[valid_mask]
         future_micro[valid_mask] = micro_values[valid_indices]
-        
+
         # Calculate micro returns vectorized: future / current - 1
         micro_returns = np.where(
             ~np.isnan(future_micro) & (micro_values != 0),
             (future_micro / micro_values - 1) * 1e3,
-            np.nan
+            np.nan,
         )
-    
+
     # Create target DataFrame
-    target = pd.DataFrame({
-        'timestamp': timestamps,
-        'micro_return': micro_returns
-    })
-    
+    target = pd.DataFrame({"timestamp": timestamps, "micro_return": micro_returns})
+
     # Standardization and winsorization
 
     # Select order flow columns for standardization
-    columns_to_standardize = [col for col in df.columns if 'of' in col]
-    
+    columns_to_standardize = [col for col in df.columns if "of" in col]
+
     if not columns_to_standardize:
         raise ValueError("No order flow columns were provided.")
-    
+
     # Standardize the order flow columns using pretrained scaler
     df_to_standardize = df[columns_to_standardize]
-    
+
     # Use pretrained scaler (now required)
     standardized_data = pd.DataFrame(
         pretrained_scaler.transform(df_to_standardize),
         index=df_to_standardize.index,
-        columns=df_to_standardize.columns
+        columns=df_to_standardize.columns,
     )
 
     # Apply winsorization using required bounds
     # Validate that all required features have bounds
-    missing_lower = [col for col in standardized_data.columns if col not in lower_bounds]
-    missing_upper = [col for col in standardized_data.columns if col not in upper_bounds]
-    
+    missing_lower = [
+        col for col in standardized_data.columns if col not in lower_bounds
+    ]
+    missing_upper = [
+        col for col in standardized_data.columns if col not in upper_bounds
+    ]
+
     if missing_lower:
         raise ValueError(f"Missing lower bounds for features: {missing_lower}")
     if missing_upper:
         raise ValueError(f"Missing upper bounds for features: {missing_upper}")
-    
+
     # Apply winsorization to all features
     for col in standardized_data.columns:
-        standardized_data[col] = np.clip(standardized_data[col], 
-                                       lower_bounds[col], upper_bounds[col])
+        standardized_data[col] = np.clip(
+            standardized_data[col], lower_bounds[col], upper_bounds[col]
+        )
 
     return standardized_data, target
 
 
-def get_dataset_cnn_lstm(data : pd.DataFrame,
-                 delta : float, 
-                 pretrained_scaler: StandardScaler,
-                 lower_bounds: Dict[str, float],
-                 upper_bounds: Dict[str, float],
-                 train : bool = True, 
-                 window_size : Optional[int] = 100,
-                 past_returns : bool = False) \
-                    -> CNNLSTMDataset:
+def get_dataset_cnn_lstm(
+    data: pd.DataFrame,
+    delta: float,
+    pretrained_scaler: StandardScaler,
+    lower_bounds: Dict[str, float],
+    upper_bounds: Dict[str, float],
+    train: bool = True,
+    window_size: Optional[int] = 100,
+    past_returns: bool = False,
+) -> CNNLSTMDataset:
     """
     Build a CNN-LSTM PyTorch dataset from preprocessed Market-by-Order (MBO) data.
 
@@ -319,7 +324,7 @@ def get_dataset_cnn_lstm(data : pd.DataFrame,
         data, delta, pretrained_scaler, lower_bounds, upper_bounds, past_returns
     )
 
-    target.drop('timestamp', axis=1, inplace=True)
+    target.drop("timestamp", axis=1, inplace=True)
 
     if train:
         if past_returns:
@@ -328,7 +333,9 @@ def get_dataset_cnn_lstm(data : pd.DataFrame,
             min_index = target.dropna().index.min()
             if pd.isna(min_index):
                 raise ValueError("No valid targets found in the dataset")
-            inputs = torch.from_numpy(np.array(standardized_data.iloc[min_index:])).float()
+            inputs = torch.from_numpy(
+                np.array(standardized_data.iloc[min_index:])
+            ).float()
             targets = torch.from_numpy(np.array(target.iloc[min_index:])).float()
         else:
             # For future returns, NaN values appear at the end of the dataset
@@ -337,7 +344,9 @@ def get_dataset_cnn_lstm(data : pd.DataFrame,
             if pd.isna(max_index):
                 # No NaN values found, use all data
                 max_index = len(target)
-            inputs = torch.from_numpy(np.array(standardized_data.iloc[:max_index])).float()
+            inputs = torch.from_numpy(
+                np.array(standardized_data.iloc[:max_index])
+            ).float()
             targets = torch.from_numpy(np.array(target.iloc[:max_index])).float()
     else:
         inputs = torch.from_numpy(np.array(standardized_data)).float()

@@ -1,0 +1,80 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+jobs:
+  quality:
+    name: Quality Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Miniforge
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: ttstl_dev
+          environment-file: environment.yml
+          auto-activate-base: false
+          use-mamba: true
+          miniforge-variant: Mambaforge
+          use-only-tar-bz2: true
+
+      - name: Install Dev Dependencies
+        run: |
+          pip install black==24.12.0 isort==5.13.2
+          pip install -e .
+
+      - name: Run Black
+        run: black --check .
+
+      - name: Run Isort
+        run: isort --check .
+
+      - name: Run Lightweight Tests
+        run: pytest -m lightweight
+
+  scientific-validation:
+    name: Full Scientific Validation
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Miniforge
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: ttstl_dev
+          environment-file: environment.yml
+          auto-activate-base: false
+          use-mamba: true
+          miniforge-variant: Mambaforge
+          use-only-tar-bz2: true
+
+      - name: Install Dev Dependencies
+        run: |
+          pip install black==24.12.0 isort==5.13.2
+          pip install -e .
+
+      - name: Run Comprehensive Tests
+        run: pytest -m comprehensive

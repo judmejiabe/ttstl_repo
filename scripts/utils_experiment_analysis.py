@@ -14,9 +14,9 @@ Date: November 4, 2025
 import argparse
 import json
 import logging
+import os
 import re
 import traceback
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -40,24 +40,33 @@ from ttstl.backbone import Backbone
 from ttstl.utils.data_downloader import import_to_pandas
 from ttstl.utils.data_preprocessor import create_pretrained_scaler
 
-
 # =============================================================================
 # 1. CORE DATA STRUCTURES
 # =============================================================================
 
+
 @dataclass
 class ExperimentMetadata:
     """Reconstruct Orchestrator from run directory using config.yaml file."""
+
     run_dir: Path
-    
+
     # GCS data paths (optional - for data loading)
     gcs_bucket: Optional[str] = None
-    gcs_credentials_path: str = 'credentials.json'
-    gcs_ed_global_path: Optional[str] = None  # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_0.parquet'
-    gcs_ptd_global_path: Optional[str] = None  # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_0.parquet'
-    gcs_ed_local_path: Optional[str] = None    # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_1.parquet'
-    gcs_ptd_local_path: Optional[str] = None   # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_1.parquet'
-    
+    gcs_credentials_path: str = "credentials.json"
+    gcs_ed_global_path: Optional[
+        str
+    ] = None  # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_0.parquet'
+    gcs_ptd_global_path: Optional[
+        str
+    ] = None  # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_0.parquet'
+    gcs_ed_local_path: Optional[
+        str
+    ] = None  # e.g., 'synthetic_data/08042025_long_event_driven_recorded_lob_1.parquet'
+    gcs_ptd_local_path: Optional[
+        str
+    ] = None  # e.g., 'synthetic_data/08042025_long_physical_time_driven_recorded_data_1.parquet'
+
     # Cached configuration (loaded on demand)
     _config: Optional[Dict[str, Any]] = field(default=None, repr=False, init=False)
 
@@ -66,26 +75,28 @@ class ExperimentMetadata:
         if self.gcs_bucket is None:
             # Strict loading from credentials.json
             bucket_name = None
-            
+
             creds_path = Path(self.gcs_credentials_path)
             if not creds_path.exists():
-                    # Try finding it relative to project root if simple path fails
-                    # Just a best-effort check if we are deep in directories
-                    project_root = Path(__file__).resolve().parent.parent.parent
-                    alt_path = project_root / 'credentials.json'
-                    if alt_path.exists():
-                        creds_path = alt_path
-                        self.gcs_credentials_path = str(alt_path)
+                # Try finding it relative to project root if simple path fails
+                # Just a best-effort check if we are deep in directories
+                project_root = Path(__file__).resolve().parent.parent.parent
+                alt_path = project_root / "credentials.json"
+                if alt_path.exists():
+                    creds_path = alt_path
+                    self.gcs_credentials_path = str(alt_path)
 
             if creds_path.exists():
                 try:
-                    with open(creds_path, 'r') as f:
+                    with open(creds_path, "r") as f:
                         creds = json.load(f)
-                        bucket_name = creds.get('bucket_name')
+                        bucket_name = creds.get("bucket_name")
                 except Exception as e:
                     logging.error(f"Failed to read credentials.json: {e}")
-                    raise ValueError(f"Failed to read credentials.json: {e}. Please ensure it is a valid JSON file.")
-            
+                    raise ValueError(
+                        f"Failed to read credentials.json: {e}. Please ensure it is a valid JSON file."
+                    )
+
             if not bucket_name:
                 error_msg = (
                     f"Could not find 'bucket_name' in {self.gcs_credentials_path}. "
@@ -94,9 +105,9 @@ class ExperimentMetadata:
                 )
                 logging.error(error_msg)
                 raise ValueError(error_msg)
-            
+
             self.gcs_bucket = bucket_name
-    
+
     def get_config(self) -> Dict[str, Any]:
         """
         Load and return the Orchestrator configuration from config.yaml.
@@ -114,24 +125,20 @@ class ExperimentMetadata:
         """
         if self._config is None:
             config_path = self.run_dir / "config.yaml"
-            
+
             if not config_path.exists():
-                raise FileNotFoundError(
-                    f"config.yaml not found in {self.run_dir}"
-                )
-            
+                raise FileNotFoundError(f"config.yaml not found in {self.run_dir}")
+
             try:
-                with open(config_path, 'r') as f:
+                with open(config_path, "r") as f:
                     # Use unsafe_load to handle Python objects (StandardScaler, etc.)
                     # This is safe because we're loading our own generated config files
                     self._config = yaml.unsafe_load(f)
             except Exception as e:
-                raise ValueError(
-                    f"Failed to parse config.yaml in {self.run_dir}: {e}"
-                )
-        
+                raise ValueError(f"Failed to parse config.yaml in {self.run_dir}: {e}")
+
         return self._config
-    
+
     def get_config_value(self, key: str, default: Any = None) -> Any:
         """
         Get a specific value from the Orchestrator configuration.
@@ -155,22 +162,35 @@ class ExperimentMetadata:
 @dataclass
 class PerformanceData:
     """Unified performance data structure within a backbone and mode."""
+
     data: pd.DataFrame  # Raw performance metrics
     metadata: ExperimentMetadata
     mode: str  # Mode of operation (e.g., 'global_update', 'local_adapt')
     backbone_bar: str  # Backbone bar identifier (e.g., 'bb_000', 'bb_001')
-    
+
     # Convergence statistics (optional, populated from convergence_performance.json)
-    convergence_failed: Optional[int] = None  # Count of adapter bars with 'failed' status
-    convergence_saddle_point: Optional[int] = None  # Count of adapter bars with 'saddle_point_detected' status
-    
+    convergence_failed: Optional[
+        int
+    ] = None  # Count of adapter bars with 'failed' status
+    convergence_saddle_point: Optional[
+        int
+    ] = None  # Count of adapter bars with 'saddle_point_detected' status
+
     # Required columns for performance data
     # Core metrics that must be present in the DataFrame
     required_columns: ClassVar[List[str]] = [
-        'garch_mae', 'garch_mse', 'garch_relmae', 'garch_relmse', 'garch_r2',
-        'nn_mae', 'nn_mse', 'nn_relmae', 'nn_relmse', 'nn_r2'
+        "garch_mae",
+        "garch_mse",
+        "garch_relmae",
+        "garch_relmse",
+        "garch_r2",
+        "nn_mae",
+        "nn_mse",
+        "nn_relmae",
+        "nn_relmse",
+        "nn_r2",
     ]
-    
+
     def validate(self) -> bool:
         """
         Check if DataFrame has required columns.
@@ -183,7 +203,7 @@ class PerformanceData:
         """
         if self.data is None or self.data.empty:
             raise ValueError("Performance data is empty")
-        
+
         # Check for required columns
         missing_cols = set(self.required_columns) - set(self.data.columns)
         if missing_cols:
@@ -191,20 +211,20 @@ class PerformanceData:
                 f"Missing required columns in performance data: {sorted(missing_cols)}\n"
                 f"Available columns: {sorted(self.data.columns.tolist())}"
             )
-        
+
         # Check for adapter_bar in index or columns
         has_adapter_bar = (
-            'adapter_bar' in self.data.columns or 
-            self.data.index.name == 'adapter_bar' or
-            'adapter_bar' in self.data.index.names
+            "adapter_bar" in self.data.columns
+            or self.data.index.name == "adapter_bar"
+            or "adapter_bar" in self.data.index.names
         )
         if not has_adapter_bar:
             raise ValueError(
                 "Performance data must have 'adapter_bar' in index or columns"
             )
-        
+
         return True
-    
+
     def compute_relative_performance_nn_baseline(self) -> pd.DataFrame:
         """
         Compute relative performance of GARCH model against NN baseline.
@@ -218,14 +238,16 @@ class PerformanceData:
         Raises:
             ValueError: If required columns are missing
         """
-        required = ['garch_relmae', 'nn_relmae']
+        required = ["garch_relmae", "nn_relmae"]
         missing = [col for col in required if col not in self.data.columns]
         if missing:
             raise ValueError(f"Missing required columns: {missing}")
-        
+
         # Compute relative performance: GARCH RelMAE / NN RelMAE
-        self.data['garch_relmae_nn_baseline'] = self.data['garch_relmae'] / self.data['nn_relmae']
-        
+        self.data["garch_relmae_nn_baseline"] = (
+            self.data["garch_relmae"] / self.data["nn_relmae"]
+        )
+
         return self.data
 
 
@@ -233,9 +255,10 @@ class PerformanceData:
 # 2. DATA LOADING LAYER
 # =============================================================================
 
+
 class ExperimentLoader:
     """Class for loading experiment data."""
-    
+
     def __init__(self, metadata: ExperimentMetadata):
         """
         Initialize loader with experiment metadata.
@@ -244,7 +267,7 @@ class ExperimentLoader:
             metadata: ExperimentMetadata object containing run directory and GCS paths
         """
         self.metadata = metadata
-    
+
     def load_data(self, mode: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Load and preprocess data from GCS.
@@ -259,47 +282,59 @@ class ExperimentLoader:
             ValueError: If GCS paths are not set or mode is invalid
             ImportError: If data_downloader module is not available
         """
-        if mode not in ['global_update', 'local_adapt']:
-            raise ValueError(f"mode must be 'global_update' or 'local_adapt', got: {mode}")
-        
-        def load_and_preprocess(ed_path: str, ptd_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        if mode not in ["global_update", "local_adapt"]:
+            raise ValueError(
+                f"mode must be 'global_update' or 'local_adapt', got: {mode}"
+            )
+
+        def load_and_preprocess(
+            ed_path: str, ptd_path: str
+        ) -> Tuple[pd.DataFrame, pd.DataFrame]:
             """Load event-driven and physical time-driven data, compute returns."""
             if ed_path is None or ptd_path is None:
                 raise ValueError(f"GCS paths not set for this mode")
-            
+
             # Load event driven data
             ed_df = import_to_pandas(
                 blob_name=ed_path,
                 credentials_path=self.metadata.gcs_credentials_path,
-                bucket_name=self.metadata.gcs_bucket
+                bucket_name=self.metadata.gcs_bucket,
             )
-            
+
             # Load physical time driven data
             ptd_df = import_to_pandas(
                 blob_name=ptd_path,
                 credentials_path=self.metadata.gcs_credentials_path,
-                bucket_name=self.metadata.gcs_bucket
+                bucket_name=self.metadata.gcs_bucket,
             )
-            
+
             # Handle timestamp index/column conversion
-            if ptd_df.index.name == 'timestamp' or 'timestamp' in ptd_df.index.names:
+            if ptd_df.index.name == "timestamp" or "timestamp" in ptd_df.index.names:
                 ptd_df = ptd_df.reset_index()
-            elif 'timestamp' not in ptd_df.columns:
-                raise ValueError("No timestamp found in either index or columns for physical time-driven data")
-            
+            elif "timestamp" not in ptd_df.columns:
+                raise ValueError(
+                    "No timestamp found in either index or columns for physical time-driven data"
+                )
+
             # Compute micro returns (future returns by default)
-            ptd_df['micro_return'] = ptd_df['micro'].pct_change() * 1e3
+            ptd_df["micro_return"] = ptd_df["micro"].pct_change() * 1e3
             # ptd_df['micro_return'] = ptd_df['micro_return'].shift(-1)
             ptd_df = ptd_df.iloc[:-1]
-            
+
             return ed_df, ptd_df
-        
-        if mode == 'global_update':
-            return load_and_preprocess(self.metadata.gcs_ed_global_path, self.metadata.gcs_ptd_global_path)
+
+        if mode == "global_update":
+            return load_and_preprocess(
+                self.metadata.gcs_ed_global_path, self.metadata.gcs_ptd_global_path
+            )
         else:  # local_adapt
-            return load_and_preprocess(self.metadata.gcs_ed_local_path, self.metadata.gcs_ptd_local_path)
-    
-    def load_performance_data(self, backbone_bar: str, mode: str) -> Optional[PerformanceData]:
+            return load_and_preprocess(
+                self.metadata.gcs_ed_local_path, self.metadata.gcs_ptd_local_path
+            )
+
+    def load_performance_data(
+        self, backbone_bar: str, mode: str
+    ) -> Optional[PerformanceData]:
         """
         Load performance metrics from performance.parquet file in adapter subdirectory.
         
@@ -319,30 +354,40 @@ class ExperimentLoader:
             >>> perf_global = loader.load_performance_data('bb_000', mode='global_update')
             >>> perf_local = loader.load_performance_data('bb_000', mode='local_adapt')
         """
-        if mode not in ['global_update', 'local_adapt']:
-            raise ValueError(f"mode must be 'global_update' or 'local_adapt', got: {mode}")
-        
-        perf_path = self.metadata.run_dir / backbone_bar / mode / 'adapter' / 'performance.parquet'
-        
+        if mode not in ["global_update", "local_adapt"]:
+            raise ValueError(
+                f"mode must be 'global_update' or 'local_adapt', got: {mode}"
+            )
+
+        perf_path = (
+            self.metadata.run_dir
+            / backbone_bar
+            / mode
+            / "adapter"
+            / "performance.parquet"
+        )
+
         if not perf_path.exists():
             return None
-        
+
         try:
             df = pd.read_parquet(perf_path)
             # Add metadata columns if not present
-            if 'backbone_bar' not in df.columns:
-                df['backbone_bar'] = backbone_bar
-            if 'mode' not in df.columns:
-                df['mode'] = mode
+            if "backbone_bar" not in df.columns:
+                df["backbone_bar"] = backbone_bar
+            if "mode" not in df.columns:
+                df["mode"] = mode
         except Exception as e:
             raise ValueError(f"Failed to load performance data from {perf_path}: {e}")
-        
+
         # Create and validate PerformanceData object
-        perf_data = PerformanceData(data=df, metadata=self.metadata, mode=mode, backbone_bar=backbone_bar)
+        perf_data = PerformanceData(
+            data=df, metadata=self.metadata, mode=mode, backbone_bar=backbone_bar
+        )
         perf_data.validate()
-        
+
         return perf_data
-        
+
 
 # =============================================================================
 # 3. DATA PROCESSING LAYER
@@ -351,9 +396,9 @@ class ExperimentLoader:
 # 3.1 Performance Aggregation
 # -----------------------------------------------------------------------------
 
+
 def compare_experiments(
-    perf_data_list: List[PerformanceData],
-    metric: str = 'garch_relmae'
+    perf_data_list: List[PerformanceData], metric: str = "garch_relmae"
 ) -> pd.DataFrame:
     """
     Compare multiple experiments side-by-side with average rankings.
@@ -398,10 +443,10 @@ def compare_experiments(
     """
     if not perf_data_list:
         raise ValueError("perf_data_list cannot be empty")
-    
+
     # Infer mode from first PerformanceData object
     mode = perf_data_list[0].mode
-    
+
     # Validate that all PerformanceData objects have the same mode
     for perf_data in perf_data_list:
         if perf_data.mode != mode:
@@ -410,108 +455,115 @@ def compare_experiments(
                 f"Found mixed modes: '{mode}' and '{perf_data.mode}'. "
                 f"global_update and local_adapt are not comparable and must be analyzed separately."
             )
-    
+
     comparison_data = []
-    
+
     # Collect all performance data
     all_data = []
     for perf_data in perf_data_list:
-        
+
         # Compute garch_relmae_nn_baseline if the metric requires it
-        if metric == 'garch_relmae_nn_baseline' and 'garch_relmae_nn_baseline' not in perf_data.data.columns:
+        if (
+            metric == "garch_relmae_nn_baseline"
+            and "garch_relmae_nn_baseline" not in perf_data.data.columns
+        ):
             perf_data.compute_relative_performance_nn_baseline()
-        
+
         df = perf_data.data.copy(deep=True)
-        
+
         # Get experiment_id from metadata
-        exp_id = perf_data.metadata.get_config_value('run_id', default='unknown')
-        
+        exp_id = perf_data.metadata.get_config_value("run_id", default="unknown")
+
         # Add experiment_id if not present
-        if 'experiment_id' not in df.columns:
-            df['experiment_id'] = exp_id
-        
+        if "experiment_id" not in df.columns:
+            df["experiment_id"] = exp_id
+
         all_data.append(df)
-    
+
     if not all_data:
         return pd.DataFrame()
-    
+
     # Combine all data
     combined_df = pd.concat(all_data, ignore_index=False)
-    
+
     # Reset index to get adapter_bar as a column if it's in the index
-    if combined_df.index.name == 'adapter_bar':
+    if combined_df.index.name == "adapter_bar":
         combined_df = combined_df.reset_index()
-    
+
     # Get unique adapter bars
-    adapter_bars = combined_df['adapter_bar'].unique()
-    
+    adapter_bars = combined_df["adapter_bar"].unique()
+
     # Calculate ranks at each adapter bar
     ranking_data = []
     for adapter_bar in adapter_bars:
-        bar_data = combined_df[combined_df['adapter_bar'] == adapter_bar].copy()
-        
+        bar_data = combined_df[combined_df["adapter_bar"] == adapter_bar].copy()
+
         if bar_data.empty or metric not in bar_data.columns:
             continue
-        
+
         # Rank by metric (ascending - lower is better) with average tie handling
-        bar_data['rank'] = bar_data[metric].rank(method='average', ascending=True)
-        
+        bar_data["rank"] = bar_data[metric].rank(method="average", ascending=True)
+
         # Store ranking information
         for _, row in bar_data.iterrows():
-            ranking_data.append({
-                'experiment_id': row['experiment_id'],
-                'adapter_bar': adapter_bar,
-                'rank': row['rank'],
-                metric: row[metric]
-            })
-    
+            ranking_data.append(
+                {
+                    "experiment_id": row["experiment_id"],
+                    "adapter_bar": adapter_bar,
+                    "rank": row["rank"],
+                    metric: row[metric],
+                }
+            )
+
     if not ranking_data:
         return pd.DataFrame()
-    
+
     # Create ranking DataFrame
     ranking_df = pd.DataFrame(ranking_data)
-    
+
     # Calculate comparison statistics for each experiment
-    for exp_id in ranking_df['experiment_id'].unique():
-        exp_ranks = ranking_df[ranking_df['experiment_id'] == exp_id]
-        
-        ranks = exp_ranks['rank']
+    for exp_id in ranking_df["experiment_id"].unique():
+        exp_ranks = ranking_df[ranking_df["experiment_id"] == exp_id]
+
+        ranks = exp_ranks["rank"]
         metric_values = exp_ranks[metric]
-        
+
         comparison_entry = {
-            'experiment_id': exp_id,
-            'avg_rank': ranks.mean(),
-            'median_rank': ranks.median(),
-            'std_rank': ranks.std(),
-            'best_rank': ranks.min(),
-            'worst_rank': ranks.max(),
-            'rank_range': ranks.max() - ranks.min(),
-            'times_ranked_1st': (ranks == 1.0).sum(),
-            'times_in_top3': (ranks <= 3.0).sum(),
-            'num_observations': len(ranks),
-            f'avg_{metric}': metric_values.mean(),
-            f'median_{metric}': metric_values.median(),
-            f'std_{metric}': metric_values.std(),
-            f'min_{metric}': metric_values.min(),
-            f'max_{metric}': metric_values.max()
+            "experiment_id": exp_id,
+            "avg_rank": ranks.mean(),
+            "median_rank": ranks.median(),
+            "std_rank": ranks.std(),
+            "best_rank": ranks.min(),
+            "worst_rank": ranks.max(),
+            "rank_range": ranks.max() - ranks.min(),
+            "times_ranked_1st": (ranks == 1.0).sum(),
+            "times_in_top3": (ranks <= 3.0).sum(),
+            "num_observations": len(ranks),
+            f"avg_{metric}": metric_values.mean(),
+            f"median_{metric}": metric_values.median(),
+            f"std_{metric}": metric_values.std(),
+            f"min_{metric}": metric_values.min(),
+            f"max_{metric}": metric_values.max(),
         }
         comparison_data.append(comparison_entry)
-    
+
     # Create comparison DataFrame
     comparison_df = pd.DataFrame(comparison_data)
-    
+
     # Add overall rank based on average rank
-    comparison_df['overall_rank'] = comparison_df['avg_rank'].rank(method='average', ascending=True)
-    
+    comparison_df["overall_rank"] = comparison_df["avg_rank"].rank(
+        method="average", ascending=True
+    )
+
     return comparison_df
 
 
 def plot_performance_time_series(
     perf_data_list: List[PerformanceData],
-    metric: str = 'garch_relmae',
+    metric: str = "garch_relmae",
     save_path: Optional[str] = None,
     figsize: Tuple[int, int] = (14, 8),
-    title: Optional[str] = None
+    title: Optional[str] = None,
 ) -> plt.Figure:
     """
     Plot performance metric time series for multiple experiments.
@@ -547,10 +599,10 @@ def plot_performance_time_series(
     """
     if not perf_data_list:
         raise ValueError("perf_data_list cannot be empty")
-    
+
     # Infer mode from first PerformanceData object
     mode = perf_data_list[0].mode
-    
+
     # Validate that all PerformanceData objects have the same mode
     for perf_data in perf_data_list:
         if perf_data.mode != mode:
@@ -559,103 +611,106 @@ def plot_performance_time_series(
                 f"Found mixed modes: '{mode}' and '{perf_data.mode}'. "
                 f"global_update and local_adapt should be plotted separately."
             )
-    
+
     # Collect data for plotting
     plot_data = []
-    
+
     for perf_data in perf_data_list:
         # Compute garch_relmae_nn_baseline if the metric requires it
-        if metric == 'garch_relmae_nn_baseline' and 'garch_relmae_nn_baseline' not in perf_data.data.columns:
+        if (
+            metric == "garch_relmae_nn_baseline"
+            and "garch_relmae_nn_baseline" not in perf_data.data.columns
+        ):
             perf_data.compute_relative_performance_nn_baseline()
-        
+
         df = perf_data.data.copy(deep=True)
-        
+
         # Get experiment_id from metadata
-        exp_id = perf_data.metadata.get_config_value('run_id', default='unknown')
-        
+        exp_id = perf_data.metadata.get_config_value("run_id", default="unknown")
+
         # Reset index to get adapter_bar as column if needed
-        if df.index.name == 'adapter_bar':
+        if df.index.name == "adapter_bar":
             df = df.reset_index()
-        
+
         # Check if metric exists
         if metric not in df.columns:
             continue
-        
+
         # Extract adapter_bar and metric values
         for _, row in df.iterrows():
-            plot_data.append({
-                'experiment_id': exp_id,
-                'adapter_bar': row['adapter_bar'],
-                metric: row[metric]
-            })
-    
+            plot_data.append(
+                {
+                    "experiment_id": exp_id,
+                    "adapter_bar": row["adapter_bar"],
+                    metric: row[metric],
+                }
+            )
+
     if not plot_data:
         raise ValueError("No data available to plot")
-    
+
     # Create long-form DataFrame
     plot_df_long = pd.DataFrame(plot_data)
-    
+
     # Convert to wide format: rows=adapter_bar, columns=experiment_id
     plot_df = plot_df_long.pivot(
-        index='adapter_bar',
-        columns='experiment_id',
-        values=metric
+        index="adapter_bar", columns="experiment_id", values=metric
     ).sort_index()
-    
+
     # Create complete index with all adapter bars (to introduce NaNs for missing bars)
     min_bar = plot_df.index.min()
     max_bar = plot_df.index.max()
     complete_index = pd.RangeIndex(start=min_bar, stop=max_bar + 1)
-    
+
     # Reindex to include all adapter bars, filling missing ones with NaN
     plot_df = plot_df.reindex(complete_index)
-    
+
     # Create figure
     fig, ax = plt.subplots(figsize=figsize)
-    
+
     # Plot line for each experiment (column in wide DataFrame)
     for exp_id in plot_df.columns:
         ax.plot(
             plot_df.index,  # adapter_bar values
-            plot_df[exp_id], 
-            marker='o', 
+            plot_df[exp_id],
+            marker="o",
             markersize=4,
             label=exp_id,
             linewidth=1.5,
-            alpha=0.8
+            alpha=0.8,
         )
-    
+
     # Customize plot
-    ax.set_xlabel('Adapter Bar', fontsize=12)
-    ax.set_ylabel(metric.replace('_', ' ').title(), fontsize=12)
-    
+    ax.set_xlabel("Adapter Bar", fontsize=12)
+    ax.set_ylabel(metric.replace("_", " ").title(), fontsize=12)
+
     if title:
-        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight="bold")
     else:
         ax.set_title(
             f'{metric.replace("_", " ").title()} Across Adapter Bars ({mode.replace("_", " ").title()})',
             fontsize=14,
-            fontweight='bold'
+            fontweight="bold",
         )
-    
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
-    ax.grid(True, alpha=0.3, linestyle='--')
-    
+
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=9)
+    ax.grid(True, alpha=0.3, linestyle="--")
+
     plt.tight_layout()
-    
+
     # Save if path provided
     if save_path:
         save_path_obj = Path(save_path)
         save_path_obj.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"✅ Saved plot to {save_path}")
-    
+
     return fig
 
 
 def plot_performance_boxplot(
     perf_data_dict: Dict[str, List[PerformanceData]],
-    metric: str = 'garch_relmae',
+    metric: str = "garch_relmae",
     save_path: Optional[Path] = None,
     figsize: Tuple[int, int] = (16, 10),
     title: Optional[str] = None,
@@ -664,7 +719,7 @@ def plot_performance_boxplot(
     color_dict: Optional[Dict[str, List[str]]] = None,
     legend_config: Optional[Dict[str, str]] = None,
     hline: Optional[float] = 1.0,
-    ylim: Optional[Tuple[float, float]] = (0.9, 1.1)
+    ylim: Optional[Tuple[float, float]] = (0.9, 1.1),
 ) -> plt.Figure:
     """
     Create grouped boxplots comparing the metric distribution across experiments.
@@ -719,79 +774,86 @@ def plot_performance_boxplot(
     # Collect data for each group
     plot_data = []
     group_names = list(perf_data_dict.keys())
-    
+
     for group_name, perf_data_list in perf_data_dict.items():
         for perf_data in perf_data_list:
-            
+
             # Compute garch_relmae_nn_baseline if the metric requires it
-            if metric == 'garch_relmae_nn_baseline' and 'garch_relmae_nn_baseline' not in perf_data.data.columns:
+            if (
+                metric == "garch_relmae_nn_baseline"
+                and "garch_relmae_nn_baseline" not in perf_data.data.columns
+            ):
                 perf_data.compute_relative_performance_nn_baseline()
-            
+
             df = perf_data.data.copy(deep=True)
-            
+
             # Get experiment_id from metadata
-            exp_id = perf_data.metadata.get_config_value('run_id', default='unknown')
-            
+            exp_id = perf_data.metadata.get_config_value("run_id", default="unknown")
+
             # Check if metric exists
             if metric not in df.columns:
                 continue
-            
+
             # Extract all metric values for this experiment
             for _, row in df.iterrows():
-                plot_data.append({
-                    'group': group_name,
-                    'experiment_id': exp_id,
-                    'metric_value': row[metric]
-                })
-    
+                plot_data.append(
+                    {
+                        "group": group_name,
+                        "experiment_id": exp_id,
+                        "metric_value": row[metric],
+                    }
+                )
+
     if not plot_data:
         raise ValueError("No data available to plot")
-    
+
     # Create DataFrame for plotting
     plot_df = pd.DataFrame(plot_data)
-    
+
     # Create figure
     fig, ax = plt.subplots(figsize=figsize)
-    
+
     # Prepare data for grouped boxplot
     # Group by (group, experiment_id) and collect metric values
     grouped_data = []
     positions = []
     labels = []
     colors = []
-    
+
     # Default gray color for experiments not in color_dict
-    default_color = 'gray'
-    
+    default_color = "gray"
+
     # Use color_dict directly as mapping from experiment_id to color
     # If color_dict is None, all experiments get default gray
     if color_dict is None:
         color_dict = {}
-    
+
     position = 0
     group_positions = []
     group_centers = []
-    
+
     for group_idx, group_name in enumerate(group_names):
-        group_df = plot_df[plot_df['group'] == group_name]
-        experiments_in_group = group_df['experiment_id'].unique()
-        
+        group_df = plot_df[plot_df["group"] == group_name]
+        experiments_in_group = group_df["experiment_id"].unique()
+
         group_start = position
-        
+
         for exp_id in experiments_in_group:
-            exp_data = group_df[group_df['experiment_id'] == exp_id]['metric_value'].values
+            exp_data = group_df[group_df["experiment_id"] == exp_id][
+                "metric_value"
+            ].values
             grouped_data.append(exp_data)
             positions.append(position)
             labels.append(exp_id)
             colors.append(color_dict.get(exp_id, default_color))
             position += 1
-        
+
         # Add spacing between groups
         group_end = position - 1
         group_centers.append((group_start + group_end) / 2)
         position += 1  # Add gap between groups
         group_positions.append(group_end + 0.5)
-    
+
     # Create boxplots
     bp = ax.boxplot(
         grouped_data,
@@ -800,26 +862,27 @@ def plot_performance_boxplot(
         patch_artist=True,
         showfliers=True,
         boxprops=dict(linewidth=1.5),
-        medianprops=dict(linewidth=2, color='red'),
+        medianprops=dict(linewidth=2, color="red"),
         whiskerprops=dict(linewidth=1.5),
         capprops=dict(linewidth=1.5),
-        flierprops=dict(marker='o', markerfacecolor='gray', markersize=4, alpha=0.5)
+        flierprops=dict(marker="o", markerfacecolor="gray", markersize=4, alpha=0.5),
     )
-    
+
     # Color the boxes
-    for patch, color in zip(bp['boxes'], colors):
+    for patch, color in zip(bp["boxes"], colors):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
-    
-    
+
     # Add horizontal reference line at hline
     if hline is not None:
-        ax.axhline(y=hline, color='black', linestyle='--', linewidth=2, alpha=0.7, zorder=0)
-    
+        ax.axhline(
+            y=hline, color="black", linestyle="--", linewidth=2, alpha=0.7, zorder=0
+        )
+
     # Customize plot
-    ax.set_ylabel(metric.replace('_', ' ').title(), fontsize=14)
-    ax.set_xlabel(xlabel if xlabel else 'Groups', fontsize=14)
-    
+    ax.set_ylabel(metric.replace("_", " ").title(), fontsize=14)
+    ax.set_xlabel(xlabel if xlabel else "Groups", fontsize=14)
+
     # Set x-tick labels at group centers
     if xtick_labels:
         ax.set_xticks(group_centers)
@@ -827,44 +890,44 @@ def plot_performance_boxplot(
     else:
         ax.set_xticks(group_centers)
         ax.set_xticklabels(group_names, fontsize=12)
-    
+
     if title:
-        ax.set_title(title, fontsize=16, fontweight='bold')
+        ax.set_title(title, fontsize=16, fontweight="bold")
     else:
         ax.set_title(
             f'Grouped {metric.replace("_", " ").title()} Distribution',
             fontsize=16,
-            fontweight='bold'
+            fontweight="bold",
         )
-    
+
     # Create legend only if legend_config is provided
     if legend_config:
         ax.legend(**legend_config)
-    
-    ax.grid(True, alpha=0.3, linestyle='--', axis='y')
-    
+
+    ax.grid(True, alpha=0.3, linestyle="--", axis="y")
+
     # Set y-axis limits
     if ylim is not None:
         ax.set_ylim(ylim)
-    
+
     plt.tight_layout()
-    
+
     # Save if path provided
     if save_path:
         save_path_obj = Path(save_path)
         save_path_obj.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"✅ Saved boxplot to {save_path}")
-    
+
     return fig
 
 
 # 3.3 Covariate Analysis
 # -----------------------------------------------------------------------------
 
+
 def load_covariate_counts(
-    experiments: Dict[str, ExperimentMetadata],
-    mode: str = 'global_update'
+    experiments: Dict[str, ExperimentMetadata], mode: str = "global_update"
 ) -> pd.DataFrame:
     """
     Extract number of selected covariates for each experiment.
@@ -874,8 +937,7 @@ def load_covariate_counts(
 
 
 def compare_covariate_selection(
-    experiments: List[ExperimentMetadata],
-    backbone_bar: str = 'bb_000'
+    experiments: List[ExperimentMetadata], backbone_bar: str = "bb_000"
 ) -> pd.DataFrame:
     """
     Compare which covariates were selected across experiments.
@@ -883,18 +945,20 @@ def compare_covariate_selection(
     """
     pass
 
+
 def analyze_covariate_trends(
-        experiment: ExperimentMetadata,
-        covariate_list: List[str],
-        backbone_bar: str = 'bb_000',
-        mode: str = 'local_adapt',
-        pretrained_scaler: Optional[Any] = None,
-        lower_bounds: Optional[Dict[str, float]] = None,
-        upper_bounds: Optional[Dict[str, float]] = None,
-        device: str = 'cuda',
-        batch_size: int = 512,
-        compute_ccf: bool = False,
-        max_lags: Optional[int] = None) -> pd.DataFrame:
+    experiment: ExperimentMetadata,
+    covariate_list: List[str],
+    backbone_bar: str = "bb_000",
+    mode: str = "local_adapt",
+    pretrained_scaler: Optional[Any] = None,
+    lower_bounds: Optional[Dict[str, float]] = None,
+    upper_bounds: Optional[Dict[str, float]] = None,
+    device: str = "cuda",
+    batch_size: int = 512,
+    compute_ccf: bool = False,
+    max_lags: Optional[int] = None,
+) -> pd.DataFrame:
     """
     Analyze trends in covariate statistics over time.
     
@@ -1011,74 +1075,84 @@ def analyze_covariate_trends(
     # ==========================================================================
     # AUTO-DETECT: Parse covariate_list to determine neural covariate needs
     # ==========================================================================
-    
+
     # Detect which types of neural covariates are requested
-    needs_hidden_activations = any('hidden_activations_' in cov for cov in covariate_list)
-    needs_forward_pass = any('forward_pass' in cov for cov in covariate_list)
+    needs_hidden_activations = any(
+        "hidden_activations_" in cov for cov in covariate_list
+    )
+    needs_forward_pass = any("forward_pass" in cov for cov in covariate_list)
     needs_neural_covariates = needs_hidden_activations or needs_forward_pass
-    
+
     if needs_neural_covariates:
         print(f"🔍 Auto-detected neural covariate requirements:")
         if needs_hidden_activations:
             print(f"   ✓ Hidden activations (64D) - non-parsimonious mode")
         if needs_forward_pass:
             print(f"   ✓ Forward pass output (1D) - parsimonious mode")
-    
+
     # ==========================================================================
     # STAGE 1: Basic Time Series Visualization
     # ==========================================================================
-    
+
     # 1. Load physical time-driven data using ExperimentLoader
     loader = ExperimentLoader(experiment)
-    
+
     # Determine which data to load based on mode
-    if mode == 'global_update':
-        ed_df, ptd_df = loader.load_data(mode='global_update')
-    elif mode == 'local_adapt':
-        ed_df, ptd_df = loader.load_data(mode='local_adapt')
+    if mode == "global_update":
+        ed_df, ptd_df = loader.load_data(mode="global_update")
+    elif mode == "local_adapt":
+        ed_df, ptd_df = loader.load_data(mode="local_adapt")
     else:
         raise ValueError(f"mode must be 'global_update' or 'local_adapt', got: {mode}")
-    
+
     # 2. Get metadata for bar calculations
-    session_start = experiment.get_config_value('session_start')
-    session_finish = experiment.get_config_value('session_finish')
-    bdelta = experiment.get_config_value('bdelta')
-    adelta = experiment.get_config_value('adelta')
-    
+    session_start = experiment.get_config_value("session_start")
+    session_finish = experiment.get_config_value("session_finish")
+    bdelta = experiment.get_config_value("bdelta")
+    adelta = experiment.get_config_value("adelta")
+
     if session_start is None or session_finish is None:
-        raise ValueError("session_start and session_finish must be defined in experiment metadata")
+        raise ValueError(
+            "session_start and session_finish must be defined in experiment metadata"
+        )
     if bdelta is None or adelta is None:
         raise ValueError("bdelta and adelta must be defined in experiment metadata")
-    
+
     # Ensure timestamp is a column (not index)
-    if ptd_df.index.name == 'timestamp' or 'timestamp' in ptd_df.index.names:
+    if ptd_df.index.name == "timestamp" or "timestamp" in ptd_df.index.names:
         ptd_df = ptd_df.reset_index()
-    
+
     # Add backbone_bar and adapter_bar columns based on timestamp
     # Backbone bars: timestamps from session_start to session_start + bdelta, etc.
     # Adapter bars: within each backbone bar, subdivided by adelta
-    
+
     # Calculate backbone bar index
-    ptd_df['backbone_bar'] = ((ptd_df['timestamp'] - session_start) // bdelta).astype(int)
-    
+    ptd_df["backbone_bar"] = ((ptd_df["timestamp"] - session_start) // bdelta).astype(
+        int
+    )
+
     # Calculate global adapter bar index (direct calculation)
-    ptd_df['adapter_bar'] = ((ptd_df['timestamp'] - session_start) // adelta).astype(int)
-    
+    ptd_df["adapter_bar"] = ((ptd_df["timestamp"] - session_start) // adelta).astype(
+        int
+    )
+
     # Filter to only include data within session bounds
-    ptd_df = ptd_df[(ptd_df['timestamp'] >= session_start) & (ptd_df['timestamp'] <= session_finish)]
-    
+    ptd_df = ptd_df[
+        (ptd_df["timestamp"] >= session_start) & (ptd_df["timestamp"] <= session_finish)
+    ]
+
     print(f"Stage 1: Loaded {len(ptd_df):,} physical time-driven data points")
-    
+
     # ==========================================================================
     # STAGE 2: Generative Covariates Extraction
     # ==========================================================================
-    
+
     if needs_neural_covariates:
         logger = logging.getLogger(__name__)
-        logger.info("="*80)
+        logger.info("=" * 80)
         logger.info("STAGE 2: Extracting Neural Covariates")
-        logger.info("="*80)
-        
+        logger.info("=" * 80)
+
         # Validate that preprocessing components are provided
         if pretrained_scaler is None or lower_bounds is None or upper_bounds is None:
             raise ValueError(
@@ -1086,77 +1160,96 @@ def analyze_covariate_trends(
                 "Please provide pretrained_scaler, lower_bounds, and upper_bounds. "
                 "Create these externally using create_pretrained_scaler() before calling this function."
             )
-        
+
         # Set up device properly
-        if device == 'cpu':
-            device_obj = torch.device('cpu')
+        if device == "cpu":
+            device_obj = torch.device("cpu")
         else:
             # Handle cuda, cuda:0, cuda:1, etc.
-            device_obj = torch.device(device if torch.cuda.is_available() else 'cpu')
-            if not torch.cuda.is_available() and device != 'cpu':
-                logger.warning(f"CUDA not available. Falling back to CPU instead of {device}")
-        
+            device_obj = torch.device(device if torch.cuda.is_available() else "cpu")
+            if not torch.cuda.is_available() and device != "cpu":
+                logger.warning(
+                    f"CUDA not available. Falling back to CPU instead of {device}"
+                )
+
         logger.info(f"Using device: {device_obj}")
-        
+
         try:
             # Step 1: Log preprocessing components
             logger.info("Using externally provided preprocessing components...")
             logger.info(f"Scaler available: {pretrained_scaler is not None}")
             logger.info(f"Bounds available for {len(lower_bounds)} features")
-            
+
             # Step 2: Instantiate model architecture
             logger.info("Instantiating CNNLSTM architecture...")
             model = CNNLSTM()
-            
+
             # Step 3: Load trained weights
             # Note: best.pt weights are always stored under global_update directory
-            weights_path = experiment.run_dir / backbone_bar / 'global_update' / 'backbone' / 'architecture' / 'best.pt'
+            weights_path = (
+                experiment.run_dir
+                / backbone_bar
+                / "global_update"
+                / "backbone"
+                / "architecture"
+                / "best.pt"
+            )
             if not weights_path.exists():
                 raise FileNotFoundError(
                     f"Trained weights not found at {weights_path}. "
                     f"Make sure the experiment has been run and weights were saved."
                 )
-            
+
             logger.info(f"Loading trained weights from {weights_path.name}...")
-            
+
             # Load weights with security best practices
             state_dict = torch.load(
-                weights_path, 
+                weights_path,
                 map_location=device_obj,
-                weights_only=True  # Security: prevent arbitrary code execution
+                weights_only=True,  # Security: prevent arbitrary code execution
             )
-            
+
             # Load weights into model with error checking
             try:
-                missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+                missing_keys, unexpected_keys = model.load_state_dict(
+                    state_dict, strict=False
+                )
                 if missing_keys:
                     logger.warning(f"Missing keys when loading weights: {missing_keys}")
                 if unexpected_keys:
-                    logger.warning(f"Unexpected keys when loading weights: {unexpected_keys}")
+                    logger.warning(
+                        f"Unexpected keys when loading weights: {unexpected_keys}"
+                    )
             except Exception as e:
                 raise ValueError(f"Failed to load model weights: {str(e)}")
-            
+
             # Move model to device and set to evaluation mode
             model.to(device_obj)
             model.eval()
-            
+
             logger.info("Successfully loaded trained weights")
-            
+
             # Step 4: Get configuration parameters
-            delta_sample = experiment.get_config_value('sdelta')
-            delta_adapter = experiment.get_config_value('adelta')
-            past_returns = experiment.get_config_value('past_returns', default=False)
-            
+            delta_sample = experiment.get_config_value("sdelta")
+            delta_adapter = experiment.get_config_value("adelta")
+            past_returns = experiment.get_config_value("past_returns", default=False)
+
             if delta_sample is None or delta_adapter is None:
-                raise ValueError("sdelta and adelta must be defined in experiment config")
-            
-            logger.info(f"Configuration: sdelta={delta_sample}, adelta={delta_adapter}, past_returns={past_returns}")
-            
+                raise ValueError(
+                    "sdelta and adelta must be defined in experiment config"
+                )
+
+            logger.info(
+                f"Configuration: sdelta={delta_sample}, adelta={delta_adapter}, past_returns={past_returns}"
+            )
+
             # Step 5: Extract neural covariates based on detected needs
             # We may need to extract both types: hidden activations (64D) and forward pass (1D)
-            
+
             if needs_hidden_activations:
-                logger.info("Creating Backbone instance for hidden activations (non-parsimonious mode)...")
+                logger.info(
+                    "Creating Backbone instance for hidden activations (non-parsimonious mode)..."
+                )
                 backbone_hidden = Backbone(
                     model=model,
                     delta_adapter=delta_adapter,
@@ -1167,37 +1260,43 @@ def analyze_covariate_trends(
                     pretrained_scaler=pretrained_scaler,
                     lower_bounds=lower_bounds,
                     upper_bounds=upper_bounds,
-                    past_returns=past_returns
+                    past_returns=past_returns,
                 )
-                
+
                 logger.info(f"Extracting hidden activations (64D)...")
                 hidden_covariates_df = backbone_hidden.extract_neural_covariates(
                     event_driven_data=ed_df,
                     physical_time_data=ptd_df,
                     batch_size=batch_size,
-                    get_output=False
+                    get_output=False,
                 )
-                logger.info(f"✅ Extracted {hidden_covariates_df.shape[1] - 1} hidden activation features")
-                
+                logger.info(
+                    f"✅ Extracted {hidden_covariates_df.shape[1] - 1} hidden activation features"
+                )
+
                 # Ensure timestamp dtype compatibility before merge
                 # Convert both to float64 for consistent merging
-                ptd_df['timestamp'] = ptd_df['timestamp'].astype(float)
-                hidden_covariates_df['timestamp'] = hidden_covariates_df['timestamp'].astype(float)
-                
+                ptd_df["timestamp"] = ptd_df["timestamp"].astype(float)
+                hidden_covariates_df["timestamp"] = hidden_covariates_df[
+                    "timestamp"
+                ].astype(float)
+
                 # Merge hidden activations with physical time data using merge_asof
                 # Sort both DataFrames by timestamp before merge_asof
-                ptd_df = ptd_df.sort_values('timestamp')
-                hidden_covariates_df = hidden_covariates_df.sort_values('timestamp')
+                ptd_df = ptd_df.sort_values("timestamp")
+                hidden_covariates_df = hidden_covariates_df.sort_values("timestamp")
                 ptd_df = pd.merge_asof(
-                    ptd_df, 
-                    hidden_covariates_df, 
-                    on='timestamp', 
-                    direction='nearest', 
-                    tolerance=1e-6
+                    ptd_df,
+                    hidden_covariates_df,
+                    on="timestamp",
+                    direction="nearest",
+                    tolerance=1e-6,
                 )
-            
+
             if needs_forward_pass:
-                logger.info("Creating Backbone instance for forward pass (parsimonious mode)...")
+                logger.info(
+                    "Creating Backbone instance for forward pass (parsimonious mode)..."
+                )
                 backbone_forward = Backbone(
                     model=model,
                     delta_adapter=delta_adapter,
@@ -1208,90 +1307,105 @@ def analyze_covariate_trends(
                     pretrained_scaler=pretrained_scaler,
                     lower_bounds=lower_bounds,
                     upper_bounds=upper_bounds,
-                    past_returns=past_returns
+                    past_returns=past_returns,
                 )
-                
+
                 logger.info(f"Extracting forward pass output (1D)...")
                 forward_covariates_df = backbone_forward.extract_neural_covariates(
                     event_driven_data=ed_df,
                     physical_time_data=ptd_df,
                     batch_size=batch_size,
-                    get_output=False
+                    get_output=False,
                 )
-                logger.info(f"✅ Extracted {forward_covariates_df.shape[1] - 1} forward pass feature(s)")
-                
+                logger.info(
+                    f"✅ Extracted {forward_covariates_df.shape[1] - 1} forward pass feature(s)"
+                )
+
                 # Ensure timestamp dtype compatibility before merge
                 # Convert both to float64 for consistent merging
-                ptd_df['timestamp'] = ptd_df['timestamp'].astype(float)
-                forward_covariates_df['timestamp'] = forward_covariates_df['timestamp'].astype(float)
-                
+                ptd_df["timestamp"] = ptd_df["timestamp"].astype(float)
+                forward_covariates_df["timestamp"] = forward_covariates_df[
+                    "timestamp"
+                ].astype(float)
+
                 # Merge forward pass with physical time data using merge_asof
                 # Sort both DataFrames by timestamp before merge_asof
-                ptd_df = ptd_df.sort_values('timestamp')
-                forward_covariates_df = forward_covariates_df.sort_values('timestamp')
+                ptd_df = ptd_df.sort_values("timestamp")
+                forward_covariates_df = forward_covariates_df.sort_values("timestamp")
                 ptd_df = pd.merge_asof(
-                    ptd_df, 
-                    forward_covariates_df, 
-                    on='timestamp', 
-                    direction='nearest', 
-                    tolerance=1e-6
+                    ptd_df,
+                    forward_covariates_df,
+                    on="timestamp",
+                    direction="nearest",
+                    tolerance=1e-6,
                 )
-            
+
             logger.info(f"✅ Stage 2 complete. Total columns: {len(ptd_df.columns)}")
-            
+
         except Exception as e:
             logger.error(f"Failed to extract neural covariates: {str(e)}")
             logger.warning("Continuing with raw covariates only (Stage 1)")
             traceback.print_exc()
-    
+
     # ==========================================================================
     # STAGE 3: Statistical Aggregation
     # ==========================================================================
-    
-    
+
     print(f"Stage 3: Computing statistics per adapter_bar for backbone {backbone_bar}")
-    
+
     # Filter data to specified backbone_bar
-    bb_index = int(backbone_bar.split('_')[-1])
-    ptd_df_filtered = ptd_df[ptd_df['backbone_bar'] == bb_index].copy()
-    
+    bb_index = int(backbone_bar.split("_")[-1])
+    ptd_df_filtered = ptd_df[ptd_df["backbone_bar"] == bb_index].copy()
+
     if ptd_df_filtered.empty:
-        raise ValueError(f"No data found for backbone_bar {backbone_bar} (index {bb_index})")
-    
-    print(f"Filtered to {len(ptd_df_filtered):,} data points in backbone {backbone_bar}")
-    
+        raise ValueError(
+            f"No data found for backbone_bar {backbone_bar} (index {bb_index})"
+        )
+
+    print(
+        f"Filtered to {len(ptd_df_filtered):,} data points in backbone {backbone_bar}"
+    )
+
     # Filter to only include requested covariates
-    available_covariates = [cov for cov in covariate_list if cov in ptd_df_filtered.columns]
+    available_covariates = [
+        cov for cov in covariate_list if cov in ptd_df_filtered.columns
+    ]
     if not available_covariates:
-        raise ValueError(f"None of the requested covariates {covariate_list} found in data")
-    
+        raise ValueError(
+            f"None of the requested covariates {covariate_list} found in data"
+        )
+
     missing_covariates = set(covariate_list) - set(available_covariates)
     if missing_covariates:
         print(f"⚠️  Covariates not found in data: {missing_covariates}")
-    
+
     # Select only necessary columns: adapter_bar + covariates
-    cols_to_aggregate = ['adapter_bar'] + available_covariates
+    cols_to_aggregate = ["adapter_bar"] + available_covariates
     df_to_aggregate = ptd_df_filtered[cols_to_aggregate]
-    
+
     # Compute all statistics using groupby aggregation
     # This is much more efficient than iterating through covariates
-    stats_df = df_to_aggregate.groupby('adapter_bar').agg([
-        ('mean', 'mean'),
-        ('std', 'std'),
-        ('skewness', lambda x: stats.skew(x, nan_policy='omit')),
-        ('kurtosis', lambda x: stats.kurtosis(x, nan_policy='omit')),
-        ('cv', lambda x: x.std() / x.mean() if x.mean() != 0 else np.nan)
-    ])
-    
+    stats_df = df_to_aggregate.groupby("adapter_bar").agg(
+        [
+            ("mean", "mean"),
+            ("std", "std"),
+            ("skewness", lambda x: stats.skew(x, nan_policy="omit")),
+            ("kurtosis", lambda x: stats.kurtosis(x, nan_policy="omit")),
+            ("cv", lambda x: x.std() / x.mean() if x.mean() != 0 else np.nan),
+        ]
+    )
+
     # Flatten multi-level columns: (covariate, statistic) -> covariate_statistic
-    stats_df.columns = ['_'.join(col).strip() for col in stats_df.columns.values]
-    
+    stats_df.columns = ["_".join(col).strip() for col in stats_df.columns.values]
+
     # Reset index to make adapter_bar a column
     stats_df = stats_df.reset_index()
-    
-    print(f"✅ Computed statistics for {len(available_covariates)} covariates across {len(stats_df)} adapter bars")
+
+    print(
+        f"✅ Computed statistics for {len(available_covariates)} covariates across {len(stats_df)} adapter bars"
+    )
     print(f"✅ Resulting DataFrame shape: {stats_df.shape}")
-    
+
     # ==========================================================================
     # STAGE 4: Cross-Correlation Function (CCF) Analysis (optional)
     # ==========================================================================
@@ -1306,32 +1420,40 @@ def analyze_covariate_trends(
             raise ValueError("compute_ccf=True requires a positive integer 'max_lags'")
 
         # Ensure micro_return is present
-        if 'micro_return' not in ptd_df_filtered.columns:
-            raise ValueError("CCF analysis requires 'micro_return' column in filtered physical time data")
+        if "micro_return" not in ptd_df_filtered.columns:
+            raise ValueError(
+                "CCF analysis requires 'micro_return' column in filtered physical time data"
+            )
 
         # Only consider covariates that were requested (covariate_list) and are available
         ccf_covariates = [cov for cov in covariate_list if cov in available_covariates]
         if not ccf_covariates:
-            logger.warning("No requested covariates from covariate_list found in filtered data for CCF computation")
+            logger.warning(
+                "No requested covariates from covariate_list found in filtered data for CCF computation"
+            )
         else:
-            logger.info(f"Computing CCF for {len(ccf_covariates)} covariates: {ccf_covariates}")
+            logger.info(
+                f"Computing CCF for {len(ccf_covariates)} covariates: {ccf_covariates}"
+            )
             logger.info(f"Max lags: ±{max_lags}")
 
         # Prepare storage
         ccf_results = {}  # {adapter_bar: {covariate: {lag: value}}}
 
         # Adapter bars to iterate (use those present in stats_df to keep alignment)
-        adapter_bars_to_process = list(stats_df['adapter_bar'].unique())
+        adapter_bars_to_process = list(stats_df["adapter_bar"].unique())
 
         # Minimum required observations heuristic
         min_required_obs = max(2 * max_lags + 10, 30)
 
         for adapter_bar in adapter_bars_to_process:
             # Extract adapter_bar-level data (already filtered to backbone)
-            adapter_data = ptd_df_filtered[ptd_df_filtered['adapter_bar'] == adapter_bar].sort_values('timestamp')
+            adapter_data = ptd_df_filtered[
+                ptd_df_filtered["adapter_bar"] == adapter_bar
+            ].sort_values("timestamp")
 
             # Convert to numpy arrays for speed
-            micro_arr = adapter_data['micro_return'].to_numpy()
+            micro_arr = adapter_data["micro_return"].to_numpy()
 
             # Initialize per-adapter store
             ccf_results[adapter_bar] = {}
@@ -1345,15 +1467,21 @@ def analyze_covariate_trends(
                 )
                 # Fill NaNs for each requested covariate
                 for cov in ccf_covariates:
-                    ccf_results[adapter_bar][cov] = {lag: np.nan for lag in range(-max_lags, max_lags + 1)}
+                    ccf_results[adapter_bar][cov] = {
+                        lag: np.nan for lag in range(-max_lags, max_lags + 1)
+                    }
                 continue
 
             # For each requested covariate compute CCF for lags -max_lags..+max_lags
             for cov in ccf_covariates:
                 if cov not in adapter_data.columns:
                     # Shouldn't usually happen because we filtered available_covariates, but guard anyway
-                    logger.warning(f"Adapter bar {adapter_bar}: covariate '{cov}' not found in data; filling NaNs")
-                    ccf_results[adapter_bar][cov] = {lag: np.nan for lag in range(-max_lags, max_lags + 1)}
+                    logger.warning(
+                        f"Adapter bar {adapter_bar}: covariate '{cov}' not found in data; filling NaNs"
+                    )
+                    ccf_results[adapter_bar][cov] = {
+                        lag: np.nan for lag in range(-max_lags, max_lags + 1)
+                    }
                     continue
 
                 cov_arr = adapter_data[cov].to_numpy()
@@ -1365,7 +1493,7 @@ def analyze_covariate_trends(
                         f"Adapter bar {adapter_bar}: micro_return contains NaN values. "
                         f"CCF computation requires complete time series without NaNs to preserve temporal structure."
                     )
-                
+
                 if np.any(np.isnan(cov_arr)):
                     raise ValueError(
                         f"Adapter bar {adapter_bar}, covariate '{cov}': contains NaN values. "
@@ -1378,7 +1506,9 @@ def analyze_covariate_trends(
                         f"Adapter bar {adapter_bar}, covariate '{cov}': "
                         f"only {micro_arr.size} observations; need at least {min_required_obs}; skipping CCF."
                     )
-                    ccf_results[adapter_bar][cov] = {lag: np.nan for lag in range(-max_lags, max_lags + 1)}
+                    ccf_results[adapter_bar][cov] = {
+                        lag: np.nan for lag in range(-max_lags, max_lags + 1)
+                    }
                     continue
 
                 try:
@@ -1390,7 +1520,6 @@ def analyze_covariate_trends(
                     # We obtain these by computing ccf(y, x) and mapping index k -> lag -k
                     neg_ccf = ccf(micro_arr, cov_arr, nlags=max_lags + 1)
 
-
                     # Combine into full mapping -max_lags..+max_lags.
                     # pos_ccf[0] and neg_ccf[0] represent lag 0; use pos_ccf[0].
                     lag_map = {}
@@ -1398,15 +1527,21 @@ def analyze_covariate_trends(
                     for k in range(1, max_lags + 1):
                         lag = -k
                         # neg_ccf[k] corresponds to corr(x[t - k], y[t]) (lag -k)
-                        lag_map[lag] = float(neg_ccf[k]) if not np.isnan(neg_ccf[k]) else np.nan
+                        lag_map[lag] = (
+                            float(neg_ccf[k]) if not np.isnan(neg_ccf[k]) else np.nan
+                        )
 
                     # lag 0
-                    lag_map[0] = float(pos_ccf[0]) if not np.isnan(pos_ccf[0]) else np.nan
+                    lag_map[0] = (
+                        float(pos_ccf[0]) if not np.isnan(pos_ccf[0]) else np.nan
+                    )
 
                     # positive lags: 1 .. max_lags from pos_ccf[1 ..]
                     for k in range(1, max_lags + 1):
                         lag = k
-                        lag_map[lag] = float(pos_ccf[k]) if not np.isnan(pos_ccf[k]) else np.nan
+                        lag_map[lag] = (
+                            float(pos_ccf[k]) if not np.isnan(pos_ccf[k]) else np.nan
+                        )
 
                     ccf_results[adapter_bar][cov] = lag_map
 
@@ -1415,11 +1550,15 @@ def analyze_covariate_trends(
                         f"Adapter bar {adapter_bar}, covariate '{cov}': CCF computation failed with error: {e}"
                     )
                     # On failure put NaNs for all lags
-                    ccf_results[adapter_bar][cov] = {lag: np.nan for lag in range(-max_lags, max_lags + 1)}
+                    ccf_results[adapter_bar][cov] = {
+                        lag: np.nan for lag in range(-max_lags, max_lags + 1)
+                    }
 
         # Merge CCF results into stats_df (Option A: wide format columns with inner join)
         if ccf_covariates:
-            logger.info("Merging CCF results into statistics DataFrame (wide format columns, inner join)")
+            logger.info(
+                "Merging CCF results into statistics DataFrame (wide format columns, inner join)"
+            )
             # Build ordered list of columns (covariate_lag_-max .. covariate_lag_max)
             ccf_columns = []
             for cov in ccf_covariates:
@@ -1428,10 +1567,10 @@ def analyze_covariate_trends(
 
             # Prepare data rows aligned with stats_df adapter_bar ordering
             ccf_rows_data = []
-            
-            for adapter_bar in stats_df['adapter_bar']:
-                row_dict = {'adapter_bar': adapter_bar, 'backbone_bar': bb_index}
-                
+
+            for adapter_bar in stats_df["adapter_bar"]:
+                row_dict = {"adapter_bar": adapter_bar, "backbone_bar": bb_index}
+
                 if adapter_bar in ccf_results:
                     for cov in ccf_covariates:
                         cov_lags = ccf_results[adapter_bar].get(cov, None)
@@ -1441,45 +1580,46 @@ def analyze_covariate_trends(
                                 row_dict[f"{cov}_ccf_lag_{lag}"] = np.nan
                         else:
                             for lag in range(-max_lags, max_lags + 1):
-                                row_dict[f"{cov}_ccf_lag_{lag}"] = cov_lags.get(lag, np.nan)
+                                row_dict[f"{cov}_ccf_lag_{lag}"] = cov_lags.get(
+                                    lag, np.nan
+                                )
                 else:
                     # No CCF computed for this adapter bar => fill NaNs for all covariates/lags
                     for cov in ccf_covariates:
                         for lag in range(-max_lags, max_lags + 1):
                             row_dict[f"{cov}_ccf_lag_{lag}"] = np.nan
-                
+
                 ccf_rows_data.append(row_dict)
 
             # Create ccf_df
             ccf_df = pd.DataFrame(ccf_rows_data)
-            
+
             # Add backbone_bar to stats_df if not present (for merge)
-            if 'backbone_bar' not in stats_df.columns:
-                stats_df['backbone_bar'] = bb_index
-            
+            if "backbone_bar" not in stats_df.columns:
+                stats_df["backbone_bar"] = bb_index
+
             # Inner merge on backbone_bar and adapter_bar
             stats_df = pd.merge(
-                stats_df, 
-                ccf_df, 
-                on=['backbone_bar', 'adapter_bar'], 
-                how='inner'
+                stats_df, ccf_df, on=["backbone_bar", "adapter_bar"], how="inner"
             )
 
-            logger.info(f"Added {len(ccf_columns)} CCF columns to stats_df (lags -{max_lags}..+{max_lags})")
+            logger.info(
+                f"Added {len(ccf_columns)} CCF columns to stats_df (lags -{max_lags}..+{max_lags})"
+            )
             logger.info(f"Merged result shape: {stats_df.shape}")
 
         logger.info("✅ Stage 4 (CCF) complete")
-    
+
     return stats_df
 
 
 def extract_generative_covariates(
     experiment: ExperimentMetadata,
-    backbone_bar: str = 'bb_000',
-    mode: str = 'local_adapt',
-    device: str = 'cuda',
+    backbone_bar: str = "bb_000",
+    mode: str = "local_adapt",
+    device: str = "cuda",
     batch_size: int = 512,
-    parsimonious_mode: bool = False
+    parsimonious_mode: bool = False,
 ) -> pd.DataFrame:
     """
     Extract generative (neural network) covariates from a trained experiment.
@@ -1541,28 +1681,32 @@ def extract_generative_covariates(
         - NaN values indicate physical timestamps before the first event-driven observation
     """
     logger = logging.getLogger(__name__)
-    
+
     # Validate inputs
-    if mode not in ['global_update', 'local_adapt']:
+    if mode not in ["global_update", "local_adapt"]:
         raise ValueError(f"mode must be 'global_update' or 'local_adapt', got: {mode}")
-    
+
     # Set up device properly
-    if device == 'cpu':
-        device_obj = torch.device('cpu')
+    if device == "cpu":
+        device_obj = torch.device("cpu")
     else:
         # Handle cuda, cuda:0, cuda:1, etc.
-        device_obj = torch.device(device if torch.cuda.is_available() else 'cpu')
-        if not torch.cuda.is_available() and device != 'cpu':
-            logger.warning(f"CUDA not available. Falling back to CPU instead of {device}")
-    
+        device_obj = torch.device(device if torch.cuda.is_available() else "cpu")
+        if not torch.cuda.is_available() and device != "cpu":
+            logger.warning(
+                f"CUDA not available. Falling back to CPU instead of {device}"
+            )
+
     logger.info(f"Using device: {device_obj}")
-    
+
     # Step 1: Load data using ExperimentLoader
     logger.info(f"Loading data for {mode} mode...")
     loader = ExperimentLoader(experiment)
     ed_df, ptd_df = loader.load_data(mode=mode)
-    logger.info(f"Loaded {len(ed_df):,} event-driven rows and {len(ptd_df):,} physical time-driven rows")
-    
+    logger.info(
+        f"Loaded {len(ed_df):,} event-driven rows and {len(ptd_df):,} physical time-driven rows"
+    )
+
     # Step 2: Create preprocessing components from event-driven data
     # This replicates the exact preprocessing used during training
     logger.info("Creating preprocessing components from event-driven data...")
@@ -1570,32 +1714,41 @@ def extract_generative_covariates(
         scaler, lower_bounds, upper_bounds = create_pretrained_scaler(
             ed_df, quantile=0.005
         )
-        logger.info(f"Created scaler for {len([col for col in ed_df.columns if 'of' in col])} order flow features")
+        logger.info(
+            f"Created scaler for {len([col for col in ed_df.columns if 'of' in col])} order flow features"
+        )
     except Exception as e:
         raise ValueError(f"Failed to create preprocessing components: {str(e)}")
-    
+
     # Step 3: Instantiate model architecture
     logger.info("Instantiating CNNLSTM architecture...")
     model = CNNLSTM()
-    
+
     # Step 4: Load trained weights from best.pt
     # Note: best.pt weights are always stored under global_update directory
-    weights_path = experiment.run_dir / backbone_bar / 'global_update' / 'backbone' / 'architecture' / 'best.pt'
+    weights_path = (
+        experiment.run_dir
+        / backbone_bar
+        / "global_update"
+        / "backbone"
+        / "architecture"
+        / "best.pt"
+    )
     if not weights_path.exists():
         raise FileNotFoundError(
             f"Trained weights not found at {weights_path}. "
             f"Make sure the experiment has been run and weights were saved."
         )
-    
+
     logger.info(f"Loading trained weights from {weights_path}...")
-    
+
     # Load weights with security best practices
     state_dict = torch.load(
-        weights_path, 
+        weights_path,
         map_location=device_obj,
-        weights_only=True  # Security: prevent arbitrary code execution
+        weights_only=True,  # Security: prevent arbitrary code execution
     )
-    
+
     # Load weights into model with error checking
     try:
         missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
@@ -1605,23 +1758,25 @@ def extract_generative_covariates(
             logger.warning(f"Unexpected keys when loading weights: {unexpected_keys}")
     except Exception as e:
         raise ValueError(f"Failed to load model weights: {str(e)}")
-    
+
     # Move model to device and set to evaluation mode
     model.to(device_obj)
     model.eval()
-    
+
     logger.info("Successfully loaded trained weights")
-    
+
     # Step 5: Get configuration parameters from metadata
-    delta_sample = experiment.get_config_value('sdelta')
-    delta_adapter = experiment.get_config_value('adelta')
-    past_returns = experiment.get_config_value('past_returns', default=False)
-    
+    delta_sample = experiment.get_config_value("sdelta")
+    delta_adapter = experiment.get_config_value("adelta")
+    past_returns = experiment.get_config_value("past_returns", default=False)
+
     if delta_sample is None or delta_adapter is None:
         raise ValueError("sdelta and adelta must be defined in experiment config")
-    
-    logger.info(f"Using delta_sample={delta_sample}, delta_adapter={delta_adapter}, past_returns={past_returns}")
-    
+
+    logger.info(
+        f"Using delta_sample={delta_sample}, delta_adapter={delta_adapter}, past_returns={past_returns}"
+    )
+
     # Step 6: Create Backbone instance with preprocessing components
     logger.info("Creating Backbone instance...")
     backbone = Backbone(
@@ -1634,19 +1789,23 @@ def extract_generative_covariates(
         pretrained_scaler=scaler,
         lower_bounds=lower_bounds,
         upper_bounds=upper_bounds,
-        past_returns=past_returns
+        past_returns=past_returns,
     )
-    
+
     # Step 7: Extract neural covariates
-    logger.info(f"Extracting neural covariates (parsimonious_mode={parsimonious_mode})...")
+    logger.info(
+        f"Extracting neural covariates (parsimonious_mode={parsimonious_mode})..."
+    )
     try:
         neural_covariates_df = backbone.extract_neural_covariates(
             event_driven_data=ed_df,
             physical_time_data=ptd_df,
             batch_size=batch_size,
-            get_output=False  # Use parsimonious_mode parameter instead
+            get_output=False,  # Use parsimonious_mode parameter instead
         )
-        logger.info(f"✅ Successfully extracted {neural_covariates_df.shape[1] - 1} neural covariates")
+        logger.info(
+            f"✅ Successfully extracted {neural_covariates_df.shape[1] - 1} neural covariates"
+        )
         return neural_covariates_df
     except Exception as e:
         raise ValueError(f"Failed to extract neural covariates: {str(e)}")
@@ -1659,19 +1818,19 @@ def extract_generative_covariates(
 # 4.1 Generic Visualization Utilities
 # -----------------------------------------------------------------------------
 
+
 @dataclass
 class PlotConfig:
     """Configuration for plot aesthetics."""
-    style: str = 'default'
-    palette: str = 'husl'
+
+    style: str = "default"
+    palette: str = "husl"
     figsize: Tuple[int, int] = (16, 10)
     dpi: int = 300
-    colors: Dict[int, str] = field(default_factory=lambda: {
-        0: '#1f77b4', 1: '#ff7f0e', 2: '#2ca02c'
-    })
-    markers: Dict[int, str] = field(default_factory=lambda: {
-        0: 'o', 1: 's', 2: '^'
-    })
+    colors: Dict[int, str] = field(
+        default_factory=lambda: {0: "#1f77b4", 1: "#ff7f0e", 2: "#2ca02c"}
+    )
+    markers: Dict[int, str] = field(default_factory=lambda: {0: "o", 1: "s", 2: "^"})
 
 
 def setup_plot_style(config: PlotConfig = PlotConfig()) -> None:
@@ -1689,12 +1848,13 @@ def setup_plot_style(config: PlotConfig = PlotConfig()) -> None:
 # 4.2 Performance Visualization - Heatmaps
 # -----------------------------------------------------------------------------
 
+
 def plot_ranking_heatmap(
     ranking_df: pd.DataFrame,
     title: str = "Experiment Rankings",
     cmap: str = "RdYlGn_r",
     save_path: Optional[Path] = None,
-    config: PlotConfig = PlotConfig()
+    config: PlotConfig = PlotConfig(),
 ) -> plt.Figure:
     """
     Visualize rankings as heatmap.
@@ -1708,12 +1868,13 @@ def plot_ranking_heatmap(
 # 4.3 Covariate Visualization
 # -----------------------------------------------------------------------------
 
+
 def plot_covariate_counts_time_series(
     covariate_df: pd.DataFrame,
-    x_col: str = 'adapter_bar',  # 'adapter_bar' or 'pair_number'
+    x_col: str = "adapter_bar",  # 'adapter_bar' or 'pair_number'
     x_labels: Optional[List[str]] = None,
     save_path: Optional[Path] = None,
-    config: PlotConfig = PlotConfig()
+    config: PlotConfig = PlotConfig(),
 ) -> plt.Figure:
     """
     Plot number of selected covariates over time.
@@ -1724,9 +1885,9 @@ def plot_covariate_counts_time_series(
 
 def plot_covariate_selection_comparison(
     experiments: List[ExperimentMetadata],
-    backbone_bar: str = 'bb_000',
+    backbone_bar: str = "bb_000",
     save_path: Optional[Path] = None,
-    config: PlotConfig = PlotConfig()
+    config: PlotConfig = PlotConfig(),
 ) -> plt.Figure:
     """
     Compare covariate selection across experiments.
@@ -1742,10 +1903,11 @@ def plot_covariate_selection_comparison(
 # 5.1 Summary Statistics
 # -----------------------------------------------------------------------------
 
+
 def create_summary_statistics(
     perf_data: PerformanceData,
-    metrics: List[str] = ['garch_relmae', 'nn_relmae'],
-    groupby: List[str] = ['experiment_id', 'mode', 'backbone_bar']
+    metrics: List[str] = ["garch_relmae", "nn_relmae"],
+    groupby: List[str] = ["experiment_id", "mode", "backbone_bar"],
 ) -> pd.DataFrame:
     """
     Calculate descriptive statistics.
@@ -1757,11 +1919,12 @@ def create_summary_statistics(
 # 5.2 Hypothesis Testing
 # -----------------------------------------------------------------------------
 
+
 def test_performance_difference(
     perf_data1: PerformanceData,
     perf_data2: PerformanceData,
-    metric: str = 'garch_relmae',
-    test_type: str = 'wilcoxon'  # or 't-test', 'mann-whitney'
+    metric: str = "garch_relmae",
+    test_type: str = "wilcoxon",  # or 't-test', 'mann-whitney'
 ) -> Dict[str, Any]:
     """
     Statistical test for performance difference.
@@ -1772,9 +1935,9 @@ def test_performance_difference(
 
 def bootstrap_confidence_intervals(
     perf_data: PerformanceData,
-    metric: str = 'garch_relmae',
+    metric: str = "garch_relmae",
     confidence_level: float = 0.95,
-    n_bootstrap: int = 10000
+    n_bootstrap: int = 10000,
 ) -> pd.DataFrame:
     """
     Bootstrap confidence intervals for performance metrics.
@@ -1790,10 +1953,11 @@ def bootstrap_confidence_intervals(
 # 6.1 Table Export
 # -----------------------------------------------------------------------------
 
+
 def export_summary_table(
     summary_df: pd.DataFrame,
     output_path: Path,
-    format: str = 'csv'  # 'csv', 'excel', 'latex'
+    format: str = "csv",  # 'csv', 'excel', 'latex'
 ) -> None:
     """Export summary statistics to file."""
     pass
@@ -1804,7 +1968,7 @@ def export_latex_table(
     output_path: Path,
     caption: str = "",
     label: str = "",
-    float_format: str = "%.3f"
+    float_format: str = "%.3f",
 ) -> None:
     """Export formatted LaTeX table for publications."""
     pass
@@ -1813,12 +1977,13 @@ def export_latex_table(
 # 6.2 Report Generation
 # -----------------------------------------------------------------------------
 
+
 def generate_analysis_report(
     perf_data: PerformanceData,
     output_dir: Path,
     include_plots: bool = True,
     include_rankings: bool = True,
-    include_statistics: bool = True
+    include_statistics: bool = True,
 ) -> None:
     """
     Generate comprehensive analysis report.
@@ -1834,22 +1999,26 @@ def generate_analysis_report(
 # 7.1 Analysis Pipeline
 # -----------------------------------------------------------------------------
 
+
 class AnalysisPipeline:
     """Orchestrate complete analysis workflow."""
-    
+
     def __init__(self, experiment_type: str, runs_dir: Path, output_dir: Path):
         """Initialize with appropriate loader."""
         pass
-    
-    def run_full_analysis(self, 
-                         backbone_bars: List[str] = ['bb_000', 'bb_001'],
-                         modes: List[str] = ['global_update', 'local_adapt']) -> None:
+
+    def run_full_analysis(
+        self,
+        backbone_bars: List[str] = ["bb_000", "bb_001"],
+        modes: List[str] = ["global_update", "local_adapt"],
+    ) -> None:
         """Execute complete analysis pipeline."""
         pass
 
 
 # 7.2 Unified Main Function
 # -----------------------------------------------------------------------------
+
 
 def setup_logging():
     """Setup logging for analysis operations."""

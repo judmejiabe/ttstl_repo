@@ -1,4 +1,7 @@
-# Two-Time-Scale Transfer Learning (TTSTL) Framework
+![CI/CD Pipeline](https://github.com/judmejiabe/ttstl_repo/actions/workflows/ci.yml/badge.svg)
+
+# TTSTL: Two Time-Scale Transfer Learning
+ (TTSTL) Framework
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18304963.svg)](https://doi.org/10.5281/zenodo.18304963)
