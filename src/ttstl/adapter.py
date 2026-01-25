@@ -14,7 +14,11 @@ from sklearn.preprocessing import StandardScaler
 # Activate pandas to R conversion
 pandas2ri.activate()
 
-rugarch = importr("rugarch")
+try:
+    rugarch = importr("rugarch")
+except Exception as e:
+    # warnings.warn(f"Could not import R package rugarch: {e}")
+    rugarch = None
 
 
 class Adapter:

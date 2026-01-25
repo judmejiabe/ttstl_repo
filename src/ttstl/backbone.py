@@ -35,8 +35,13 @@ def nullify_output(x):
 callbacks.consolewrite_print = nullify_output
 callbacks.consolewrite_warnerror = nullify_output
 
-urca = importr("urca")
-fUnitRoots = importr("fUnitRoots")
+try:
+    urca = importr("urca")
+    fUnitRoots = importr("fUnitRoots")
+except Exception as e:
+    warnings.warn(f"Could not import R packages urca or fUnitRoots: {e}")
+    urca = None
+    fUnitRoots = None
 
 pandas2ri.activate()
 
