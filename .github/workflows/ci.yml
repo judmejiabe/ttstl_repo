@@ -35,7 +35,7 @@ jobs:
 
       - name: Install Dev Dependencies
         run: |
-          pip install black==24.12.0 isort==5.13.2
+          pip install black==24.4.2 isort==5.13.2
           pip install -e .
 
       - name: Run Black
@@ -73,7 +73,7 @@ jobs:
 
       - name: Install Dev Dependencies
         run: |
-          pip install black==24.12.0 isort==5.13.2
+          pip install black==24.4.2 isort==5.13.2
           pip install -e .
 
       - name: Run Comprehensive Tests

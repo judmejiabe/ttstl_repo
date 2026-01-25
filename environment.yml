@@ -4,7 +4,7 @@ channels:
   - r
 dependencies:
   # Core Python environment - frozen for reproducibility
-  - python=3.10.0
+  - python=3.9.23
   
   # Core scientific computing stack - exact versions
   - numpy=2.0.2
