@@ -132,7 +132,6 @@ dmypy.json
 credentials.json
 *.parquet
 *.csv
-data/
 models/
 checkpoints/
 logs/

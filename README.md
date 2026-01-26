@@ -210,7 +210,7 @@ We recommend downloading the original synthetic dataset from [Zenodo](https://do
 
 **Option B: Generate Fresh Synthetic Data**
 
-> **Note:** This option will generate different datasets than the ones provided in the Zenodo repository. The data generation process is computationally intensive and can take up to a day to complete. We recommend running this process in the background.
+> **Note:** Generating fresh data will produce different datasets than those provided on Zenodo. This process is computationally intensive and can take up to 24 hours; we recommend running it in the background. If you choose this option, ensure you update the file names in `scripts/synthetic_study_experiment.py` (e.g., `08042025_long_event_driven_recorded_lob_{id}.parquet`) to match the files in your GCS bucket.
 
 To generate fresh synthetic data, run `Synthetic_Study/synthetic_data_generator.py`. This executes the Markovian simulation of the LOB outlined in the **Synthetic Study** section of the paper, creating locally saved event-driven and physical-time datasets. This will generate different datasets than the ones provided in the Zenodo repository.
 
@@ -231,6 +231,9 @@ The processing pipeline transforms raw Databento (MBO) and Massive (VIX) data in
 
 ### 🧪 4. Verification
 
+We provide tools to verify both the installation integrity and the downloaded data.
+
+#### Installation Verification
 We provide a test suite to verify the installation and codebase integrity. The tests are divided into two tiers:
 
 *   **Lightweight Tests**: Fast sanity checks to ensure the environment path and basic imports are working.
@@ -246,12 +249,51 @@ pytest -m lightweight
 pytest -m comprehensive
 ```
 
+#### Data Verification (Optional)
+Use the `scripts/validate_data.py` tool to verify your downloaded files against the official `data_manifest.json`. This ensures that your local data matches the expected state.
+
+**Prerequisites:**
+1.  **Download Data**: Ensure you have downloaded the datasets as described in the [Data Processing Pipeline](#-3-data-processing-pipeline) section.
+2.  **Directory Structure**: The script expects the following directory structure inside your `data` folder:
+    *   `data/synthetic_data/`: Contains the synthetic `.parquet` files.
+    *   `data/intc_data/`: Contains the INTC market data `.parquet` files.
+
+**Configuration:**
+By default, the script looks for the `data` directory at the project root. If your data is located elsewhere, you **must** set the `TTSTL_DATA_DIR` environment variable:
+
+```bash
+export TTSTL_DATA_DIR="/path/to/your/custom/data_dir"
+```
+
+**Usage:**
+```bash
+# Validate all datasets
+python scripts/validate_data.py --dataset all
+
+# If you prefer to validate a specific dataset
+python scripts/validate_data.py --dataset synthetic
+python scripts/validate_data.py --dataset intc
+```
+
+**⚠️ Warning:**
+The verification process is very sensitive to the software environment. Even minor differences, such as a mismatch in the `pyarrow` library version (e.g., between what was used to serialize the data and your local version), can cause the SHA-256 hash to differ, resulting in a test failure.
+*   **Success**: "Verification Successful: All files matched the manifest."
+*   **Failure**: "Corruption Detected." This occurs if files are missing, corrupted, or if your environment differs from the one used to generate the manifest.
+
+> **Note:** You do not need to download the data to run the experiments. The experiment scripts automatically download the data from the GCS bucket configured in your `credentials.json`.
+
+> **Note:** If you have generated fresh synthetic data, verification failure is expected as your local files will naturally differ from the official manifest.
+
+
+
 ### 🧪🧪 5. Reproduction Steps
 
 #### Synthetic Study
 
 1.  **Run Experiments**: Execute the following command to run the 28 configurations described in the paper on the synthetic dataset:
-> **Note:** If you decided to generate fresh synthetic data, make sure that you modify the file names `08042025_long_event_driven_recorded_lob_{id}.parquet` and `08042025_long_physical_time_driven_recorded_data_{id}.parquet` in `scripts/synthetic_study_experiment.py` to match the names of your generated files with the corresponding names in your GCS bucket.
+
+    > **Note:** If fresh synthetic data was generated, ensure the file names in `scripts/synthetic_study_experiment.py` match the `.parquet` files in your GCS bucket (e.g., `08042025_long_event_driven_recorded_lob_{id}.parquet`).
+
     ```bash
     python scripts/synthetic_study_experiment.py
     ```

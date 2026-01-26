@@ -45,6 +45,7 @@ dependencies:
     - google-cloud-storage>=3.3.0
     - gcsfs>=2025.7.0
     - pyarrow>=18.1.0
+    - tqdm>=4.67.1
     
     # --- Intelligent PyTorch Selection ---
     # The --extra-index-url allows pip to find the CUDA versions on Linux.

@@ -43,6 +43,7 @@ dependencies:
     - gcsfs==2025.7.0
     - numexpr==2.10.2
     - pyarrow==18.1.0
+    - tqdm==4.67.1
     
     # PyTorch ecosystem - keep exact versions with CUDA
     - --extra-index-url https://download.pytorch.org/whl/cu118
