@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 
@@ -15,7 +14,4 @@ MANIFEST_PATH = DATA_DIR / "data_manifest.json"
 
 # Dataset Mapping
 # Maps logical dataset names to their physical directory paths
-DATASETS = {
-    "synthetic": DATA_DIR / "synthetic_data",
-    "intc": DATA_DIR / "intc_data"
-}
+DATASETS = {"synthetic": DATA_DIR / "synthetic_data", "intc": DATA_DIR / "intc_data"}
