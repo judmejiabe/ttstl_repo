@@ -1,12 +1,12 @@
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import sys
 from pathlib import Path
-from tqdm import tqdm
 
-import importlib.util
+from tqdm import tqdm
 
 # Load config directly to avoid triggering heavy package initialization (which might require R)
 config_path = Path(__file__).resolve().parent.parent / "src/ttstl/config.py"
