@@ -1,0 +1,6 @@
+include LICENSE
+include README.md
+include environment.yml
+include citation.cff
+recursive-include src/ttstl/r_scripts *.R
+include src/ttstl/py.typed

@@ -169,3 +169,12 @@ experiments_market_data/*.pth
 experiments_market_data/*.json
 outputs/cnn_lstm_pretraining_market_data
 environment_test.yml
+
+# R artifacts
+.Rhistory
+*.RData
+*.Ruserdata
+
+# Data
+data/
+data.nosync/
