@@ -373,6 +373,18 @@ A useful distinction between the OF sequence and MBO data lies in how MBO data c
 \label{tab:mbo_data}
 \end{table}
 
+\section{Alternative Sampling Schemes}
+\label{ap:sampling_schemes}
+For completeness, we define the \emph{volume bars} partition \(\mathcal{P}^{(V)}\) via the stopping times
+\[
+\tau^{(V)}_i \;=\;\inf\Bigl\{\,t>\tau^{(V)}_{i-1}:\sum_{k:\,\kappa_k=M}\zeta_k>i\cdot\texttt{Vol}\Bigr\},\quad \tau^{(V)}_0=0,
+\]
+where \(i,\texttt{Vol}\in\mathbb{Z}^+\). Each interval \(\Delta\tau^{(V)}_i \;=\;\tau^{(V)}_i-\tau^{(V)}_{i-1}\) corresponds to the time required for \(\texttt{Vol}\) units to trade. Furthermore, given any partition \(\mathcal{P}\), we define the counting process
+\[
+N^{\mathcal{P}}(t)\;=\;\left|\bigl\{\tau\in\mathcal{P}:\,0<\tau\le t\bigr\} \right|,
+\]
+such that \(N^{\mathcal{P}}(t_1,t_2) = N^{\mathcal{P}}(t_2)-N^{\mathcal{P}}(t_1)\) counts the number of partition points in \((t_1,t_2]\).
+
 \section{CNN–LSTM and DeepLOB Model Specifications}
 \label{ap:nn_specs}
 
@@ -679,6 +691,13 @@ $$
 \phi_{\mathbf{W}} \left(\widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i - 99:i} \right) =  \lstm_{64} \circ \perm^{3, 2} \circ \mathrm{IL} \circ \mathrm{CConv}^{10}_1 \circ \mathrm{CConv}^{2}_2 \left(\widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i - 99:i}\right).
 $$
 The subscript $\mathbf{W}$ is convenient to highlight the dependency on the parameters of the CNN-LSTM architecture which are updated iteratively.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[height=7.5in]{cnn_lstm.png}    
+    \caption{Illustration of the CNN-LSTM architecture.}
+    \label{fig:cnn_lstm_architecture}
+\end{figure}
 
 \subsubsection{The DeepLOB Architecture}
 
