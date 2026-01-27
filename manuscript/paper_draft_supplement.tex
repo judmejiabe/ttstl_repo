@@ -140,7 +140,7 @@
 \label{ap:matreplob}
 
 
-This section is devoted to mathematically describe the OF sequence and the LOB drawing ideas from \cite{cont2023mathematical, gould2013limit, panayi2015stochastic}. First observe that most LOBs operate with a minimum price variation, or tick size, denoted $\theta$, and a maximum price, denoted $D$. For simplicity, and without losing generality, prices will be measured in ticks. Also let $d = \frac{D}{\theta} \in \N \setminus \{ 0 \}$ be the maximum price measured in ticks and denote $\N_{0:d} = \{ 0, 1, \dots, d\}$ the set of possible tick-measured prices.
+This section is devoted to mathematically describing the OF sequence and the LOB drawing ideas from \cite{cont2023mathematical, gould2013limit, panayi2015stochastic}. First observe that most LOBs operate with a minimum price variation, or tick size, denoted $\theta$, and a maximum price, denoted $D$. For simplicity, and without losing generality, prices will be measured in ticks. Also let $d = \frac{D}{\theta} \in \N \setminus \{ 0 \}$ be the maximum price measured in ticks and denote $\N_{0:d} = \{ 0, 1, \dots, d\}$ the set of possible tick-measured prices.
 
 \begin{definition}
     Let $o = (p_o, z_o, t_o, i_o, s_o, k_o)$ denote a message submitted to the matching engine at time $t_o \in [0, T]$, with price $p_o \in \N_{0:d}$, size $z_o \in \N$, identifier $i_o \in \N$, side $s_o \in \{1, -1\}$ and type $k_o \in \{L, C, M \}$. $s_o = 1$ ($s_o = -1$) indicates that the message $o$ is submitted in the bid (ask) side of the LOB. $L$, $C$ and $M$ identify limit, cancellations and market orders respectively. 
@@ -706,7 +706,7 @@ Similarly, the DeepLOB architecture by Zhang et al. \cite{Zhang_2019} adds an ex
 $$
 \deeplob(\mathbf{X}) = \fullyconnected_K \circ \lstm_{64} \circ \perm^{3, 2} \circ \mathrm{IL} \circ \mathrm{CConv}^{10}_1 \circ \mathrm{CConv}^{2, (2)}_2 \circ \mathrm{CConv}^{2, (1)}_2 (\mathbf{X}).
 $$
-Here, $\mathbf{X}$ is a 3D tensor of withened limit order book price-volume information as defined in Section~\ref{SubSect:LOB-MBO}:
+Here, $\mathbf{X}$ is a 3D tensor of whitened limit order book price-volume information as defined in Section~\ref{SubSect:LOB-MBO}:
 
 $$
 \mathbf{X} = \left[\tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_1 - 99 : i_1}, \tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_2 - 99 : i_2},\dots, \tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_N - 99 : i_N} \right]
