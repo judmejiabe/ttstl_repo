@@ -133,6 +133,9 @@
 
 \maketitle
 
+\tableofcontents
+\clearpage
+
 
 \appendix
 
@@ -373,6 +376,7 @@ A useful distinction between the OF sequence and MBO data lies in how MBO data c
 \label{tab:mbo_data}
 \end{table}
 
+\clearpage
 \section{Alternative Sampling Schemes}
 \label{ap:sampling_schemes}
 For completeness, we define the \emph{volume bars} partition \(\mathcal{P}^{(V)}\) via the stopping times
@@ -385,6 +389,7 @@ N^{\mathcal{P}}(t)\;=\;\left|\bigl\{\tau\in\mathcal{P}:\,0<\tau\le t\bigr\} \rig
 \]
 such that \(N^{\mathcal{P}}(t_1,t_2) = N^{\mathcal{P}}(t_2)-N^{\mathcal{P}}(t_1)\) counts the number of partition points in \((t_1,t_2]\).
 
+\clearpage
 \section{CNN–LSTM and DeepLOB Model Specifications}
 \label{ap:nn_specs}
 
@@ -736,6 +741,7 @@ Fully Connected & $\fullyconnected_{1}$    & $(32, 64)$         & $(32, 1)$     
 
 
 
+\clearpage
 \section{Stationarity Testing}
 \label{ap:stationarity_testing}
 
@@ -851,6 +857,7 @@ The test statistic is
 where \(S_k = \sum_{j=1}^{k} \hat{u}_j\) represents the partial sum of residuals 
 (\(\hat{u}_j = y_j - \bar{y}\)), and \(\hat{\lambda}^2\) follows the same form as in the PP test. As in the previous tests, critical values derive from nonstandard limiting distributions. The \verb|urca| package used for computing the rejection region of the this test.
 
+\clearpage
 \section{Case Study: Model Subspace Selection}
 \label{ap:case_study_var_selection}
 
@@ -1125,6 +1132,7 @@ Overall, the present study confirms that adaLASSO not only achieves model select
 
 All the simulation results presented here can be reproduced using the code available in the GitHub repository \url{judmejiabe/case-study-adaLASSO}. The repository contains detailed scripts for generating the data, running the adaptive LASSO and OLS selection procedures, and producing the figures.
 
+\clearpage
 \section{Events Matching Exclusion Criteria on the INTC MBO Dataset}
 \label{sec:exclusion_criteria}
 
@@ -1180,6 +1188,7 @@ This section lists the dates excluded from the analysis as a consequence of meet
     \item None. No Nasdaq trading halts were recorded for INTC between May 1 and June 30, 2024. Source: Nasdaq Trader Trading Halts database \url{https://www.nasdaqtrader.com/Trader.aspx?id=TradeHalts}
 \end{itemize}
 
+\clearpage
 \section{Complimentary Tables and Figures}
 \label{sec:comp_tables_figs}
 
@@ -1674,8 +1683,9 @@ $r^w_j$ $\mathrm{CNNLSTM}_{\mathbf{W}}\!\left(\widetilde{\mathbf{OF}}^{\mathcal{
 %     \label{fig:ccf_armax_garch_dl}
 % \end{figure}
 
-\newpage
+\clearpage 
 
+%\bibliographystyle{rQUF}
 \bibliographystyle{plain}
 \bibliography{references}
 

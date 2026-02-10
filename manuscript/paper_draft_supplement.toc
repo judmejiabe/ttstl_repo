@@ -1,0 +1,36 @@
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {A}Mathematical Representation of the Order Flow Sequence and Limit Order Book}{2}{appendix.A}%
+\contentsline {section}{\numberline {B}Alternative Sampling Schemes}{7}{appendix.B}%
+\contentsline {section}{\numberline {C}CNN–LSTM and DeepLOB Model Specifications}{8}{appendix.C}%
+\contentsline {subsection}{\numberline {C.1}Building Blocks}{8}{subsection.C.1}%
+\contentsline {subsubsection}{\numberline {C.1.1}Permutation}{8}{subsubsection.C.1.1}%
+\contentsline {subsubsection}{\numberline {C.1.2}Concatenation}{8}{subsubsection.C.1.2}%
+\contentsline {subsubsection}{\numberline {C.1.3}Activation Functions}{8}{subsubsection.C.1.3}%
+\contentsline {subsubsection}{\numberline {C.1.4}Batch Normalization}{9}{subsubsection.C.1.4}%
+\contentsline {subsubsection}{\numberline {C.1.5}Max‐Pooling}{9}{subsubsection.C.1.5}%
+\contentsline {subsubsection}{\numberline {C.1.6}Zero‐Padding}{9}{subsubsection.C.1.6}%
+\contentsline {subsubsection}{\numberline {C.1.7}Fully Connected Layer}{10}{subsubsection.C.1.7}%
+\contentsline {subsubsection}{\numberline {C.1.8}Convolutional Filters}{10}{subsubsection.C.1.8}%
+\contentsline {subsubsection}{\numberline {C.1.9}LSTM Layer}{10}{subsubsection.C.1.9}%
+\contentsline {subsection}{\numberline {C.2}Composite Structures}{11}{subsection.C.2}%
+\contentsline {subsubsection}{\numberline {C.2.1}The Composite Convolutional Layer}{11}{subsubsection.C.2.1}%
+\contentsline {subsubsection}{\numberline {C.2.2}The Inception Layer}{12}{subsubsection.C.2.2}%
+\contentsline {subsection}{\numberline {C.3}Neural Network Architectures}{12}{subsection.C.3}%
+\contentsline {subsubsection}{\numberline {C.3.1}The CNN-LSTM Architecture}{12}{subsubsection.C.3.1}%
+\contentsline {subsubsection}{\numberline {C.3.2}The DeepLOB Architecture}{13}{subsubsection.C.3.2}%
+\contentsline {section}{\numberline {D}Stationarity Testing}{15}{appendix.D}%
+\contentsline {section}{\numberline {E}Case Study: Model Subspace Selection}{17}{appendix.E}%
+\contentsline {subsection}{\numberline {E.1}Background}{17}{subsection.E.1}%
+\contentsline {subsection}{\numberline {E.2}Simulation Design}{19}{subsection.E.2}%
+\contentsline {subsection}{\numberline {E.3}Results and Discussion}{20}{subsection.E.3}%
+\contentsline {subsubsection}{\numberline {E.3.1}Multicollinearity Effect}{20}{subsubsection.E.3.1}%
+\contentsline {subsubsection}{\numberline {E.3.2}Effect of Initial Weights}{21}{subsubsection.E.3.2}%
+\contentsline {subsection}{\numberline {E.4}Conclusions and Recommendations}{21}{subsection.E.4}%
+\contentsline {subsection}{\numberline {E.5}Reproducibility}{22}{subsection.E.5}%
+\contentsline {section}{\numberline {F}Events Matching Exclusion Criteria on the INTC MBO Dataset}{23}{appendix.F}%
+\contentsline {subsection}{\numberline {F.1}Corporate Actions}{23}{subsection.F.1}%
+\contentsline {subsection}{\numberline {F.2}Earnings and Company-Specific News}{23}{subsection.F.2}%
+\contentsline {subsection}{\numberline {F.3}Derivative Market Events}{24}{subsection.F.3}%
+\contentsline {subsection}{\numberline {F.4}Scheduled Announcements}{24}{subsection.F.4}%
+\contentsline {subsection}{\numberline {F.5}Exchange Halts}{24}{subsection.F.5}%
+\contentsline {section}{\numberline {G}Complimentary Tables and Figures}{25}{appendix.G}%
