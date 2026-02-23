@@ -126,7 +126,12 @@
 
 \date{Last Modified: \today}
 
+\makeatletter
+\let\oldbibcite\bibcite
+\def\bibcite#1#2{}
 \externaldocument{build/paper_draft}
+\let\bibcite\oldbibcite
+\makeatother
 
 \begin{document}
 
@@ -335,7 +340,7 @@ Figure~\ref{fig:snapshot_seq} illustrates the corresponding sequence of LOB snap
 \begin{figure}[h!]
     \centering
     \includegraphics[height=3in]{lob_snapshot_sequence.png}    
-    \caption{Sequence of LOB snapshots corresponding to table \ref{tab:of_example}.}
+    \caption{Sequence of LOB snapshots corresponding to Table \ref{tab:of_example}.}
     \label{fig:snapshot_seq}
 \end{figure}
 
@@ -615,7 +620,7 @@ The composite convolutional layer applies three blocks of
 \[
   \text{Convolution} \;\to\;\text{LeakyReLU} \;\to\;\text{BatchNorm},
 \]
-each with its own kernel size and stride. For some input in $\R^{N \times C \times H \times W}$ the composite convolutional layer applies a convolution filter of size $(1, k_w)$ and stride $(1, s_w)$. Observe this filter smooths the features in the space dimension. After applying a Leaky ReLU activation function and Batch Normalization, a time convolution filter of size $(4, 1)$ and stride $(1, 1)$ is applied. Then a Leaky ReLU and Batch Normalization are applied again. This last process is applied twice (see the composite convolution layer in figure \ref{fig:cnn_lstm_architecture} for a clear representation). Define the outer and inner layers to keep notation compact
+each with its own kernel size and stride. For some input in $\R^{N \times C \times H \times W}$ the composite convolutional layer applies a convolution filter of size $(1, k_w)$ and stride $(1, s_w)$. Observe this filter smooths the features in the space dimension. After applying a Leaky ReLU activation function and Batch Normalization, a time convolution filter of size $(4, 1)$ and stride $(1, 1)$ is applied. Then a Leaky ReLU and Batch Normalization are applied again. This last process is applied twice (see the composite convolution layer in Figure \ref{fig:cnn_lstm_architecture} for a clear representation). Define the outer and inner layers to keep notation compact
 
 \begin{align*}
     \mathrm{Outer}^{k_w}_{s_w}(T) &= \batchnorm^{\phi, \varepsilon} \circ \LeakyReLU_{0.01} \circ \convolution^{32, 1, k_w}_{1, s_w}(T),\\
@@ -657,7 +662,7 @@ $$
 \subsubsection{The CNN-LSTM Architecture}
 \label{subsubsec:cnn_lstm_architecture}
 
-The CNN-LSTM architecture of Kolm et al. \cite{kolm2023deep}, which is depicted in figure \ref{fig:cnn_lstm_architecture}, is now formalized. As argued in Section~\ref{subsec:cnn_lstm}, there are multiple possibilities for the neural network output. The multihorizon approach explained this section is considered but the other possibilities can be constructed by modifying the outer layer. Let $K$ be the output dimension. The CNN-LSTM neural network transformation is a map $\cnnlstm : \R^{N \times 100 \times 20} \rightarrow \R^{N \times K}$, where $N$ is the training batch size, defined as
+The CNN-LSTM architecture of Kolm et al. \cite{kolm2023deep}, which is depicted in Figure \ref{fig:cnn_lstm_architecture}, is now formalized. As argued in Section~\ref{subsec:cnn_lstm}, there are multiple possibilities for the neural network output. The multihorizon approach explained this section is considered but the other possibilities can be constructed by modifying the outer layer. Let $K$ be the output dimension. The CNN-LSTM neural network transformation is a map $\cnnlstm : \R^{N \times 100 \times 20} \rightarrow \R^{N \times K}$, where $N$ is the training batch size, defined as
 
 $$
 \cnnlstm(\mathbf{X}) = \fullyconnected_K \circ \lstm_{64} \circ \perm^{3, 2} \circ \mathrm{IL} \circ \mathrm{CConv}^{10}_1 \circ \mathrm{CConv}^{2}_2 \left(\mathbf{X}\right).
@@ -1083,7 +1088,7 @@ $T$   & $n_{T}$ & $s_{T}$ \\
 
 \subsubsection{Multicollinearity Effect}
 
-Figure~\ref{fig:exact_recovery_corr} (see section \ref{sec:comp_tables_figs}) displays the exact recovery rate (fraction of simulations where $\mathrm{sign}(\hat{\boldsymbol{\theta}}) = \mathrm{sign}(\boldsymbol{\theta})$) as a function of $T$, for different correlation levels $\rho$. Several clear patterns emerge. First, as expected, increasing the sample size improves support recovery for both methods in all scenarios – the curves generally rise toward 1.0 as $T$ grows. However, the adaLASSO (red curves) achieves much higher recovery rates at moderate sample sizes than OLS (blue/green curves) in the presence of strong multicollinearity. For low correlation ($\rho=0$ or $0.25$), the gap between methods is small: OLS with Bonferroni performs nearly as well as adaLASSO when predictors are independent or only mildly correlated. In fact, for $\rho=0$, both methods eventually reach ~100\% recovery with sufficiently large $T$ (hundreds of observations), and their trajectories are quite close. This is because when predictors are uncorrelated, the OLS t-tests remain informative (each coefficient can be estimated independently with little variance inflation), so the Bonferroni penalty for multiple testing is the main hurdle – which large $T$ can overcome by reducing standard error. AdaLASSO also works well in this regime, effectively similar to the ordinary LASSO which is known to be consistent under mutual independence of features.
+Figure~\ref{fig:exact_recovery_corr} (see Section \ref{sec:comp_tables_figs}) displays the exact recovery rate (fraction of simulations where $\mathrm{sign}(\hat{\boldsymbol{\theta}}) = \mathrm{sign}(\boldsymbol{\theta})$) as a function of $T$, for different correlation levels $\rho$. Several clear patterns emerge. First, as expected, increasing the sample size improves support recovery for both methods in all scenarios – the curves generally rise toward 1.0 as $T$ grows. However, the adaLASSO (red curves) achieves much higher recovery rates at moderate sample sizes than OLS (blue/green curves) in the presence of strong multicollinearity. For low correlation ($\rho=0$ or $0.25$), the gap between methods is small: OLS with Bonferroni performs nearly as well as adaLASSO when predictors are independent or only mildly correlated. In fact, for $\rho=0$, both methods eventually reach ~100\% recovery with sufficiently large $T$ (hundreds of observations), and their trajectories are quite close. This is because when predictors are uncorrelated, the OLS t-tests remain informative (each coefficient can be estimated independently with little variance inflation), so the Bonferroni penalty for multiple testing is the main hurdle – which large $T$ can overcome by reducing standard error. AdaLASSO also works well in this regime, effectively similar to the ordinary LASSO which is known to be consistent under mutual independence of features.
 
 When correlation increases to moderate levels ($\rho=0.5$ shown in Figure \ref{fig:exact_recovery_corr}, top-right panel, and $\rho=0.75$ in bottom-left), the performance of OLS selection deteriorates dramatically relative to adaLASSO. For $\rho=0.5$, the OLS method (blue/green lines) requires a much larger $T$ to approach high recovery probability – there is a noticeable rightward shift of the OLS curve compared to the adaLASSO curve. The adaLASSO achieves near-perfect support recovery at $T = 339$ observations when $\rho=0.5$, whereas OLS-Bonferroni needs roughly double that sample size to reach comparable accuracy. The gap widens further at $\rho=0.75$: here the OLS approach almost never succeeds for small or moderate samples (recovery probability essentially 0 for $T < 300$). Even at $T = 1024$, OLS is only recovering the true model in about 50–60\% of trials, whereas adaLASSO already exceeds 90\% success by that point.  the adaLASSO appears more robust to multicollinearity when $T$ is large enough, eventually achieving near-certain recovery even at $\rho=0.75$ in the simulations (red curve tending to 1.0 as $T$ grows). OLS, however, remains very sensitive: even at $T=1024$, the OLS method never reaches 100\% recovery for $\rho=0.75$.
 
@@ -1091,7 +1096,7 @@ The most extreme case is $\rho=0.99$ (Figure~\ref{fig:exact_recovery_corr}, bott
 
 To connect with the theoretical result from \cite{MEDEIROS2016255} (see \ref{eq:decay_rate}), the rate at which the failure probability decreases with $T$ is examined. Figure~\ref{fig:log_log_failure_rate_corr} plots the Monte Carlo estimated failure rates on logarithmic scales. If the failure probability follows a power-law $T^{-\alpha}$, an approximately straight line with slope $-\alpha$ in the log–log representation would be observed. Indeed, for the adaLASSO (red) a roughly linear downward trend in all panels is seen - except when the curve saturates -, consistent with a polynomial decay in $T$. At every correlation level, the estimated failure rate (red) declines faster than the theoretical bound line (dashed), indicating a steeper power‑law exponent. Thus, the adaLASSO simulation results are consistent with the theoretical guarantee of polynomial-decay consistency: even under dependence and heavy-tailed noise, it is observed that $\Prob\bigl(\mathrm{sign}(\hat\theta)\neq\mathrm{sign}(\theta_0)\bigr)$ trends down at least as fast as $c T^{-\alpha}$ for some $\alpha>0$.
 
-The OLS-based methods (blue/green lines in figure \ref{fig:log_log_failure_rate_corr}) tell a similar story when the multicollinearity level is below or at 50\%. However, the failure probability rate of decrease exhibits a slower convergence when the multicollinearity level is at or above 75\%. This reflects the fact that OLS with Bonferroni can eventually consistently select the true model when predictors have low to moderate correlation. For higher correlations ($\rho \geq 0.75$), the blue/green points in Figure \ref{fig:log_log_failure_rate_corr} are almost horizontal or very mildly declining on the log–log scale. This underscores the superior performance of adaLASSO under high multicollinearity regimes when the DGP, DESIGN, WEIGHTS, and REG conditions hold.
+The OLS-based methods (blue/green lines in Figure \ref{fig:log_log_failure_rate_corr}) tell a similar story when the multicollinearity level is below or at 50\%. However, the failure probability rate of decrease exhibits a slower convergence when the multicollinearity level is at or above 75\%. This reflects the fact that OLS with Bonferroni can eventually consistently select the true model when predictors have low to moderate correlation. For higher correlations ($\rho \geq 0.75$), the blue/green points in Figure \ref{fig:log_log_failure_rate_corr} are almost horizontal or very mildly declining on the log–log scale. This underscores the superior performance of adaLASSO under high multicollinearity regimes when the DGP, DESIGN, WEIGHTS, and REG conditions hold.
 
 \subsubsection{Effect of Initial Weights}
 
