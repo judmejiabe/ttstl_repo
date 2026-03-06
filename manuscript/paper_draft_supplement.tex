@@ -112,7 +112,7 @@
 \DeclarePairedDelimiter{\aval}{\lvert}{\rvert} % Define absolute value notation
 
 
-\npthousandsep{.}\npthousandthpartsep{}\npdecimalsign{,}
+\npthousandsep{,}\npdecimalsign{.}
 
 %\newcommand{\loglik}{\mathcal{l}}
 \title{Supplementary Material to Two-Time-Scale Transfer Learning for Market-by-Order Micro-Return Forecasting}
@@ -171,9 +171,9 @@ To favor notation lightness, The subscript $o_i$ will be dropped in favor of $i$
 Let $d \in \N \setminus \{ 0 \}$ be the maximum price of an asset. The order aggregator, $\mathcal{X} : \N \times \N \times [0, T] \times \N \times \{-1, 1 \} \times \{ L, C\} \rightarrow \Z^d \times \Z^d$, groups limit orders and cancellations by price and adds its sizes
     
 $$
-\mathcal{X}(\mathbf{o}) = \left( \sum_{o \in \mathbf{o}} (I^+_L(o) - I^+_C(o)) z_o e_{p_o}, \sum_{o \in \mathbf{o}} (I^-_L(o) - I^-_C(o)) z_o e_{p_o} \right)
+\mathcal{X}(\mathbf{o}) = \left( \sum_{o \in \mathbf{o}} (I^+_L(o) - I^+_C(o)) z_o e_{p_o}, \sum_{o \in \mathbf{o}} (I^-_L(o) - I^-_C(o)) z_o e_{p_o} \right),
 $$
-Where the market orders in $\mathbf{o}$ are identified as limit orders, $e_i = (0, 0, \dots, 0, 1, 0, \dots, 0) \in \Z^d$ where 1 is the $i$-th position, $I^+_k(o)$ ($I^-_k(o)$) takes value $1$ if $s_o = 1$ ($s_o = -1$) and $k_o = k$, $k \in \{ L, C\}$.
+where the market orders in $\mathbf{o}$ are identified as limit orders, $e_i = (0, 0, \dots, 0, 1, 0, \dots, 0) \in \Z^d$ where 1 is the $i$-th position, $I^+_k(o)$ ($I^-_k(o)$) takes value $1$ if $s_o = 1$ ($s_o = -1$) and $k_o = k$, $k \in \{ L, C\}$.
 \label{def:order_aggregator}
 \end{definition}
 
@@ -191,10 +191,9 @@ The set of possible values of $\mathbf{o}$ under the restrictions (A1) and (A2) 
 Denote $X = (X^+, X^-) \in E := \N^d \times \N^d$ a configuration of limit orders.\footnote{i.e. $X = \mathcal{X}(\mathbf{x})$ for some $\mathbf{x} \in \mathcal{O}$.}  Observe that the set of valid configurations of LOBs is a proper subset of $E$. Some notation is necessary to determine this set. First, for $Z \in \N^d$, consider the measure 
 
 $$
-\nu_Z = \sum^d_{k = 1}Z_k \delta_k.
+\nu_Z = \sum^d_{k = 1}Z_k \delta_k,
 $$
-
-Where $\delta_k$ denotes the Dirac's delta measure at $k \in \{1, \dots, d \}$. Also, let
+where $\delta_k$ denotes the Dirac's delta measure at $k \in \{1, \dots, d \}$. Also, let
 
 \begin{itemize}
     \item $\nu^{\pm}_X = \nu_{X^{\pm}}$
@@ -207,7 +206,7 @@ Where $\delta_k$ denotes the Dirac's delta measure at $k \in \{1, \dots, d \}$. 
 Observe that $a(X)$ and $b(X)$ correspond to the best ask and bid of a limit order book snapshot respectively. The set of valid limit order book configurations is thus
 
 $$
-\Bo := \{X = (X^+, X^-) \in E : a(X) > b(X)\}
+\Bo := \{X = (X^+, X^-) \in E : a(X) > b(X)\}.
 $$
 
 \begin{definition}
@@ -222,7 +221,7 @@ $$
     
 \end{definition}
 
-Observe that $J$ models changes in the LOB right before matching. The matching process is modelled in \cite{cont2023mathematical} through a deterministic order matching clearing operator $\mathcal{C} : E \rightarrow \Bo$ whose set of invariant points is $\Bo$. It can be shown that, under some conditions, $\mathcal{C}$ is uniquely characterized as follows:
+Observe that $J$ models changes in the LOB right before matching. The matching process is modeled in \cite{cont2023mathematical} through a deterministic order matching clearing operator $\mathcal{C} : E \rightarrow \Bo$ whose set of invariant points is $\Bo$. It can be shown that, under some conditions, $\mathcal{C}$ is uniquely characterized as follows:
 
 \begin{equation*}
     \mathcal{C}(X)^+ = \begin{cases}
@@ -234,10 +233,10 @@ Observe that $J$ models changes in the LOB right before matching. The matching p
 \begin{equation*}
     \mathcal{C}(X)^- = \begin{cases}
         \tau^{p_A(X)}(X^+) & \text{if } g_X(p_A(X)) \geq X^-_{p_A(X)},\\
-        \tau^{p_A(X) - 1}(X^+) + \max(0, g_X(p_A(X))) e_{p_A}(X) & \text{if } g_X(p_A(X)) <  X^-_{p_A(X)}.  
+        \tau^{p_A(X) - 1}(X^+) + \max(0, g_X(p_A(X))) e_{p_A}(X) & \text{if } g_X(p_A(X)) <  X^-_{p_A(X)},  
     \end{cases}
 \end{equation*}
-Where $X \in E$ is the set of limit orders. Let $B_X(k) = \nu^+[k, \infty)$, $S_X(k) = \nu^-_X[0, k]$, $g(k) = S_X(k) - B_X(k)$, and
+where $X \in E$ is the set of limit orders. Let $B_X(k) = \nu^+[k, \infty)$, $S_X(k) = \nu^-_X[0, k]$, $g(k) = S_X(k) - B_X(k)$, and
 \begin{align*}
     p_A(X) = \inf \{ k \in \{1, \dots, d \} : g_X(k) > 0 \},\\
     p_B(X) = \sup \{ k \in \{1, \dots, d \} : g_X(k) < 0 \}.
@@ -280,9 +279,9 @@ Let $\tau$ be a $\Fil$-stopping time and $\pi$, $\zeta$, $\iota$, $\sigma$ and $
 Analogously, for a sequence of non-explosive increasing sequence of $\Fil$-adapted stopping times $(\tau_i)^{\infty}_{i = 1}$ and $\SigAl_{\tau_i}$-measurable random variables $\pi_i$, $\omega_i$, $\sigma_i$, $\iota_i$ and $\kappa_i$ for which assumptions (A1) and (A2) hold, define the stochastic message sequence
 
 \begin{equation*}
-\boldsymbol{\omega} = (\omega_i : \tau_i \leq T).
+\boldsymbol{\omega} = (\omega_i : \tau_i \leq T),
 \end{equation*}
-Where, $\omega_i = (\pi_i, \zeta_i, \tau_i, \iota_i, \sigma_i, \kappa_i)$. 
+where $\omega_i = (\pi_i, \zeta_i, \tau_i, \iota_i, \sigma_i, \kappa_i)$. 
 \label{def:stochastic_messages}
 \end{definition}
 
@@ -299,6 +298,9 @@ X(t) = L(t, \boldsymbol{\omega}).
 For the sake of clarity, the previous definitions are illustrated below. Consider the following order flow sequence $\mathbf{o} \in \mathcal{O}$ represented in the following table
 
 \begin{table}[H]
+  \caption{Example OF sequence}
+  \label{tab:of_example}
+
 \centering
 \begin{tabular}{cccccc}
 \hline
@@ -314,8 +316,7 @@ $p_i$ & $z_i$ & $t_i$ & $i_i$ & $s_i$ & $k_i$ \\ \hline
 12    & 70   & 8.32      & 3          & -1   & C    \\
 12    & 50   & 9.78      & 4          & -1   & C    \\ \hline
 \end{tabular}
-\caption{Example OF sequence}
-\label{tab:of_example}
+
 \end{table}
 
 Definition~\ref{def:order_aggregator} applied to the sequence $\mathbf{o}$ implies
@@ -347,6 +348,9 @@ Figure~\ref{fig:snapshot_seq} illustrates the corresponding sequence of LOB snap
 A useful distinction between the OF sequence and MBO data lies in how MBO data can be constructed from the OF sequence without requiring explicit order matching. One way to achieve this is by labeling addition messages as \verb|A| and cancellation messages as \verb|C|. Whenever an outstanding order executes, a series of messages—\verb|T| (trade), \verb|F| (filled), and \verb|C| (cancellation)—can be inserted at the same timestamp to indicate the trade initiator, the filled order, and the final cancellation needed for LOB reconstruction. Under this scheme, the LOB can be fully reconstructed using only \verb|A| and \verb|C| messages, eliminating the need for a separate clearing process. Table \ref{tab:mbo_data} illustrates this procedure.
 
 \begin{table}[H]
+  \caption{Example MBO data.}
+  \label{tab:mbo_data}
+
 \centering
 \scalebox{0.75}{
 \begin{tabular}{c c c c c c c}
@@ -376,8 +380,7 @@ A useful distinction between the OF sequence and MBO data lies in how MBO data c
 9.78 & 4 & A   & 50  & 12 & C \\
 \hline
 \end{tabular}}
-\caption{Example MBO data.}
-\label{tab:mbo_data}
+
 \end{table}
 
 \clearpage
@@ -514,7 +517,7 @@ Convolution and pooling layers typically reduce spatial dimensions.  However, ce
 \[
 \zeropad_{p_h,p_w}(T)
 \;\in\;
-\mathbb{R}^{N \times C \times (H + 2p_h) \times (W + 2p_w)}
+\mathbb{R}^{N \times C \times (H + 2p_h) \times (W + 2p_w)},
 \]
 has entries
 \[
@@ -524,7 +527,7 @@ has entries
 0, & k \le p_h \quad\text{or}\quad k > H + p_h,\\[4pt]
 0, & l \le p_w \quad\text{or}\quad l > W + p_w,\\[4pt]
 T_{ic(k - p_h)(l - p_w)}, & \text{otherwise},
-\end{cases}
+\end{cases},
 \]
 for \(i=1,\dots,N\), \(c=1,\dots,C\), \(k=1,\dots,H+2p_h\), and \(l=1,\dots,W+2p_w\).  This adds \(p_h\) rows of zeros above and below, and \(p_w\) columns of zeros to the left and right of each feature map.
 
@@ -627,15 +630,11 @@ each with its own kernel size and stride. For some input in $\R^{N \times C \tim
     \mathrm{Inner}^{(1)}(T) &= \batchnorm^{\phi,\varepsilon}\circ\LeakyReLU_{0.01}\circ\convolution^{32,4,1}(T),\\
 \mathrm{Inner}^{(2)}(T) &= \batchnorm^{\phi,\varepsilon}\circ\LeakyReLU_{0.01}\circ\convolution^{32,4,1}(T).
 \end{align*}
-
-
-
 Thus, the composite convolution layer with initial size $(1, k_w)$ and stride $(1, s_w)$ combines one outer layer and two inner layers as follows 
 
 $$
 \mathrm{CConv}^{k_w}_{s_w}(T) = \mathrm{Inner}^{(2)} \circ \mathrm{Inner}^{(1)} \circ \mathrm{Outer}^{k_w}_{s_w} (T).
 $$
-
 Unless stated otherwise, no operations within the architecture share trainable parameters.
 
 \subsubsection{The Inception Layer}
@@ -679,6 +678,9 @@ Table \ref{tab:cnnlstm} presents the intermediate dimensions of the layers with 
 % Please add the following required packages to your document preamble:
 % \usepackage{booktabs}
 \begin{table}[htb]
+  \caption{CNN-LSTM architecture components.}
+  \label{tab:cnnlstm}
+
 \centering
 \begin{tabular}{@{}lcccc@{}}
 \toprule
@@ -690,8 +692,7 @@ Permutation     & $\perm^{3,2}$            & $(32, 192, 88, 1)$ & $(32, 88, 192,
 LSTM            & $\lstm_{64}$             & $(32, 82, 192)$    & $(32, 64)$           & 66048           \\ 
 Fully Connected & $\fullyconnected_{1}$    & $(32, 64)$         & $(32, 1)$            & 65   \\\bottomrule
 \end{tabular}
-\caption{CNN-LSTM architecture components.}
-\label{tab:cnnlstm}
+
 \end{table}
 
 During inference mode, the CNN-LSTM architecture will produce an output for each order flow matrix. Such output can be denoted $\cnnlstm \left(\widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i - 99:i} \right)$. Moreover, the $\fullyconnected_K$ layer can be bypassed in order to obtain the penultimate layer representation which is effectively a feature map $\phi_{\mathbf{W}} : \R^{100 \times 20} \rightarrow \R^{64}$ defined as
@@ -718,7 +719,7 @@ $$
 Here, $\mathbf{X}$ is a 3D tensor of whitened limit order book price-volume information as defined in Section~\ref{SubSect:LOB-MBO}:
 
 $$
-\mathbf{X} = \left[\tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_1 - 99 : i_1}, \tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_2 - 99 : i_2},\dots, \tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_N - 99 : i_N} \right]
+\mathbf{X} = \left[\tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_1 - 99 : i_1}, \tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_2 - 99 : i_2},\dots, \tilde{\mathbf{l}}^{\mathcal{P}^{(E)}}_{i_N - 99 : i_N} \right].
 $$
 
 Table \ref{tab:deeplob} illustrates the components of this network assuming a scalar target variable ($K = 1$) and a batch of size 32 ($N = 32$). The resulting model comprises $143,777$ parameters.
@@ -727,6 +728,9 @@ Table \ref{tab:deeplob} illustrates the components of this network assuming a sc
 % Please add the following required packages to your document preamble:
 % \usepackage{booktabs}
 \begin{table}[htb]
+  \caption{DeepLOB architecture components.}
+  \label{tab:deeplob}
+
 \centering
 \begin{tabular}{@{}lcccc@{}}
 \toprule
@@ -739,8 +743,7 @@ Permutation     & $\perm^{3,2}$        & $(32, 194, 82, 1)$ & $(32, 82, 194, 1)$
 LSTM            & $\lstm_{64}$        & $(32, 82, 194)$    & $(32, 64)$           & 66048                 \\ 
 Fully Connected & $\fullyconnected_{1}$    & $(32, 64)$         & $(32, 1)$            & 65   \\\bottomrule
 \end{tabular}
-\caption{DeepLOB architecture components.}
-\label{tab:deeplob}
+
 \end{table}
 
 
@@ -878,13 +881,13 @@ First, consider the data generating process (DGP)
     y_t = \alpha_0 + \boldsymbol{\theta}^T\,\mathbf{x}_t + u_t.
     \label{eq:dgp_medmen}
 \end{equation}
-Where $\{\mathbf{x}_t\}_{t \in \Z}$ is an $n_T$-dimensional covariate process, which possibly contains lags of the endogenous process, and $\{u_t\}_{t \in \Z}$ is a martingale difference sequence. Denote by $T$ the sample size of observations of the process $\{y_t \}_{t\in \Z}$, $n_T$ the total number of covariates, and $s_T$ the number of relevant covariates. For simplicity assume that the first $s_T$ elements of $\mathbf{x}_t$ correspond to the relevant variables, which can effectively be denoted as $\mathbf{x}_t = [\mathbf{x}_t(1), \mathbf{x}_t(2)]$. Also write $\boldsymbol{\theta}^T = [\boldsymbol{\theta}^T(1), \boldsymbol{\theta}^T(2)]$ and let $\boldsymbol{\theta}_0$ denote the true parameter which effectively implies that $\boldsymbol{\theta}_0^T = [\boldsymbol{\theta}_0^T(1), \mathbf{0}^T]$. Assuming, without loss of generality, that $\alpha_0 = 0$, The adaLASSO technique consists in minimizing the objective function given by
+Here, $\{\mathbf{x}_t\}_{t \in \Z}$ is an $n_T$-dimensional covariate process, which possibly contains lags of the endogenous process, and $\{u_t\}_{t \in \Z}$ is a martingale difference sequence. Denote by $T$ the sample size of observations of the process $\{y_t \}_{t\in \Z}$, $n_T$ the total number of covariates, and $s_T$ the number of relevant covariates. For simplicity assume that the first $s_T$ elements of $\mathbf{x}_t$ correspond to the relevant variables, which can effectively be denoted as $\mathbf{x}_t = [\mathbf{x}_t(1), \mathbf{x}_t(2)]$. Also write $\boldsymbol{\theta}^T = [\boldsymbol{\theta}^T(1), \boldsymbol{\theta}^T(2)]$ and let $\boldsymbol{\theta}_0$ denote the true parameter which effectively implies that $\boldsymbol{\theta}_0^T = [\boldsymbol{\theta}_0^T(1), \mathbf{0}^T]$. Assuming, without loss of generality, that $\alpha_0 = 0$, The adaLASSO technique consists in minimizing the objective function given by
 
 \[
         f(\boldsymbol{\theta}) = \bigl\|\mathbf{y} -  \mathbf{X}\boldsymbol{\theta}\bigr\|_2^2
         \;+\;\lambda_T\sum_{k} w_k\,|\theta_k|.
 \]
-Where $w_k = \left| \theta_{I, k} \right|^{-\tau}$ are computed from $\tau > 0$ and $\boldsymbol{\theta}_I$ an initial parameter estimate. The initial parameter estimate could be given, among others, by OLS, LASSO or elastic-net. The choice of the algorithm for the initial parameters is left out of the scope of this simulation study. Medeiros and Mendes group their assumptions into four categories: Data Generating Process (DGP), Design Space (DESIGN), Initial Weights (WEIGHTS), and Regularization Parameter (REG). These assumptions are restated below for self-completeness.
+Here, $w_k = \left| \theta_{I, k} \right|^{-\tau}$ are computed from $\tau > 0$ and $\boldsymbol{\theta}_I$ an initial parameter estimate. The initial parameter estimate could be given, among others, by OLS, LASSO or elastic-net. The choice of the algorithm for the initial parameters is left out of the scope of this simulation study. Medeiros and Mendes group their assumptions into four categories: Data Generating Process (DGP), Design Space (DESIGN), Initial Weights (WEIGHTS), and Regularization Parameter (REG). These assumptions are restated below for self-completeness.
 
 
 \begin{itemize}
@@ -915,7 +918,7 @@ Where $w_k = \left| \theta_{I, k} \right|^{-\tau}$ are computed from $\tau > 0$ 
 
   \item[(WEIGHTS1)] The weights on inactive endogenous variables diverge fast enough: for some $\xi\in(0,1)$ and $c_w>0$,
   \[
-    \min_{i \in s_T + 1 : n_T} T^{-\xi/2}\,w_i \;>\; c_w\,\sqrt{\frac{s_T}{\phi_{\min}}}.
+    \min_{i \in s_T + 1 : n_T} T^{-\xi/2}\,w_i \;>\; c_w\,\sqrt{\frac{s_T}{\phi_{\min}}},
   \]
   with probability converging to one
   \item[(WEIGHTS2)] The weights on the active set are uniformly bounded: 
@@ -969,7 +972,7 @@ These inequalities reveal interesting relationships under the light of the follo
 Then the adaptive LASSO estimator $\hat\theta$ satisfies
 \[
 \Prob\bigl(\mathrm{sign}(\hat\theta)=\mathrm{sign}(\theta_0)\bigr)
-\;\xrightarrow[T \rightarrow \infty]{} 1
+\;\xrightarrow[T \rightarrow \infty]{} 1.
 \]
 \label{thm:1_medeiros}
 \end{theorem}
@@ -1022,12 +1025,14 @@ u_t = \sigma_t \eta_t
 &
 \eta_t \overset{iid}{\sim} t_{m + 1},\\[2ex]
 \sigma^2_t = \omega + \alpha_{\star} u_{t - 1}^2 + \beta_{\star} \sigma^2_{t - 1}.
-\end{cases}
+\end{cases}.
 \]
-Where $\phi_X$ is a scalar and $\mathbf{L}$ is chosen to be a lower triangular matrix such that $\mathbf{R} := \mathbf{L} \mathbf{L^T}$, where $\mathbf{R}$ is the desired correlation matrix. Take $\beta_j = 1$ if $j \leq s_T$ and zero otherwise. Take $\phi = 0.8$, $\phi_X = 0.5$, $\omega = 0.1$, $\alpha_\star = 0.1$, $\beta_\star = 0.8$, and $m = 8$. Construct $\mathbf{R}$ starting from the identity matrix and replace its entries $(1, 2)$ and $(2, 1)$ with $\rho$ (i.e. $\mathbf{R}_{1,2} = \mathbf{R}_{2,1} = \rho$), where $\rho \in \{0, 0.25, 0.5, 0.75, 0.99 \}$. The parameters governing the dynamics of the number of candidate variables and penalizing weights are given below.
+Here, $\phi_X$ is a scalar and $\mathbf{L}$ is chosen to be a lower triangular matrix such that $\mathbf{R} := \mathbf{L} \mathbf{L^T}$, where $\mathbf{R}$ is the desired correlation matrix. Take $\beta_j = 1$ if $j \leq s_T$ and zero otherwise. Take $\phi = 0.8$, $\phi_X = 0.5$, $\omega = 0.1$, $\alpha_\star = 0.1$, $\beta_\star = 0.8$, and $m = 8$. Construct $\mathbf{R}$ starting from the identity matrix and replace its entries $(1, 2)$ and $(2, 1)$ with $\rho$ (i.e. $\mathbf{R}_{1,2} = \mathbf{R}_{2,1} = \rho$), where $\rho \in \{0, 0.25, 0.5, 0.75, 0.99 \}$. The parameters governing the dynamics of the number of candidate variables and penalizing weights are given below.
 
 
 \begin{table}[h]
+  \caption{Simulation parameters.}
+
 \centering
 \begin{tabular}{ccccccccccc}
 \hline
@@ -1036,16 +1041,16 @@ $c_{\alpha}$ & $\alpha$ & $c_{\beta_{S}}$ & $\beta_{S}$ & $c_{\beta_{S^c}}$ & $\
 1 & 0.25 & 1 & 0.125 & 1 & 1.5 & 2 & 0.25 & 1 & 0.5 & 0.75 \\
 \hline
 \end{tabular}
-\caption{Simulation parameters.}
+
 \end{table}
 
 Partitioning the interval $[64,1024]$ into 15 roughly equally‐spaced values of $T$ produces the simulation grid shown in Table~\ref{tab:simulation_grid}.  Each $(T,n_T,s_T)$ configuration is then replicated $N=100$ times for each of the specified correlation levels. For each of the samples, adaLASSO is fit assuming equal weights for the active set ($w_{S,T}$) and weights equal to $w_{S^c, T}$ for the inactive set. This helps to control the dynamics of the penalizing weights which in practice emerge from $\tau$ and the initial estimate selection algorithm. For simplicity, the weight corresponding to the lagged value of $y_t$ is left close to zero and only one lag is included in $\mathbf{X}$. OLS is then fit and the variance of $\hat{\tilde{\boldsymbol{\beta}}}$ is estimated via the homoskedastic formula (as a benchmark) and the heteroskedasticity-consistent estimator (HCE). Specifically
 
 \begin{align*}
     \hat{V}_{\mathrm{hom}} &= \hat{\sigma}^2(\tilde{\boldsymbol{X}}^T \tilde{\boldsymbol{X}})^{-1}; \quad  \hat{\sigma}^2 = \frac{1}{T - n_T - 1}\sum^{T}_{t = 1} \hat{u}_t^2,\\
-    \hat{V}_{\mathrm{het}} &= (\tilde{\boldsymbol{X}}^T \tilde{\boldsymbol{X}})^{-1} \left( \sum^T_{t = 1} \tilde{\mathbf{x}}_t \tilde{\mathbf{x}}^T_t \hat{u}^2_t \right) (\tilde{\boldsymbol{X}}^T \tilde{\boldsymbol{X}})^{-1}.
+    \hat{V}_{\mathrm{het}} &= (\tilde{\boldsymbol{X}}^T \tilde{\boldsymbol{X}})^{-1} \left( \sum^T_{t = 1} \tilde{\mathbf{x}}_t \tilde{\mathbf{x}}^T_t \hat{u}^2_t \right) (\tilde{\boldsymbol{X}}^T \tilde{\boldsymbol{X}})^{-1},
 \end{align*}
-Where in the above the \textit{tilded} quantities denote the corresponding augmented quantity to account for the inclusion of one lag of the endogenous variable. Statistical significance is assessed throught the $t$ test with Bonferroni correction. That is, a variable will be selected following each of the OLS approaches iff
+where in the above the \textit{tilded} quantities denote the corresponding augmented quantity to account for the inclusion of one lag of the endogenous variable. Statistical significance is assessed throught the $t$ test with Bonferroni correction. That is, a variable will be selected following each of the OLS approaches iff
 
 \begin{align*}
     \frac{\hat{\tilde{\beta}}_i}{V_{ii}^{1 / 2}} > t_{T - s_T - 1, 1 - \frac{0.025}{(n_T + 1)}}.
@@ -1054,6 +1059,9 @@ Following the execution of these three variable selection algorithms. The propor
 
 
 \begin{table}[ht]
+  \caption{Simulation grid: sample size $T$ and corresponding $n_{T}=\lceil c_{\delta} T^{\delta}\rceil$, $s_{T}=\lceil c_{\gamma}T^{\gamma}\rceil$.}
+  \label{tab:simulation_grid}
+
 \centering
 \begin{tabular}{ccc}
 \toprule
@@ -1076,8 +1084,7 @@ $T$   & $n_{T}$ & $s_{T}$ \\
 1024  & 32  & 12  \\
 \bottomrule
 \end{tabular}
-\caption{Simulation grid: sample size $T$ and corresponding $n_{T}=\lceil c_{\delta} T^{\delta}\rceil$, $s_{T}=\lceil c_{\gamma}T^{\gamma}\rceil$.}
-\label{tab:simulation_grid}
+
 \end{table}
 
 

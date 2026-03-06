@@ -109,7 +109,7 @@
 \DeclarePairedDelimiter{\aval}{\lvert}{\rvert} % Define absolute value notation
 
 
-\npthousandsep{.}\npthousandthpartsep{}\npdecimalsign{,}
+\npthousandsep{,}\npdecimalsign{.}
 
 %\newcommand{\loglik}{\mathcal{l}}
 \title{Two-Time-Scale Transfer Learning for Market-by-Order Micro-Return Forecasting}
@@ -135,7 +135,7 @@
 \linenumbers
 
 \begin{abstract}
-    Deep Learning models face a critical ``simulation-to-reality'' gap when applied to high frequency financial data. Deep learning models often fail to capture the nonstationary dynamics of live markets requiring computationally expensive recalibrations. This work introduces the Two Time Scale Transfer Learning (TTSTL) framework, a hybrid model architecture that combines the flexibility of deep learning models with the parsimony and calibration ease of time series regression models. The TTSTL architecture mimics the hippocampus-neocortex interaction in the human brain by coupling a high-capacity deep learning ``backbone'' with a lightweight, adaptive time series regression ``adapter.'' The backbone, utilizing a CNN-LSTM network, extracts complex, non-linear feature interactions from event-driven limit order book data, while the adapter—implemented as a Hybrid ARMAX-GARCH-DeepLOB model—integrates these features into a statistical framework for micro-return forecasting. Experiments are conducted on synthetic and Intel (INTC) market-by-order data. Results demonstrate that the TTSTL framework significantly outperforms standalone deep learning baselines in terms of accuracy (RelMAE), while enabling volatility modelling and formal probabilistic forecasting.
+    Deep Learning models face a critical ``simulation-to-reality'' gap when applied to high-frequency financial data. Deep learning models often fail to capture the non-stationary dynamics of live markets requiring computationally expensive recalibrations. This work introduces the Two Time Scale Transfer Learning (TTSTL) framework, a hybrid model architecture that combines the flexibility of deep learning models with the parsimony and calibration ease of time series regression models. The TTSTL architecture mimics the hippocampus-neocortex interaction in the human brain by coupling a high-capacity deep learning ``backbone'' with a lightweight, adaptive time series regression ``adapter.'' The backbone, utilizing a Convolutional Neural Network-Long Short-Term Memory (CNN-LSTM) network, extracts complex, non-linear feature interactions from event-driven Limit Order Book (LOB) data, while the adapter—implemented as a Hybrid Autoregressive Moving Average with Exogenous variables-Generalized Autoregressive Conditional Heteroskedasticity (ARMAX-GARCH)-DeepLOB model—integrates these features into a statistical framework for micro-return forecasting. Experiments are conducted on synthetic and Intel (INTC) Market-by-Order data. Results demonstrate that the TTSTL framework significantly outperforms standalone deep learning baselines in terms of accuracy (RelMAE), while enabling volatility modeling and formal probabilistic forecasting.
 \end{abstract}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -147,7 +147,7 @@
 
 Deep learning (DL) has emerged as a powerful tool across numerous fields, including finance, where its ability to handle large, complex datasets has proven invaluable. However, the efficacy of DL in finance is frequently counterbalanced by a significant ``black box'' problem. While neural networks excel at point imputation, they inherently lack the transparency and interpretability of parametric time series models. In regulatory and risk-management contexts, understanding the drivers of a forecast is often as critical as the point forecast accuracy itself. Pure DL architectures typically obscure these drivers, making it difficult to decompose a prediction into constituent market factors such as liquidity imbalances or volatility shocks. Furthermore, quantifying uncertainty—constructing reliable confidence intervals around a DL-based imputation—remains a computationally expensive and often heuristic endeavor in deep learning (see \cite{barber2023conformalpredictionexchangeability}), whereas it is a foundational feature of standard econometric inference.
 
-In addition to these statistical limitations, the high-frequency environment imposes severe computational constraints. Today's electronic markets operate at a staggering scale and speed, with exchanges disseminating data at nanosecond resolution and liquid assets generating millions of Market-by-Order messages per session. This combination of velocity and volume creates a bottleneck for complex neural network structures, which often require hours or days for recalibration, rendering traditional model retraining mechanisms impractical. Moreover, the sheer data volume can destabilize numerical algorithms for calibration; likelihood functions can become too steep to allow estimation via smoothness-assuming algorithms such as Newton-Raphson or Fisher-Scoring. These issues are exacerbated by the non-stationary behavior observed at the intra-day scale \cite{dutta2023review, Vyetrenko2019GetRR}. Consequently, there is a need for a statistical modelling framework that not only generates reliable statistical forecasts but remains fast and adaptable.
+In addition to these statistical limitations, the high-frequency environment imposes severe computational constraints. Today's electronic markets operate at a staggering scale and speed, with exchanges disseminating data at nanosecond resolution and liquid assets generating millions of Market-by-Order messages per session. This combination of velocity and volume creates a bottleneck for complex neural network structures, which often require hours or days for recalibration, rendering traditional model retraining mechanisms impractical. Moreover, the sheer data volume can destabilize numerical algorithms for calibration; likelihood functions can become too steep to allow estimation via smoothness-assuming algorithms such as Newton-Raphson or Fisher-Scoring. These issues are exacerbated by the non-stationary behavior observed at the intra-day scale \cite{dutta2023review, Vyetrenko2019GetRR}. Consequently, there is a need for a statistical modeling framework that not only generates reliable statistical forecasts but remains fast and adaptable.
 
 Beyond computational hurdles, high-frequency financial modeling is constrained by the limited availability of high-quality datasets due to high costs \cite{KISSELL201447} and the ``simulation-to-reality'' gap observed in older benchmarks like FI-2010 \cite{prata2024lob}. In this work, we treat this not as a primary motivation, but as a constraint on empirical validation. To mitigate this, we adapt existing tools to interface with Databento's pay-per-use service, lowering entry barriers for replicable research.
 
@@ -157,7 +157,7 @@ To address these statistical and computational challenges, the Two Time Scale Tr
 \subsection{Statistical Learning Models for the Limit Order Book}
 \label{SubSect:LM}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-Statistical Learning methods \cite{hastie2017elements} can be used to uncover statistical regularities in financial data. Many empirical studies employ machine learning methods to uncover stable patterns in high-frequency financial data and/or attempt to make predictions for the dynamics of the LOB. Outcomes range from the discovery of stylized facts such as a power-law distribution on the depth of incoming orders, and the gamma distribution of the available volume at the first level of the LOB, \cite{Bouchaud_2002} to the characterization of the behavior of trading algorithms \cite{cartea2023statistical}, and the analysis of the factors driving the movement of the mid-price in short periods of time \cite{cont2013price, cont2023cross, CENESIZOGLU202277}.
+Statistical learning methods \cite{hastie2017elements} can be used to uncover statistical regularities in financial data. Many empirical studies employ statistical learning methods to uncover stable patterns in high-frequency financial data and/or attempt to make predictions for the dynamics of the LOB. Outcomes range from the discovery of stylized facts such as a power-law distribution on the depth of incoming orders, and the gamma distribution of the available volume at the first level of the LOB \cite{Bouchaud_2002}, to the characterization of the behavior of trading algorithms \cite{cartea2023statistical}, and the analysis of the factors driving the movement of the mid-price in short periods of time \cite{cont2013price, cont2023cross, CENESIZOGLU202277}.
 
 Statistical learning methods have been widely applied to generate short-term forecasts of LOB features using high-frequency data. For example, Easley et al. \cite{easley2021microstructure} use random forests to assess the predictive capabilities of three generations of microstructure measures, focusing on directional changes in the bid-ask spread, realized volatility, Jarque-Bera statistic, kurtosis, skewness, and sequential correlation of realized returns. More recently, an increasing body of research has turned to DL techniques for predicting price direction from LOB data \cite{tsantekidis2017using, Zhang_2019, zhang2021deeplearningmarketorder, kolm2023deep, kolm2024improving, briola2024deep, prata2024lob}, with architectures ranging from multi-layer perceptrons \cite{tsantekidis2017using} to inception layers \cite{Zhang_2019} and attention mechanisms \cite{zhang2021deeplearningmarketorder}. Although these methods aim to automate feature discovery, questions persist regarding their effectiveness, robustness, and stability. In a recent study, Prata et al. \cite{prata2024lob} compare 15 distinct architectures in terms of accuracy and robustness, identifying the approach presented by Zhang et al. \cite{zhang2021deeplearningmarketorder} as demonstrating improved classification accuracy under benchmark conditions.
 
@@ -165,12 +165,12 @@ The predictive capability of deep learning (DL) models is not without drawbacks.
 
 The first of these problems was studied, at least indirectly, by Kolm, Turiel and Westray \cite{kolm2023deep}. Their study compared the imputation accuracy of neural networks of varying complexity when provided with either stationary inputs (based on order flows \cite{cont2013price}) or non-stationary inputs (raw LOB data). The findings indicate that models trained on stationary inputs outperform those relying on non-stationary data. Moreover, simpler network architectures with stationary inputs were shown to surpass more complex architectures operating on non-stationary inputs. This is the DL analog of the widely known results from the econometrics literature where it is typically advised to undertake time series regression models under stationarity assumptions, to avoid spurious regression outcomes, see \cite{granger1974spurious, phillips1986understanding, hamilton_time_1994}.
 
-These approaches motivate our focus on statistical post-processing of DL imputations rather than further architectural innovation. This paper addresses the second issue in the ERM approach by refining imputations from DL models into a hybrid econometrics time series regression model. The imputations are embedded into an ARMAX-GARCH time series model that effectively approximates the stochastic dynamics of the micro-price process, thereby enabling reliable forecasting. The proposed model facilitates a rigorous assessment of both the statistical and practical significance of DL-based imputations. Additionally, solutions are provided to mitigate numerical challenges arising from steep likelihood functions, which can otherwise hinder likelihood-based inference.
+A focus on statistical post-processing of DL imputations, rather than further architectural innovation, is motivated by the evidence above. In particular, the second issue in the ERM approach is addressed by refining imputations from DL models into a hybrid econometrics time series regression model. These imputations are embedded into an ARMAX-GARCH time series model that effectively approximates the stochastic dynamics of the micro-price process, thereby enabling reliable forecasting. Furthermore, a rigorous assessment of both the statistical and practical significance of DL-based imputations is facilitated by the proposed model. Additionally, solutions are provided to mitigate numerical challenges arising from steep likelihood functions, which can otherwise hinder likelihood-based inference.
 
 \subsection{Outline}
 \label{subsec:outline}
 
-The remainder of this paper is organized as follows. Section~\ref{Sect:Contributions} outlines the primary methodological and empirical contributions of this work. Section~\ref{Sect:BckGrnd} establishes the mathematical preliminaries for Market-By-Order (MBO) data and Limit Order Book (LOB) reconstruction. Section~\ref{Sect:Features} details the feature generation and extraction process. The proposed Hybrid ARMAX-GARCH-DeepLOB model is formulated in Section~\ref{subsec:armax_garch_paper}, integrating generative features into a statistical time series framework. Section~\ref{sec:ttstl} introduces the Two Time Scale Transfer Learning (TTSTL) framework, describing the interaction between the backbone, interface, and adapter modules. Estimation procedures, including the recursive online combining rules, are presented in Section~\ref{Sect:Estimation}, followed by the forecasting methodology in Section~\ref{sec:forecasting}. The experimental design, including data collection and preprocessing, is described in Section~\ref{subsec:data_collection} and \ref{subsec:dataset}. Section~\ref{subsec:results_intc} reports the empirical results on the INTC dataset, analyzing model performance across varying market conditions. Finally, Section~\ref{Sect:Conclusions} concludes the study with a discussion of implications and future research directions.
+The remainder of this paper is organized as follows. Section~\ref{Sect:Contributions} outlines the primary methodological and empirical contributions of this work. Section~\ref{Sect:BckGrnd} establishes the mathematical preliminaries for Market-by-Order (MBO) data and Limit Order Book (LOB) reconstruction. Section~\ref{Sect:Features} details the feature generation and extraction process. The proposed Hybrid ARMAX-GARCH-DeepLOB model is formulated in Section~\ref{subsec:armax_garch_paper}, integrating generative features into a statistical time series framework. Section~\ref{sec:ttstl} introduces the Two Time Scale Transfer Learning (TTSTL) framework, describing the interaction between the backbone, interface, and adapter modules. Estimation procedures, including the recursive online combining rules, are presented in Section~\ref{Sect:Estimation}, followed by the forecasting methodology in Section~\ref{sec:forecasting}. The experimental design, including data collection and preprocessing, is described in Section~\ref{sec:data}. Section~\ref{sec:results} presents a comprehensive empirical evaluation of the framework, demonstrating its predictive efficacy and robustness through experiments on both synthetic LOB environments and real-world high-frequency INTC market-by-order data. Finally, Section~\ref{Sect:Conclusions} concludes the study with a discussion of implications and future research directions.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -194,7 +194,7 @@ This study addresses the limitations of applying deep learning models directly t
 \begin{enumerate}
     \item \textbf{Accessible MBO Data Manipulation Framework:} The \verb|meatpy| library, originally developed by Vincent Gregorie and Charles Martineau \footnote{\url{https://github.com/vgreg/MeatPy}}, was adapted to interface with Databento’s pay-per-use data service\footnote{\url{https://databento.com}}. By this approach, entry barriers for researchers are significantly lowered, enabling access to a more comprehensive set of assets, and fostering cost-effective, reproducible studies in the high-frequency domain. The modified library and data manipulation implementations relating to this manuscript are made publicly available at \url{https://github.com/judmejiabe/MeatPy} and \url{https://github.com/judmejiabe/evolving-microstructural-toolkit-data.git} respectively.
 
-    \item \textbf{Comparative Analysis of TTSTL Configurations on INTC MBO Data:} Several TTSTL configurations were applied and contrasted using INTC MBO data from May and June 2024. All configurations yielded more accurate forecasts than raw CNN-LSTM imputations. Superior accuracy was observed in the configuration without external covariates, suggesting limits to the marginal benefits of complicated neural network architectures for low-latency micro-return imputations and highlighting the necessity for further comparisons between parsimonious and hybrid micro-return modelling approaches.
+    \item \textbf{Comparative Analysis of TTSTL Configurations on INTC MBO Data:} Several TTSTL configurations were applied and contrasted using INTC MBO data from May and June 2024. All configurations yielded more accurate forecasts than raw CNN-LSTM imputations. Superior accuracy was observed in the configuration without external covariates, suggesting limits to the marginal benefits of complicated neural network architectures for low-latency micro-return imputations and highlighting the necessity for further comparisons between parsimonious and hybrid micro-return modeling approaches.
 \end{enumerate}
 
 
@@ -204,11 +204,11 @@ This study addresses the limitations of applying deep learning models directly t
 \label{Sect:BckGrnd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-This section is devoted to establishing the data definitions and notation used throughout this manuscript.  In Section~\ref{SubSect:LOB-MBO} the limit order book (LOB) and market-by-order (MBO) processes are formally introduced, including the order flow sequence and its stochastic counterpart.  In Section~\ref{SubSect:SampLOB} event-driven and physical-time sampling schemes are presented, and their roles in discretizing continuous-time data streams are discussed.  These preliminaries underpin the feature extraction and forecasting methodologies developed in later sections.
+This section is devoted to establishing the data definitions and notation used throughout this manuscript.  In Section~\ref{SubSect:LOB-MBO} the limit order book (LOB) and Market-by-Order (MBO) processes are formally introduced, including the order flow sequence and its stochastic counterpart.  In Section~\ref{SubSect:SampLOB} event-driven and physical-time sampling schemes are presented, and their roles in discretizing continuous-time data streams are discussed.  These preliminaries underpin the feature extraction and forecasting methodologies developed in later sections.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{The Limit Order Book and Market-By-Order Data}
+\subsection{The Limit Order Book and Market-by-Order Data}
 \label{SubSect:LOB-MBO}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 Limit order books (LOBs) are a prevalent data structure in modern financial markets, serving as repositories for unexecuted limit orders. All visible orders are displayed and retained until they are either canceled or matched against a suitable counter-order. During trading hours, orders are submitted by buyers and sellers to a matching engine—dedicated hardware within the exchange. These orders typically fall into two broad categories: limit orders and market orders. When a limit order is submitted, both the volume and the maximum (for buys) or minimum (for sells) acceptable price are specified. Such orders remain in the LOB until a matching counterpart is found, or they are adjusted or canceled. In contrast, market orders require only a specified volume and side (buy or sell) at inception and are executed immediately against the best available order on the opposite side. While various matching rules are implemented by different exchanges, the common price-time priority mechanism is the focus of this work. Under this regime, orders are executed first by price competitiveness, and subsequently by arrival time when prices are equal. For a comprehensive treatment of limit order books and their stylized features, reference is made to \cite{parlour2008limit, gould2013limit, jain2024limitorderbooksimulations, richards2019modelling,richards2024score}.
@@ -222,7 +222,7 @@ Limit order books (LOBs) are a prevalent data structure in modern financial mark
 
 Market-by-order (MBO) data offers a more granular view than standard LOB snapshots. The full sequence of messages generated at the trading venue, including order additions, cancellations, and executions, is comprised within this data. Because the entire order flow and execution messages are captured by MBO data, it can be utilized not only to reconstruct the LOB but also to extract detailed microstructure measures. The mathematical framework underpinning these representations is provided in Section~\ref{ap:matreplob} of the supplementary material, drawing heavily on \cite{cont2023mathematical, gould2013limit, panayi2015stochastic}.
 
-In the main text, only basic notation is introduced to preserve the flow of the discussion. Let the value of a given feature $y$ at time $t \in [0, T]$ be represented by $y(t)$. As will be demonstrated in the next section, the LOB can be sampled in several ways. Two time scales are utilized: the first consists of the random times at which the LOB value is changed due to a new limit order addition, cancellation, or market order execution, by which an event-driven time series is produced. The second time scale consists of the regularly spaced observation times at which the LOB snapshot realization may be observed. A random partition \citep[ch.~2]{Protter2005} is sufficient to distinguish between these two schemes. Random partitions are denoted as \( \mathcal{P} = \{\tau_i\}_{i=0}^N \), where \( 0 = \tau_0 \leq \tau_1 \leq \tau_2 \leq \cdots \leq \tau_N = T \) are stopping times, and \( N \) is an almost surely finite integer-valued random variable. For any random partition, let $y_i^{\mathcal{P}} = y(\tau_i)$ represent the observation of the feature $y$ at the corresponding stopping time $\tau_i$. Whenever the random partition is clear from the context, the superscript $\mathcal{P}$ will be omitted. It is noted that if the stopping times are random, $\mathcal{P}$ models the event-driven scheme; otherwise, $\mathcal{P}$ models the time-driven scheme. This distinction is further explained in Section~\ref{SubSect:SampLOB}.
+In the main text, only basic notation is introduced to preserve the flow of the discussion. Let the value of a given feature $y$ at time $t \in [0, T]$ be represented by $y(t)$. As will be demonstrated in the next section, the LOB can be sampled in several ways. Two time scales are utilized: the first consists of the random times at which the LOB value is changed due to a new limit order addition, cancellation, or market order execution, by which an event-driven time series is produced. The second time scale consists of the regularly spaced observation times at which the LOB snapshot realization may be observed. A random partition \citep[Ch.~2]{Protter2005} is sufficient to distinguish between these two schemes. Random partitions are denoted as \( \mathcal{P} = \{\tau_i\}_{i=0}^N \), where \( 0 = \tau_0 \leq \tau_1 \leq \tau_2 \leq \cdots \leq \tau_N = T \) are stopping times, and \( N \) is an almost surely finite integer-valued random variable. For any random partition, let $y_i^{\mathcal{P}} = y(\tau_i)$ represent the observation of the feature $y$ at the corresponding stopping time $\tau_i$. Whenever the random partition is clear from the context, the superscript $\mathcal{P}$ will be omitted. It is noted that if the stopping times are random, $\mathcal{P}$ models the event-driven scheme; otherwise, $\mathcal{P}$ models the time-driven scheme. This distinction is further explained in Section~\ref{SubSect:SampLOB}.
 
 Consider a trading session time interval represented by $[0, T]$, during which a sequence of orders sent by participants is observed. This order flow sequence (OFS) consists of messages denoted by $\mathbf{o} = \{o_i\}_{i=1}^{N-1}$, where each message $o_i = (p_i, z_i, t_i, i_i, s_i, k_i)$ is submitted to the matching engine at time $t_i \in [0, T]$. Here, $p_i \in \mathbb{N}_{0:d}$ denotes the price level, $z_i \in \mathbb{N}$ the size, $i_i \in \mathbb{N}$ a unique message identifier, $s_i \in \{1, -1\}$ the side of the limit order book (with $s_i = 1$ indicating the bid side and $s_i = -1$ the ask side), and $k_i \in \{L, C, M\}$ the message type (limit, cancellation, or market order, respectively). For simplicity, buy (sell) market orders in the order flow sequence $\mathbf{o}$ are identified as limit orders with the maximum (minimum) possible price. That is,
 
@@ -231,12 +231,15 @@ Consider a trading session time interval represented by $[0, T]$, during which a
     (p_o, z_o, t_o, i_o, -1, M) & \equiv (0, z_o, t_o, i_o, -1, L).
 \end{align*}
 
-A large number of participants interact in financial markets with a wide array of trading strategies; the aggregate process of such collections of orders can be modelled stochastically. Let $\boldsymbol{\omega} = (\omega_i : \tau_i \leq T)$ denote the Stochastic Order Flow Sequence (SOFS) where $\omega_i = (\pi_i, \zeta_i, \tau_i, \iota_i, \sigma_i, \kappa_i)$ is the random object whose realizations are given by $o_i$ (explained above). The sequence $\mathbf{o}$ is designated as the Observed Order Flow Sequence (OOFS).
+A large number of participants interact in financial markets with a wide array of trading strategies; the aggregate process of such collections of orders can be modeled stochastically. Let $\boldsymbol{\omega} = (\omega_i : \tau_i \leq T)$ denote the Stochastic Order Flow Sequence (SOFS) where $\omega_i = (\pi_i, \zeta_i, \tau_i, \iota_i, \sigma_i, \kappa_i)$ is the random object whose realizations are given by $o_i$ (explained above). The sequence $\mathbf{o}$ is designated as the Observed Order Flow Sequence (OOFS).
 
 The OOFS $\mathbf{o}$, together with a specified matching rule (price-time in this case), produces MBO data. There are various ways to represent this information. Table \ref{tab:db_itch_mapping} compares two such schemes: Nasdaq’s ITCH 5.0 protocol \cite{nasdaq2014itch} and the MBO data format provided by Databento\footnote{See \url{https://databento.com/docs/venues-and-datasets/xnas-itch?historical=python&live=python&reference=python}}. A key distinction between the OFS and MBO data is that the OFS itself does not reflect matching, while the MBO data is already matched according to the given matching rule. As a result, reconstructing the limit order book (LOB) from MBO data is relatively straightforward; sufficiency is achieved by maintaining two lists—one for the buy side and one for the sell side—backed by hash tables keyed by order IDs. Conversely, reconstructing the LOB directly from the OFS is more complex and computationally intensive, as it requires continuously tracking order priority in addition to storing all outstanding orders. Furthermore, incomplete OFS data is often provided by some data vendors. Approximate LOB reconstruction when only incomplete OFS data is available is discussed in Chapter 3 of \cite{richards2019modelling}.
 
 
 \begin{table}[h!]
+  \caption{Message mapping of Nasdaq's ITCH (NQ) and Databento (DB) messages. The T, F, and C indicators from Databento can be interpreted as Trade, Fill, and Cancel, respectively.}
+  \label{tab:db_itch_mapping}
+
     \centering
     \begin{tabular}{|l|l|l|l|}
         \hline
@@ -251,8 +254,8 @@ The OOFS $\mathbf{o}$, together with a specified matching rule (price-time in th
         \begin{tabular}[c]{@{}l@{}}Trade Message\\ (Non-Cross)\end{tabular}          & P            & T            & \begin{tabular}[c]{@{}l@{}}Indicates execution against \\ a non-displayable order \\ (e.g. Iceberg orders). \\ The transaction side is \\ marked as N.\end{tabular}             \\ \hline
         \begin{tabular}[c]{@{}l@{}}Cross Trade\\ Message\end{tabular}                & Q            & T            & \begin{tabular}[c]{@{}l@{}}Indicates completion of a \\ cross trade. The transaction \\ side is marked as N.\end{tabular}                                                       \\ \hline
     \end{tabular}
-    \caption{Message mapping of Nasdaq's ITCH (NQ) and Databento (DB) messages. The T, F, and C indicators from Databento can be interpreted as Trade, Fill, and Cancel, respectively.}
-    \label{tab:db_itch_mapping}
+    
+    
 \end{table}
 
 
@@ -276,20 +279,20 @@ $$
 \subsection{Sampling LOB and MBO data}
 \label{SubSect:SampLOB}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-Determining the optimal sampling scheme for high-frequency financial data remains an open question \cite{dutta2023review}.  Many researchers favor event‐driven schemes—i.e., using random stopping times tied to market events—rather than physical time-based sampling.  Indeed, some studies report that, in practice, event‐driven and uniform‐time sampling yield very similar results \cite{easley2021microstructure}. However, other work has indicated that trade time sampling, volume clock sampling or other approaches can affect the ability to discern certain statistical structure in LOB data, see discussion in \cite{koukorinis4959155memory}. Therefore, the fact that such sampling schemes is found to not materially affect the DL based modelling approaches may be indicative of the fact that such statistical structure is not being captured adequately by such DL methods in the first place, rather than an evidence that such sampling method distinctions are inconsequential.
+Determining the optimal sampling scheme for high-frequency financial data remains an open question \cite{dutta2023review}.  Many researchers favor event‐driven schemes—i.e., using random stopping times tied to market events—rather than physical time-based sampling.  Indeed, some studies report that, in practice, event‐driven and uniform‐time sampling yield very similar results \cite{easley2021microstructure}. However, other work has indicated that trade time sampling, volume clock sampling or other approaches can affect the ability to discern certain statistical structure in LOB data, see discussion in \cite{koukorinis4959155memory}. Therefore, the fact that such sampling schemes is found to not materially affect the DL based modeling approaches may be indicative of the fact that such statistical structure is not being captured adequately by such DL methods in the first place, rather than an evidence that such sampling method distinctions are inconsequential.
 
-Multiple time scales interact when analyzing LOB and MBO data. These can be classified into event- and physical time-driven sampling schemes. Event-driven sampling schemes use market events such as trade times, order submission times, cancellation times, flash-crashes which can be effectively modelled as random stopping times. Physical time-driven sampling schemes use deterministic sampling schemes which might or might not be uniform. The sampling schemes interacting in this study are detailed below
+Multiple time scales interact when analyzing LOB and MBO data. These can be classified into event- and physical time-driven sampling schemes. Event-driven sampling schemes use market events such as trade times, order submission times, cancellation times, flash-crashes which can be effectively modeled as random stopping times. Physical time-driven sampling schemes use deterministic sampling schemes which might or might not be uniform. The sampling schemes interacting in this study are detailed below
 
 \begin{itemize}
     \item \textbf{Event-Driven Sampling Schemes}
           \begin{itemize}
               \item \textbf{All-Events Scheme}: Samples the quantities of interest at every market event, such as when an order is added, canceled, or executed. Denote the corresponding random partition as $\mathcal{P}^{(E)} = \{\tau^{(E)}_j\}_{j=0}^{N^{(E)}}$, where $\tau^{(E)}_j$ is the time of the $j$-th event. This partition will appear in the implementation of the CNN-LSTM neural network (see Section \ref{subsec:cnn_lstm}) and the order flow imbalance calculation (see Table \ref{tab:features} in Section \ref{subsec:data_collection}).
-              \item \textbf{Trades Scheme}: Samples the quantities of interest each time a trade occurs. Denote the corresponding random partition as $\mathcal{P}^{(T)} = \{\tau^{(T)}_j\}_{j=0}^{N^{(T)}}$, where $\tau^{(T)}_j$ is the time of the $j$-th trade. This partition will appear in the definition of the Roll's measure, Roll's impact measure, Kyle's $\lambda$, modified  Amihud's measure, and volume-synchornized probability of informed trading.
+              \item \textbf{Trades Scheme}: Samples the quantities of interest each time a trade occurs. Denote the corresponding random partition as $\mathcal{P}^{(T)} = \{\tau^{(T)}_j\}_{j=0}^{N^{(T)}}$, where $\tau^{(T)}_j$ is the time of the $j$-th trade. This partition will appear in the definition of Roll's measure, Roll's impact measure, Kyle's $\lambda$, modified Amihud's measure, and volume-synchronized probability of informed trading (see Table~\ref{tab:features} in Section~\ref{sec:data} for detailed definitions and references).
           \end{itemize}
-    \item \textbf{Phyisical Time-Driven Sampling Schemes}
-          \begin{itemize}
-              \item \textbf{Uniform Sampling:} Samples the quantities of interest on a uniform partition. Denote the corresponding deterministic partition as $\mathcal{P}^{(U)}_{\delta} = \{\delta j\}_{j=0}^{N^{(U)}}$, where $\delta = T / N^{(U)}$ corresponds to a fixed sampling period. This scheme is most readily applied within the time-series econometrics framework. The uniform sampling scheme will be adopted for the Hybrid ARMAX-GARCH-DeepLOB model (see Section \ref{subsec:armax_garch_paper}). All of the endogenous and exogenous variables in the model will be sampled according to this scheme either by temporal aggregation or point sampling.
-          \end{itemize}
+    \item \textbf{Physical Time-Driven Sampling Schemes}
+        \begin{itemize}
+            \item \textbf{Uniform Sampling:} Samples the quantities of interest on a uniform partition. Denote the corresponding deterministic partition as $\mathcal{P}^{(U)}_{\delta} = \{\delta j\}_{j=0}^{N^{(U)}}$, where $\delta = T / N^{(U)}$ corresponds to a fixed sampling period. This scheme is most readily applied within the time-series econometrics framework. The uniform sampling scheme will be adopted for the Hybrid ARMAX-GARCH-DeepLOB model (see Section~\ref{subsec:armax_garch_paper}). All of the endogenous and exogenous variables in the model will be sampled according to this scheme either by temporal aggregation (i.e., integrating a quantity of interest over the duration of the time bar) or point sampling (i.e., recording the quantity exactly at the right endpoint of the time bar), as detailed in Table~\ref{tab:features}.
+        \end{itemize}
 \end{itemize}
 
 In this context, the intervals defined by a partition \(\mathcal{P}\) are called \emph{bars}. While various sampling schemes such as volume bars can be defined (see Appendix \ref{ap:sampling_schemes} for detailed constructions), this work relies on two primary partitions. First, the \emph{all-events} partition \(\mathcal{P}^{(E)} = \{\tau^{(E)}_j\}_{j=0}^{N^{(E)}}\), where \(\tau^{(E)}_j\) denotes the time of the \(j\)-th market event, is employed to generate inputs for the CNN-LSTM network. Second, the \emph{time bars} partition \(\mathcal{P}^{(U)}\) is used for the hybrid model's adapter module, defined by
@@ -309,7 +312,7 @@ Formally, let $B^D_d$, $d = 1, 2, \dots, D$ denote the $9:45$ am to $3:45$ pm\fo
 where each backbone time bar \(B^B_{d,k}\) has length \(\Delta^B\).  Within each backbone time bar, the uniform partition
 \[
     \mathcal P^{(U)}_{\Delta^A}\bigl(B^B_{d,k}\bigr)
-    =\{\,B^A_{d,k,\ell}:\ell=1,\dots,L\}
+    =\{\,B^A_{d,k,\ell}:\ell=1,\dots,L\},
 \]
 is applied to produce adapter time bars of length \(\Delta^A\).  Finally, each adapter time bar \(B^A_{d,k,i}\) is partitioned by
 \[
@@ -360,7 +363,7 @@ where $\tilde{\mathbf{l}}^{(L)}(\tau^{(E)}_x)$ is a whitened (normalized) versio
     \end{bmatrix}
     \in \mathbb{R}^{100 \times 20},
 \]
-where $\widetilde{\mathbf{OF}}^{(L)}_i$ is a prewithened version of the order flows (as defined in Table~\ref{tab:features} and the comments below in Section~\ref{subsec:data_collection})
+where $\widetilde{\mathbf{OF}}^{(L)}_i$ is a prewhitened version of the order flows (as defined in Table~\ref{tab:features} and the comments below in Section~\ref{subsec:data_collection})
 \[
     \mathbf{OF}^{(L)}_i
     =
@@ -388,7 +391,7 @@ A ternary quantization of one of these scores is then employed as a target varia
         -1, & d_i^{(j)} < -\theta,              \\[6pt]
         0,  & -\theta \le d_i^{(j)} \le \theta, \\[6pt]
         1,  & d_i^{(j)} > \theta,
-    \end{cases}
+    \end{cases},
 \]
 for a fixed threshold \(\theta \in (0, 1)\). While this ternary labeling is straightforward, it introduces two tuning parameters—namely the prediction horizon \(h\) used to compute \(d_i^{(j)}\) and the threshold \(\theta\). In practice, selecting values that remain robust across varying market regimes can be challenging and may lead to instability in predictive performance. Consequently, the CNN-LSTM architecture proposed in \cite{kolm2023deep} adopts a physical-time-driven midprice return with a latency correction \(\lambda \in (0, h_1)\) at multiple horizons \(h_1, h_2, \dots, h_K \in (0, \infty)\) . In that setup, the target is
 \[
@@ -421,7 +424,7 @@ where $\delta > 0$ denotes the sampling period for the overarching hybrid model 
 \]
 This construction yields a continuous-valued micro-return that is directly compatible with time-series regression and volatility modeling.
 
-As explained in Appendix~\ref{ap:nn_specs}, the CNN-LSTM network takes withened order flow arrays $\mathbf{OF}^{\mathcal{P}^{(E)}}_{i - 99:i}$ as inputs and micro-returns $\tilde{r}_i^{w, \delta}$, as defined in expression~\eqref{eq:micro_ret_cnnlstm}, as outputs. The training loop aims to minimize the mean squared error loss
+As explained in Appendix~\ref{ap:nn_specs}, the CNN-LSTM network takes whitened order flow arrays $\mathbf{OF}^{\mathcal{P}^{(E)}}_{i - 99:i}$ as inputs and micro-returns $\tilde{r}_i^{w, \delta}$, as defined in expression~\eqref{eq:micro_ret_cnnlstm}, as outputs. The training loop aims to minimize the mean squared error loss
 
 \[
     \text{Loss}(\cnnlstm, \tilde{\mathbf{r}}^{w, \delta})
@@ -432,14 +435,14 @@ As explained in Appendix~\ref{ap:nn_specs}, the CNN-LSTM network takes withened 
 \]
 Approximate minimization of this objective function is carried out through the ADAM optimizer \cite{kingma2014adam} with a learning rate of \(10^{-4}\), exponential decay rates \(\beta_1 = 0.9\) and \(\beta_2 = 0.999\), a denominator offset of \(10^{-8}\), and a batch size of \(32\). The final weights are those yielding the smallest validation loss.
 
-At each sampling time bar, the CNN-LSTM output is measurable with respect to the $\sigma$-algebra generated by past order-flow events. Consequently, when included as a regressor in the Hybrid ARMAX–GARCH model, it satisfies the standard exogeneity conditions required for CMLE under appropriate independence assumptions.
+At each sampling time bar, the CNN-LSTM output is measurable with respect to the $\sigma$-algebra generated by past order-flow events. Consequently, when included as a regressor in the Hybrid ARMAX–GARCH model, it satisfies the standard exogeneity conditions required for Conditional Maximum Likelihood Estimation (CMLE) under appropriate independence assumptions.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Feature Processing: The Backbone Module}
 \label{subsec:feature_extraction}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The feature processing process is carried out in three steps. First, the CNN-LSTM network is trained as described in Section~\ref{subsec:cnn_lstm}. The estimated weights $\hat{\mathbf{W}}$ of the network are stored to define the embedding $\phi_{\hat{\mathbf{W}}}$. Second, all covariates are tested for stationarity to avoid spurious relationships \cite{granger1974spurious, phillips1986understanding}. This step applies the Augmented Dickey--Fuller (ADF) \cite{said1984testing, hamilton_time_1994, banerjee1993co}, Phillips--Perron (PP) \cite{phillips1986understanding, hamilton_time_1994, banerjee1993co}, and Kwiatkowski--Phillips--Schmidt--Shin (KPSS) \cite{kwiatkowski1992testing} tests on every non-overlapping window, summarizing rejections to guide transformations or variable eliminations. Section \ref{ap:stationarity_testing} in the supplementary material provides further details on the assumptions, hypotheses, test statistics, and critical regions of the stationarity tests. Third, the correlation matrix of the remaining covariates is examined to identify and mitigate potential multicollinearity by dropping variables correlated above some user-defined absolute threshold. Randomization is employed to avoid systematic bias in variable retention when strong correlation clusters are present. The highly correlated covariates are eliminated by means of a randomized greedy graph-based algorithm. These steps ensure that all covariates entering the adapter model satisfy the regularity conditions typically required to avoid spurious regression and to justify likelihood-based inference.
+The feature processing is conducted in three steps. First, the CNN-LSTM network is trained as described in Section~\ref{subsec:cnn_lstm}. The estimated weights $\hat{\mathbf{W}}$ of the network are stored to define the embedding $\phi_{\hat{\mathbf{W}}}$, which maps the stationary order flow sequences to the latent representation of the network's penultimate layer. Second, all covariates are tested for stationarity to avoid spurious relationships \cite{granger1974spurious, phillips1986understanding}. This step applies the Augmented Dickey--Fuller (ADF) \cite{said1984testing, hamilton_time_1994, banerjee1993co}, Phillips--Perron (PP) \cite{phillips1986understanding, hamilton_time_1994, banerjee1993co}, and Kwiatkowski--Phillips--Schmidt--Shin (KPSS) \cite{kwiatkowski1992testing} tests on every non-overlapping window, summarizing rejections to guide transformations or variable eliminations. Section~\ref{ap:stationarity_testing} in the supplementary material provides further details on the assumptions, hypotheses, test statistics, and critical regions of the stationarity tests. Third, the correlation matrix of the remaining covariates is examined to identify and mitigate multicollinearity by removing variables whose pairwise correlations exceed a user-defined absolute threshold. Randomization is employed to avoid systematic bias in variable retention when strong correlation clusters are present. The highly correlated covariates are eliminated by means of a randomized greedy graph-based algorithm. These steps ensure that all covariates entering the adapter model satisfy the regularity conditions typically required to avoid spurious regression and to justify likelihood-based inference.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -447,7 +450,7 @@ The feature processing process is carried out in three steps. First, the CNN-LST
 \label{subsec:armax_garch_paper}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-In this work, a hybrid method is developed to incorporate generative features from the DeepLOB imputed values into a econometric regression model for micro-price. The details of how this is achieved and the benefits and advantages of this approach with regards to three factors: computational efficiency in high frequency settings of two-time scale transfer learning; statistical estimation accuracy and analysis for uncertainty quantification of forecasts and predictive distributions; and interpretability of regression result structures.
+In this work, a hybrid method is developed to incorporate generative features from the DeepLOB imputations into a econometric regression model for micro-price. The details of how this is achieved and the benefits and advantages of this approach with regards to three factors: computational efficiency in high-frequency settings of two-time scale transfer learning; statistical estimation accuracy and analysis for uncertainty quantification of forecasts and predictive distributions; and interpretability of regression result structures.
 
 Autoregressive Moving Average with Exogenous variables-Generalized Autoregressive Conditional Heteroskedasticity models, or ARMAX-GARCH models, are common in financial time series analysis as its structure allows to approximate complex dynamics by implementing a dynamic dependence of endogenous values combined with exogenous variables while allowing for a conditionally heteroskedastic volatility structure which can capture volatility clustering and leverage effects. The process $\{r_j\}_{j \in \Z}$ is said to follow an ARMAX-GARCH process if it satisfies the following equation
 
@@ -455,30 +458,30 @@ Autoregressive Moving Average with Exogenous variables-Generalized Autoregressiv
     \phi(B) \left( r_j - c - \mathbf{b}^T \mathbf{x}_j \right) = \theta(B) \varepsilon_j, \quad j \in \Z.
     \label{eq:armax}
 \end{equation}
-Here, $\phi(z) = 1 - \phi_1 z - \phi_2 z^2 - \dots - \phi_p z^p$ and $\theta(z) = 1 + \theta_1 z + \theta_2 z^2 + \dots + \theta_q z^q$ are the autoregressive and moving average polynomials, $B$ is the backshift operator, and $\{ \mathbf{x}_j \}_{j \in \Z}$ is a covariate strongly stationary process such that the innovations are independent of the history of the process. That is, $\varepsilon_j$ is independent of $\{ \mathbf{x}_j \}_{j = - \infty : j}$ for all $j \in \Z$. On its simplest form, the noise term follows a GARCH($P$, $Q$) volatility structure. Specifically, let $\{ \varepsilon_j \}_{j \in \Z}$ be a stochastic process satisfying
+Here, $\phi(z) = 1 - \phi_1 z - \phi_2 z^2 - \dots - \phi_p z^p$ and $\theta(z) = 1 + \theta_1 z + \theta_2 z^2 + \dots + \theta_q z^q$ are the autoregressive and moving average polynomials, $B$ is the backshift operator, and $\{ \mathbf{x}_j \}_{j \in \Z}$ is a covariate strongly stationary process such that the innovations are independent of the history of the process. That is, $\varepsilon_j$ is independent of $\{ \mathbf{x}_j \}_{j = - \infty : j}$ for all $j \in \Z$. On its simplest form, the noise term follows a GARCH($P$, $Q$) volatility structure. Precisely, let $\{ \varepsilon_j \}_{j \in \Z}$ be a stochastic process satisfying
 
 \begin{equation}
     \begin{cases}
         \varepsilon_j = \sigma_j \,\eta_j, \\[6pt]
-        \sigma_j^2 = \omega + \sum^{Q}_{k = 1} \alpha_k \varepsilon^2_{j - k} + \sum^P_{k = 1} \beta_k \sigma_{j - k}^2.
+        \sigma_j^2 = \omega + \sum^{Q}_{k = 1} \alpha_k \varepsilon^2_{j - k} + \sum^P_{k = 1} \beta_k \sigma_{j - k}^2,
     \end{cases}
     \label{eq:garch}
 \end{equation}
-Where $\omega > 0$, $\alpha_k, \beta_k \geq 0$, and $\{ \eta_j\}_{j \in \Z}$, is a sequence of i.i.d. random variables with zero mean and unit variance. The last equation can be rewritten as $\theta(B) \sigma^2_j = \omega + \alpha(B) \varepsilon^2_j$ where $\alpha(z) := \sum^Q_{k = 1} \alpha_k z^k$ and $\beta(z) := 1 - \sum^P_{k = 1} \beta_k z^k$.
+where $\omega > 0$, $\alpha_k, \beta_k \geq 0$, and $\{ \eta_j\}_{j \in \Z}$, is a sequence of i.i.d. random variables with zero mean and unit variance. The last equation can be rewritten as $\theta(B) \sigma^2_j = \omega + \alpha(B) \varepsilon^2_j$ where $\alpha(z) := \sum^Q_{k = 1} \alpha_k z^k$ and $\beta(z) := 1 - \sum^P_{k = 1} \beta_k z^k$.
 
-Further requirements over the polynomials $\alpha(\cdot)$, $\beta(\cdot)$, $\phi(\cdot)$, and $\theta(\cdot)$ are necessary to ensure stability of the stochastic processes satisfying equations~\eqref{eq:armax} and \eqref{eq:garch} as well as the asymptotic efficiency of its CMLE estimators (see~\cite{mejia2025asymptotic}). The dynamics of equation \eqref{eq:garch} can be re-expressed as
+To ensure the stability of the processes in Eq.~\eqref{eq:armax} and \eqref{eq:garch}, and to guarantee the asymptotic efficiency of the CMLE estimators, further restrictions must be imposed on the roots of the polynomials $\alpha(\cdot)$, $\beta(\cdot)$, $\phi(\cdot)$, and $\theta(\cdot)$ (for a detailed technical discussion, see \cite{mejia2025asymptotic}). The dynamics of equation \eqref{eq:garch} can be re-expressed as
 
 \begin{equation}
-    \mathbf{z}_j = \boldsymbol{\eta}_j + \mathbf{A}_j \mathbf{z}_{j - 1}
+    \mathbf{z}_j = \boldsymbol{\eta}_j + \mathbf{A}_j \mathbf{z}_{j - 1},
     \label{eq:markov_rep_garch}
 \end{equation}
-where,
+where\footnote{For the sake of precision, note that $\boldsymbol{\eta}_j$ is a vector of length $P+Q$ whose first entry is $\omega \eta_j^2$, its $(Q+1)$-th entry is $\omega$, and all other entries are zero.}
 
 \[
     \mathbf{z}_j =
     \begin{pmatrix}
         \varepsilon_j^2 & \varepsilon_{j - 1}^2 & \cdots & \varepsilon_{j - Q + 2}^2 & \varepsilon_{j - Q + 1}^2 & \sigma^2_{j} & \sigma^2_{j - 1} & \cdots & \sigma^2_{j - P + 2} & \sigma^2_{j - P + 1} \\
-    \end{pmatrix}^T
+    \end{pmatrix}^T,
 \]
 
 
@@ -486,7 +489,7 @@ where,
     \mathbf{\eta}_j =
     \begin{pmatrix}
         \omega \eta_j^2 & 0 & \cdots & 0 & 0 & \omega & 0 & \cdots & 0 & 0 \\
-    \end{pmatrix}^T
+    \end{pmatrix}^T,
 \]
 
 
@@ -505,7 +508,7 @@ where,
         0                 & 0                 & \cdots & 0                       & 0                 & 0                & 0                & \cdots & 1                      & 0
     \end{pmatrix}.
 \]
-This representation for the GARCH dynamic is useful as it allows one to define via the eigen structure of the transition matrix, the stability of the time series evolution. Consider the top Lyapunov exponent, which is defined as $\rho(\mathbf{A}) = \lim_{j \rightarrow \infty} \frac{1}{j} \E \left \{  \log\norma{\mathbf{A}_j \mathbf{A}_{j - 1} \cdots \mathbf{A}_1} \right \}$ with $\norma{\cdot}$ any matrix norm in the space of $(p + q) \times (p + q)$ matrices. Then, it can be shown that a necessary and sufficient condition for the existence of a strictly stationary solution to \eqref{eq:garch} is given by $\rho(\mathbf{A}) < 0$. \citep[thm.~2.4.]{francq2019garch}. For $P = Q = 1$, the top Lyapunov exponent condition $\rho(\mathbf{A}) < 0$ reduces to $\E \left\{ \log \left( \alpha \eta_1^2 + \beta \right) \right\} < 0$. In contrast, the condition $\alpha + \beta < 1$ is necessary and sufficient for second-order stationarity. \citep[thm.~2.5.]{francq2019garch}
+ This representation for the GARCH dynamic is useful as it allows one to define via the eigen structure of the transition matrix, the stability of the time series evolution. Consider the top Lyapunov exponent, which is defined as $\rho(\mathbf{A}) = \lim_{j \rightarrow \infty} \frac{1}{j} \E \left \{  \log\norma{\mathbf{A}_j \mathbf{A}_{j - 1} \cdots \mathbf{A}_1} \right \}$ with $\norma{\cdot}$ any matrix norm in the space of $(p + q) \times (p + q)$ matrices. Then, it can be shown that a necessary and sufficient condition for the existence of a strictly stationary solution to \eqref{eq:garch} is given by $\rho(\mathbf{A}) < 0$ \citep[thm.~2.4.]{francq2019garch}. For $P = Q = 1$, the top Lyapunov exponent condition $\rho(\mathbf{A}) < 0$ reduces to $\E \left\{ \log \left( \alpha \eta_1^2 + \beta \right) \right\} < 0$. In contrast, the condition $\alpha + \beta < 1$ is necessary and sufficient for second-order stationarity \citep[thm.~2.5.]{francq2019garch}.
 
 Ergodicity is an important property that helps ensuring desirable properties of statistical estimators \citep[see~p.~367]{francq2019garch}. Determining ergodicity in a general GARCH(\(P\), \(Q\)) process is often more complicated than establishing its stationarity. Early studies addressed mixing properties \cite{boussama1998ergodicite, carrasco2002mixing}. A straightforward application of Theorem~2.8 from \cite{straumann_quasi-maximum-likelihood_2006} demonstrates that \(\rho(\mathbf{A}) < 0\) is sufficient to guarantee the ergodicity of the process \(\{\varepsilon_j\}_{j \in \mathbb{Z}}\).
 
@@ -517,13 +520,14 @@ If the joint process $\{ (\varepsilon_j, \mathbf{x}_j) \}_{j \in \Z}$ is ergodic
 
 The Hybrid ARMAX-GARCH-DeepLOB model shares the structure of the ARMAX-GARCH model whilst incorporating a generative feature embedding using the CNN-LSTM DL model architecture to produce interaction time series covariates from the LOB structures which effectively produces a special construction of the covariate process to combine information from the OF and the LOB.
 
-As explained in Section~\ref{SubSect:SampLOB}, the trading session will be partitioned into nested backbone, adapter, and sampling time bars denoted $B^B_{d,k}$, $B^A_{d,k,\ell}$, and $B^S_{d,k,\ell,j}$ respectively ($B^S_{d,k,\ell,j} \subseteq B^A_{d,k,\ell} \subseteq B^B_{d,k}$). Let the microreturn in the sampling bar $B^S_{d, k, \ell, j}$ be defined as
+As explained in Section~\ref{SubSect:SampLOB}, the trading session will be partitioned into nested backbone, adapter, and sampling time bars denoted $B^B_{d,k}$, $B^A_{d,k,\ell}$, and $B^S_{d,k,\ell,j}$ respectively ($B^S_{d,k,\ell,j} \subseteq B^A_{d,k,\ell} \subseteq B^B_{d,k}$). Let the micro-return in the sampling bar $B^S_{d, k, \ell, j}$ be defined as
 
 $$
-    r^w\left( B^S_{d, k, \ell, j} \right) = \frac{p^w\left( \inf B^S_{d, k, \ell, j} + \delta \right) - p^w\left( \inf B^S_{d, k, \ell, j}\right)}{p^w\left( \inf B^S_{d, k, \ell, j}\right)}
+    r^w\left( B^S_{d, k, \ell, j} \right) = \frac{p^w\left( \inf B^S_{d, k, \ell, j} + \delta \right) - p^w\left( \inf B^S_{d, k, \ell, j}\right)}{p^w\left( \inf B^S_{d, k, \ell, j}\right)},
 $$
+where $\inf B^S_{d, k, \ell, j}$ denotes the start time (infimum) of the sampling bar interval.
 
-Similarly, denote the set of covariates listed in Section~\ref{subsec:data_collection} available after observing the sampling time bar $B^S_{d, k, \ell, j}$ as $\mathbf{x}_{d, k, \ell, j}$. The Hybrid ARMAX-GARCH-DeepLOB model assumes that the micro-return process follows an ARMAX-GARCH stochastic process, with the covariate term provided by the embedding $\phi_{\mathbf{W}}$ encoding the features generated by last layer of the CNN-LSTM neural network as explicitly defined in the Section~\ref{subsubsec:cnn_lstm_architecture} of the Appendix. That is, for $j \in \Z$
+Similarly, denote the set of covariates listed in Section~\ref{subsec:data_collection} available after observing the sampling time bar $B^S_{d, k, \ell, j}$ as $\mathbf{x}_{d, k, \ell, j}$. The Hybrid ARMAX-GARCH-DeepLOB model assumes that the micro-return process follows an ARMAX-GARCH stochastic process, with the covariate term provided by the embedding $\phi_{\mathbf{W}}$ (where $\mathbf{W}$ denotes the generic network weights, as opposed to the estimated weights $\hat{\mathbf{W}}$ used during inference), encoding the features generated by the last layer of the CNN-LSTM neural network as explicitly defined in the Section~\ref{subsubsec:cnn_lstm_architecture} of the Appendix. That is, for $j \in \Z$
 
 \begin{equation}
     \begin{cases}
@@ -533,7 +537,7 @@ Similarly, denote the set of covariates listed in Section~\ref{subsec:data_colle
     \end{cases}
     \label{eq:hybrid_armax_garch}
 \end{equation}
-where \(\phi(z)\) and \(\theta(z)\) have roots lying outside the unit circle, \(\{\eta_{d, k, \ell, j}\}\) is an i.i.d. sequence of random variables, and $i_j = \max\left\{i : \tau^{(E)}_{i} \in B^S_{d, k, \ell, 1:j} \right\}$ is the index of the last message that took place before sampling time bar $B^S_{d, k, \ell, 1:j}$. Let \(\varepsilon_{d, k, \ell, j}\) be independent of the history of the joint covariate process \( \left\{ \left( \mathbf{x}_t, \widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i_{t} - 99:i_{t}} \right) \right\}_{t = -\infty : j - 1}\) to avoid biased estimators \citep[ch.~9]{hamilton_time_1994}. A second option, called the parsimonious Hybrid ARMAX-GARCH-DeepLOB model replaces the generative embedding $\phi_{\mathbf{W}}$ with the CNN-LSTM raw output, denoted $\mathrm{CNNLSTM}_{\mathbf{W}}$ to indicate the dependence on the weights of the neural network.
+where \(\phi(z)\) and \(\theta(z)\) have roots lying outside the unit circle, \(\{\eta_{d, k, \ell, j}\}\) is an i.i.d. sequence of random variables, and $i_j = \max\left\{i : \tau^{(E)}_{i} \in B^S_{d, k, \ell, 1:j} \right\}$ is the index of the last message that took place before sampling time bar $B^S_{d, k, \ell, 1:j}$. Let \(\varepsilon_{d, k, \ell, j}\) be independent of the history of the joint covariate process \( \left\{ \left( \mathbf{x}_t, \widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i_{t} - 99:i_{t}} \right) \right\}_{t = -\infty : j - 1}\) to avoid biased estimators \citep[Ch.~9]{hamilton_time_1994}. A second option, called the parsimonious Hybrid ARMAX-GARCH-DeepLOB model, replaces the generative embedding $\phi_{\mathbf{W}}$ in Eq.~\eqref{eq:hybrid_armax_garch} entirely with the raw CNN-LSTM output. This output is denoted by $\mathrm{CNNLSTM}_{\mathbf{W}}$ to indicate its dependence on the neural network weights.
 
 %In addition, the ergodicity of the multivariate stochastic process \(\left\{(\varepsilon_j,\mathbf{x}_{j - 1},CL_{j - 1})\right\}_{j \in \mathbb{Z}}\) is sufficient to ensure the ergodicity of the solution to \eqref{eq:hybrid_armax_garch}.
 
@@ -544,7 +548,7 @@ where \(\phi(z)\) and \(\theta(z)\) have roots lying outside the unit circle, \(
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The proposed framework incorporates information from the OFS and the LOB to obtain micro-return forecasts. Let $\mathbb{F}^{\boldsymbol{\omega}} = \left ( \SigAl^{\boldsymbol{\omega}}(t) \right)_{t \geq 0}$ and $\mathbb{F}^{X} = \left( \SigAl^X(t) \right)_{t \geq 0}$ be the completed filtrations generated by the OFS and LOB process, respectively. The optimal forecast of the micro-return given all the information in the OFS up to the sampling time bar $B^S_{d,k,\ell,j}$ is $\E \left \{r^w\left( B^S_{d, k, \ell, j - 1} \right)  \big | \SigAl^{\boldsymbol{\omega}}\left(\sup B^S_{d, k, \ell, j - 1} \right) \right \}$. This forecast is typically infeasible due to the complexity of $\SigAl^{\boldsymbol{\omega}}\left(\sup B^S_{d, k, \ell, j - 1} \right)$. The optimal forecast can be approximated by combining information from the filtrations $\mathbb{F}^{\boldsymbol{\omega}}$ and $\mathbb{F}^{X}$ additively. Moreover, a correction can be applied to account for micro-return under- and over-reactions. Specifically
+The proposed framework incorporates information from the OFS and the LOB to obtain micro-return forecasts. Let $\mathbb{F}^{\boldsymbol{\omega}} = \left( \SigAl^{\boldsymbol{\omega}}(t) \right)_{t \geq 0}$ and $\mathbb{F}^{X} = \left( \SigAl^X(t) \right)_{t \geq 0}$ be the completed filtrations generated by the OFS and LOB process, respectively. The optimal forecast of the micro-return given all the information in the OFS up to the sampling time bar $B^S_{d,k,\ell,j}$ is $\E \left \{r^w\left( B^S_{d, k, \ell, j - 1} \right)  \big | \SigAl^{\boldsymbol{\omega}}\left(\sup B^S_{d, k, \ell, j - 1} \right) \right \}$, where $\sup B^S_{d, k, \ell, j - 1}$ denotes the end time (supremum) of the sampling bar interval. This forecast is typically infeasible due to the complexity of $\SigAl^{\boldsymbol{\omega}}\left(\sup B^S_{d, k, \ell, j - 1} \right)$. The optimal forecast can be approximated by combining information from the filtrations $\mathbb{F}^{\boldsymbol{\omega}}$ and $\mathbb{F}^{X}$ additively. Moreover, a correction can be applied to account for micro-return under- and over-reactions. Specifically
 
 \begin{align*}
 \E \left \{r^w\left( B^S_{d, k, \ell, j - 1} \right)  \big | \SigAl^{\boldsymbol{\omega}}\left(\sup B^S_{d, k, \ell, j - 1} \right) \right \} &\approx c + \mathbf{b}_{\boldsymbol{\omega}}^T \mathbf{x}_{d, k, \ell, j - 1} + \mathbf{b}_{\mathbf{X}}^T \phi_{\mathbf{W}} \left( \widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i_{j - 1} - 99:i_{j - 1}} \right) + \sum^{\infty}_{k = 1} \psi_k \varepsilon_{d, k, \ell,j - k}.
@@ -569,7 +573,7 @@ Event driven Order Flow data are encoded by the backbone module via expert‐sel
 Accurately capturing arbitrary non‐stationary relationships within a single model is infeasible, as each trading session presents a continuum of heterogeneous dynamics that intensify over longer time bars. Adapter time bars, being much shorter, tend to exhibit more stable local patterns than backbone time bars. Framing the micro-return dynamics within each adapter time bar as a distinct estimation task naturally places the method within a transfer-learning paradigm.
 
 
-The TTSTL framework captures locally stationary relationships by leveraging representations learned by a backbone module (see Figure~\ref{fig:ttstl}) which comprises microstructural features (see Section~\ref{subsec:data_collection}), a generative embedding (see Section~\ref{subsec:cnn_lstm}), stationarity testing, and covariance matrix analysis (see Section~\ref{subsec:feature_extraction}).  The adapter model (Section~\ref{subsec:armax_garch_paper}) is retrained at the adapter time‐bar frequency using Conditional Maximum Likelihood Estimation (CMLE; Section~\ref{subsec:cmle_props_paper}), with model parsimony controlled via model subspace selection (Section~\ref{subsec:covariates_selection}).  Incoming MBO data are preprocessed into event‐driven LOB data (EDLOB in Figure~\ref{fig:ttstl}) and physical time–driven microstructural features (TDMF in Figure~\ref{fig:ttstl}), then stored and broadcast to all components.  The backbone ingests EDLOB to train the CNN‐LSTM network, while stationarity of the TDMF series is assessed to avoid spurious relationships.\footnote{As noted in Section~\ref{subsec:cnn_lstm}, CNN‐LSTM inputs are order flow measures that remain stationary at the adapter frequency; hence, their learned features are not tested for stationarity.}  After computing the covariance matrix and eliminating redundant variables, the backbone exports both the CNN‐LSTM weights (W in Figure~\ref{fig:ttstl}) and the full covariate set (F in Figure~\ref{fig:ttstl})  (comprising the CNN‐LSTM’s final‐layer features and the variables listed in Table~\ref{tab:mbo_data} which pass the stationarity tests declared in Section~\ref{subsec:feature_extraction}).  The interface then applies the procedure of Section~\ref{subsec:covariates_selection} to reduce $F$ to a parsimonious subset $S$ (Figure~\ref{fig:ttstl}), continuously monitoring $S$ for regime shifts.  Finally, $S$ is passed to the adapter, which generates one‐step‐ahead forecasts.
+The TTSTL framework captures locally stationary relationships by leveraging representations learned by a backbone module (see Figure~\ref{fig:ttstl}) which comprises microstructural features (see Section~\ref{subsec:data_collection}), a generative embedding (see Section~\ref{subsec:cnn_lstm}), stationarity testing, and covariance matrix analysis (see Section~\ref{subsec:feature_extraction}).  The adapter model (Section~\ref{subsec:armax_garch_paper}) is retrained at the adapter time‐bar frequency using Conditional Maximum Likelihood Estimation (CMLE; Section~\ref{subsec:cmle_props_paper}), with model parsimony controlled via model subspace selection (Section~\ref{subsec:covariates_selection}). Incoming MBO data are preprocessed into Event-Driven LOB data (denoted as EDLOB in Figure~\ref{fig:ttstl}) and Time-Driven Microstructural Features (denoted as TDMF in Figure~\ref{fig:ttstl}), then stored and broadcast to all components. The backbone ingests EDLOB to train the CNN‐LSTM network, while stationarity of the TDMF series is assessed to avoid spurious relationships\footnote{As noted in Section~\ref{subsec:cnn_lstm}, CNN‐LSTM inputs are order flow measures that remain stationary at the adapter frequency; hence, their learned features are not tested for stationarity.}.  After computing the covariance matrix and eliminating redundant variables, the backbone exports both the CNN‐LSTM weights (W in Figure~\ref{fig:ttstl}) and the full covariate set (F in Figure~\ref{fig:ttstl})  (comprising the CNN‐LSTM’s final‐layer features and the variables listed in Table~\ref{tab:mbo_data} which pass the stationarity tests declared in Section~\ref{subsec:feature_extraction}).  The interface then applies the procedure of Section~\ref{subsec:covariates_selection} to reduce $F$ to a parsimonious subset $S$ (Figure~\ref{fig:ttstl}), continuously monitoring $S$ for regime shifts.  Finally, $S$ is passed to the adapter, which generates one‐step‐ahead forecasts.
 
 
 \begin{figure}[H]
@@ -582,10 +586,13 @@ The TTSTL framework captures locally stationary relationships by leveraging repr
 Two operational modes are defined to manage computational cost: \textbf{Global Retrain} mode and \textbf{Local Adapt} mode (Table~\ref{tab:ttstl_modes}). In Global Retrain mode, all components—backbone, interface, and adapter—are fully updated overnight at the end of each backbone time bar. Specifically, the CNN-LSTM weights are re‐estimated, stationarity tests and covariance analyses are performed, and interface hyperparameters are tuned. The updated backbone parameters and interface settings are then carried forward into the corresponding backbone bar on the following trading day. During Local Adapt mode, the backbone weights and selected covariate subspace remain fixed; the adapter executes recursive CMLE updates at each adapter time bar to refine forecasts, while the interface uses its fixed hyperparameters solely to monitor for shifts in regression structure.
 
 \begin{table}[ht]
+  \caption{TTSTL Modes: Global Retrain vs.\ Local Adapt}
+  \label{tab:ttstl_modes}
+
 \centering
 \begin{tabular}{lcc}
 \toprule
-\textbf{Module} & \textbf{Global Retrain Mode} & \textbf{Local Adapt Mode} \\
+\textbf{Module} & \textbf{Global Retrain mode} & \textbf{Local Adapt mode} \\
 \midrule
 Backbone
   & Full update
@@ -598,8 +605,7 @@ Adapter
   & Incremental Updates and Forecasts\\
 \bottomrule
 \end{tabular}
-\caption{TTSTL Modes: Global Retrain vs.\ Local Adapt}
-\label{tab:ttstl_modes}
+
 \end{table}
 
 \subsection{The TTSTL Updating Scheme}
@@ -612,7 +618,7 @@ $$
 $$
 The update operator is intentionally left abstract, as the TTSTL framework is agnostic to the specific backbone optimization method. Training is performed with the Adam optimizer (Section~\ref{subsec:cnn_lstm}). Within each backbone time bar \(B^B_{d,k}\), a contiguous validation interval is selected whose length is a fixed percentage of the bar; the remaining observations constitute the training set. To prevent temporal leakage, buffer windows are inserted immediately before and after the validation block and exclude them from both training and validation.
 
-The interface module contains four hyperparameters of interest (See Sections~\ref{subsec:covariates_selection} in the text and \ref{ap:case_study_var_selection} in the appendix for further details):\footnote{Appendix Section~\ref{ap:case_study_var_selection} is also available in repository form at \url{https://github.com/judmejiabe/case-study-adaLASSO.git}.} $\lambda_1$, $\lambda_2$, $\alpha$ and $\tau$. In Global Retrain mode, \(\lambda_1\) and \(\alpha\) are selected via a cross validation approach; \(\lambda_2\) and \(\tau\) are updated via a BIC approach. BIC is used heuristically to control model complexity within each backbone bar, rather than as a global consistency criterion. The resulting hyperparameters freeze during the Local Adapt mode to detect shifts in regression structure. This procedure is carried out independently of previous time bars and thus the updating scheme can ignore information from other backbone time bars.
+The interface module contains four hyperparameters of interest (See Sections~\ref{subsec:covariates_selection} in the text and \ref{ap:case_study_var_selection} in the appendix for further details)\footnote{Appendix Section~\ref{ap:case_study_var_selection} is also available in repository form at \url{https://github.com/judmejiabe/case-study-adaLASSO.git}.}: $\lambda_1$, $\lambda_2$, $\alpha$ and $\tau$. In Global Retrain mode, \(\lambda_1\) and \(\alpha\) are selected via a cross validation approach; \(\lambda_2\) and \(\tau\) are updated via a BIC approach. BIC is used heuristically to control model complexity within each backbone bar, rather than as a global consistency criterion. The resulting hyperparameters freeze during the Local Adapt mode to detect shifts in regression structure. This procedure is carried out independently of previous time bars and thus the updating scheme can ignore information from other backbone time bars.
 
 $$
 (\hat{\lambda}_1, \hat{\lambda}_2, \hat{\alpha}, \hat{\tau})(B^{B}_{1:d, k}) = (\hat{\lambda}_1, \hat{\lambda}_2, \hat{\alpha}, \hat{\tau})(B^{B}_{d, k}).
@@ -631,7 +637,7 @@ The estimated CNN-LSTM weights and selected covariates give way to the reduced H
       \phi_{\hat{\mathbf{W}}(B^B_{1:d-1,k})}\!\left(\widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i_{j-1}-99:i_{j-1}}\right)
 \Bigr) = \theta(B)\,\varepsilon_{d,k,\ell,j}.
 \end{align*}
-Here, $r^w(B^{S}_{d,k,\ell,j})$ denotes the micro return in the sampling time bar in parentheses, $\mathbf{b}_{\boldsymbol{\omega, S}}$ and $\mathbf{b}_{\mathbf{X}, S}$ are the regression coefficients with a zero entry in the inactive covariates (i.e. not in $S$). The reduced Hybrid ARMAX-GARCH-DeepLOB model parameters $\boldsymbol{\varphi}_{S} = (c, \mathbf{b}_{\boldsymbol{\omega, S}}, \mathbf{b}_{\mathbf{X}, S}, \boldsymbol{\phi}, \boldsymbol{\theta}, \omega, \boldsymbol{\alpha}, \boldsymbol{\beta})$ are updated at the adapter time bar frequency according to the scheme
+Here, $r^w(B^{S}_{d,k,\ell,j})$ denotes the micro-return in the sampling time bar in parentheses, $\mathbf{b}_{\boldsymbol{\omega, S}}$ and $\mathbf{b}_{\mathbf{X}, S}$ are the regression coefficients with a zero entry in the inactive covariates (i.e. not in $S$). The reduced Hybrid ARMAX-GARCH-DeepLOB model parameters $\boldsymbol{\varphi}_{S} = (c, \mathbf{b}_{\boldsymbol{\omega, S}}, \mathbf{b}_{\mathbf{X}, S}, \boldsymbol{\phi}, \boldsymbol{\theta}, \omega, \boldsymbol{\alpha}, \boldsymbol{\beta})$ are updated at the adapter time bar frequency according to the scheme
 
 \begin{align*}
     \hat{\boldsymbol{\varphi}}_{S(B^B_{d-1,k})}\left(B^A_{d,k,1:\ell} \right) &= \mathrm{Update}\left(\hat{\boldsymbol{\varphi}}_{S(B^B_{d-1,k})}\left(B^A_{d,k,1:\ell-1} \right), B^A_{d,k,\ell}\right),\\
@@ -652,14 +658,14 @@ Where the $\mathrm{Update}$ mechanism is described in Section~\ref{subsec:combin
 \label{Sect:Estimation}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-This section is devoted to the estimation procedures for the Hybrid ARMAX-GARCH-DeepLOB model.  In Section~\ref{subsec:cmle_props_paper} the conditional maximum likelihood estimator (CMLE) is formulated.  Section~\ref{subsec:combining_cmles} introduces recursive online combining rules designed to mitigate large-sample numerical instabilities, and Section~\ref{subsec:covariates_selection} describes the interface module’s model subspace selection and structural break detection via adaptive LASSO.  Together, these estimation components complete the methodological framework for real-time forecasting under nonstationary market dynamics.
+This section is devoted to the estimation procedures for the Hybrid ARMAX-GARCH-DeepLOB model.  In Section~\ref{subsec:cmle_props_paper} the conditional maximum likelihood estimator (CMLE) is formulated.  Section~\ref{subsec:combining_cmles} introduces recursive online combining rules designed to mitigate large-sample numerical instabilities, and Section~\ref{subsec:covariates_selection} describes the interface module’s model subspace selection and structural break detection via adaptive LASSO.  Together, these estimation components complete the methodological framework for real-time forecasting under non-stationary market dynamics.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Conditional Maximum Likelihood Estimation in the Hybrid ARMAX-GARCH-DeepLOB Model}
 \label{subsec:cmle_props_paper}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-The ARMAX-GARCH model is well suited for the Conditional Maximum Likelihood Estimation (CMLE) method which in the notation of equation~\eqref{eq:armax} is defined as
+The ARMAX-GARCH model is well suited for the Conditional Maximum Likelihood Estimation (CMLE) method which in the notation of Equation~\eqref{eq:armax} is defined as
 
 $$
     \hat{\boldsymbol{\varphi}}_{CMLE, T} = \arg\max_{\boldsymbol{\varphi} \in \Phi} {\tilde{\mathcal{L}}_{T}}(\boldsymbol{\varphi}),
@@ -675,10 +681,10 @@ Here, $\tilde{\mathcal{L}}_{T}$ denotes the Conditional Log-Likelihood Function 
      & \tilde{\sigma}^2_j(\boldsymbol{\varphi}) = \omega + \sum^Q_{k = 1} \alpha_k \tilde{\varepsilon}^2_{j - k}(\boldsymbol{\varphi}) + \sum^P_{k = 1} \beta_k \tilde{\sigma}^2_{j - k}(\boldsymbol{\varphi}), \hspace{2mm} j \geq 1,                                                                     \\
      & \tilde{\sigma}^2_j(\boldsymbol{\varphi}) = c'_j \in [0, \infty), \hspace{2mm} j = 0, -1, \dots, -P.
 \end{align*}
-Where $g$ is the p.d.f. of $\eta_j$. Standard results imply that the influence of initialization constants $c_j$ and $c'_j$ vanishes asymptotically and is negligible for sufficiently long adapter windows. Several properties of $\hat{\boldsymbol{\varphi}}_{CMLE, T}$ are given in \cite{mejia2025asymptotic}. For instance, it is shown that the residuals $\tilde{\varepsilon}_j(\cdot)$ and $\tilde{\sigma}_j(\cdot)$ uniformly converge to their \textit{infinite history} counterparts. This validates the approach taken in Section~\ref{sec:forecasting} to approximate the residuals. Some regularity conditions are sufficient to guarantee the asymptotic efficiency of the CMLE. This regularity conditions include but are not limited to the polynomials $\phi(\cdot)$ and $\theta(\cdot)$ in equation \eqref{eq:armax} not having roots in common and such roots being outside the complex unit disk, $\alpha(\cdot)$ and $\beta(\cdot)$ in equation \eqref{eq:garch} not having roots in common, the top Lyapunov exponent being negative, and the joint process $\left\{ \left( \varepsilon_j, \mathbf{x}_j \right)  \right\}_{j \in \Z}$ being ergodic and strictly stationary. The reader is invited to consult \cite{mejia2025asymptotic} for the technical details. The main results in \cite{mejia2025asymptotic} are paraphrased below
+Where $g$ is the probability density function of $\eta_j$. Standard results imply that the influence of initialization constants $c_j$ and $c'_j$ vanishes asymptotically and is negligible for sufficiently long adapter windows. Several properties of $\hat{\boldsymbol{\varphi}}_{CMLE, T}$ are given in \cite{mejia2025asymptotic}. For instance, it is shown that the residuals $\tilde{\varepsilon}_j(\cdot)$ and $\tilde{\sigma}_j(\cdot)$ uniformly converge to their \textit{infinite history} counterparts. This validates the approach taken in Section~\ref{sec:forecasting} to approximate the residuals. Some regularity conditions are sufficient to guarantee the asymptotic efficiency of the CMLE. These regularity conditions include, but are not limited to the polynomials $\phi(\cdot)$ and $\theta(\cdot)$ in equation \eqref{eq:armax} not having roots in common and such roots being outside the complex unit disk, $\alpha(\cdot)$ and $\beta(\cdot)$ in equation \eqref{eq:garch} not having roots in common, the top Lyapunov exponent being negative, and the joint process $\left\{ \left( \varepsilon_j, \mathbf{x}_j \right)  \right\}_{j \in \Z}$ being ergodic and strictly stationary. The reader is invited to consult \cite{mejia2025asymptotic} for the technical details. The main results in \cite{mejia2025asymptotic} are paraphrased below
 
 \begin{theorem}
-    Regularity conditions imply that
+    Under proper conditions, it follows that
     $$
         \hat{\boldsymbol{\varphi}}_{CMLE, T} \xrightarrow[T \rightarrow \infty]{a.s.} \boldsymbol{\varphi}_0.
     $$
@@ -686,7 +692,7 @@ Where $g$ is the p.d.f. of $\eta_j$. Standard results imply that the influence o
 \end{theorem}
 
 \begin{theorem}
-    Regularity conditions imply that
+    Under proper conditions, it follows that
 
     $$
         \sqrt{T} (\hat{\boldsymbol{\varphi}}_{CMLE, T} - \boldsymbol{\varphi}_0) \xrightarrow[T \rightarrow \infty]{\mathcal{L}} N \left(0, I^{-1}_{\boldsymbol{\varphi}_0} \right).
@@ -712,7 +718,7 @@ To help overcome the instability of the numerical algorithms used for estimation
 $$
     \hat{\boldsymbol{\varphi}}_S\left( B^A_{d,k,1:\ell} \right) = \mathrm{Update}\left( \hat{\boldsymbol{\varphi}}_S\left( B^A_{d,k,1:\ell - 1} \right),  B^A_{d,k,\ell} \right)
 $$
-The update rules are organized by their underlying rationale.  Inspired by the Bayesian model‐averaging framework of \cite{madigan2003bayesian}, one family of methods constructs a weighted average of recent CMLE fits—hereafter referred to as combining formulas.  A second family employs recursive estimators that sequentially incorporate new information into the global estimator rather than averaging the fresh local estimators. The specific update rules examined in this paper are summarized below. These update rules are heuristic and not claimed to preserve asymptotic efficiency; their role is numerical stabilization and rapid adaptation.
+Inspired by the Bayesian model-averaging framework of \cite{madigan2003bayesian}, the update rules examined in this paper construct a weighted average of recent CMLE fits—hereafter referred to as combining formulas. By averaging fresh local estimates, these methods circumvent the instability often associated with recursive estimators. The specific combining rules utilized in this work are summarized below. These update rules are heuristic and not claimed to preserve asymptotic efficiency; rather, their primary role is to ensure numerical stabilization and rapid adaptation to local market dynamics.
 
 % \subsubsection{Combining Update Formulas} 
 
@@ -905,14 +911,14 @@ The update rules are organized by their underlying rationale.  Inspired by the B
 \subsection{Model Subspace Selection: The Interface Module}
 \label{subsec:covariates_selection}
 
-Including all potential covariates in the ARMAX–GARCH-DeepLOB specification risks overfitting and severe multicollinearity. To address this, a two-stage variable‐selection algorithm is adopted. The technique is based on the Flexible adaLASSO of Medeiros and Mendes \cite{MEDEIROS2016255}, which retains the oracle property and model‐selection consistency even with non‐Gaussian, heteroskedastic errors.\footnote{Under some regularity conditions, of course.} Appendix \ref{ap:case_study_var_selection} presents a simulation study to illustrate the effectiveness of adaLASSO.
+Including all potential covariates in the ARMAX–GARCH-DeepLOB specification risks overfitting and severe multicollinearity. To address this, a two-stage variable‐selection algorithm is adopted. The technique is based on the Flexible adaLASSO of Medeiros and Mendes \cite{MEDEIROS2016255}, which retains the oracle property and model‐selection consistency even with non‐Gaussian, heteroskedastic errors\footnote{Under some regularity conditions, of course.}. Appendix \ref{ap:case_study_var_selection} presents a simulation study to illustrate the effectiveness of adaLASSO.
 
 % Moreover, the locally stationary feature of the market dynamics introduce the possibility of structural breaks in the regression structure which could be identified by employing the oracle property of the flexible adaLASSO (see Theorem 3 in \cite{MEDEIROS2016255}).
 
-This section addresses both of these issues in what in the TTSTL framework is denominated as the Interface module. The variable selection procedure is carried out in two stages: The first stage entails defining a surrogate model with similar dynamics to that of the Hybrid ARMAX-GARCH-DeepLOB and conduct variable selection at the adapter's time bar frequency. The adaLASSO procedure is applied under the assumption of approximate local stationarity within each adapter bar. In the second stage, the statistical significance of the selected variables is assessed by means of \(t\)-tests with heteroskedasticity correction. In this last step, the variables with a relatively higher statistical significance rate are subsequently passed to the adapter for iterative re-estimation and forecasting.
+Within the TTSTL framework, the Interface module is designed to address both of these issues. The variable selection procedure is carried out in two stages: The first stage entails defining a surrogate model with similar dynamics to that of the Hybrid ARMAX-GARCH-DeepLOB and conduct variable selection at the adapter's time bar frequency. The adaLASSO procedure is applied under the assumption of approximate local stationarity within each adapter bar. In the second stage, the statistical significance of the selected variables is assessed by means of \(t\)-tests with heteroskedasticity correction. In this last step, the variables with a relatively higher statistical significance rate are subsequently passed to the adapter for iterative re-estimation and forecasting.
 \medskip
 
-\noindent\textbf{Stage 1: Flexible adaLASSO.}  In the adapter time bar $B^A_{d, k, \ell}$, consider the following model which is a surrogate of the Hybrid ARMAX-GARCH-DeepLOB model defined in equation~\eqref{eq:hybrid_armax_garch}.
+\noindent\textbf{Stage 1: Flexible adaLASSO.}  In the adapter time bar $B^A_{d, k, \ell}$, consider the following model which is a surrogate of the Hybrid ARMAX-GARCH-DeepLOB model defined in Equation~\eqref{eq:hybrid_armax_garch}.
 \begin{equation}
     \begin{cases}
         r^w\left( B^S_{d, k, \ell, j} \right) = c + \sum^{p^*}_{\nu = 1} \psi_{\nu} r^w \left( B^S_{d, k, \ell, j - \nu} \right) + \mathbf{b}_{\boldsymbol{\omega}}^T \mathbf{x}_{d, k, \ell, j - 1} + \mathbf{b}^T_{\mathbf{X}}\phi_{\hat{\mathbf{W}}\left( B^B_{1:d - 1, k} \right)} \left( \widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i_{j - 1} - 99:i_{j - 1}} \right) + \varepsilon_{d, k, \ell, j}, \\[6pt]
@@ -932,7 +938,7 @@ Now focus on a penalization of the mean equation.  Denote
         r^w \left( B^S_{d, k, \ell, j - p^*} \right) \\
         \mathbf{x}_{d, k, \ell, j - 1},              \\
         \phi_{\hat{\mathbf{W}}\left( B^B_{1:d - 1, k} \right)}\left( \widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i_{j - 1} - 99:i_{j - 1}} \right)
-    \end{pmatrix}
+    \end{pmatrix},
 \]
 and collect the corresponding coefficients into \(\tilde{\mathbf{b}} = \left( \psi_1, \dots, \psi_{p^*}, \mathbf{b}^T_{\boldsymbol{\omega}}, \mathbf{b}^T_{\mathbf{X}}\right)^T\), so that \(r^w\left( B^S_{d,k,\ell,j} \right) = c + \tilde{\mathbf{b}}^T\tilde{\mathbf{x}}_{d, k, \ell, j - 1} + \varepsilon_{d,k,\ell, j}\). Collecting the observations and covariates into
 
@@ -978,14 +984,14 @@ As seen in Appendix~\ref{ap:case_study_var_selection} the adaLASSO effectiveness
 
 As seen in Appendix~\ref{ap:case_study_var_selection} the adaLASSO effectiveness depends on the ability of the initial fit to discriminate relevant variables from irrelevant variables. Therefore the initial elastic-net fit parameters \(\lambda_1\) and \(\alpha\) must be selected carefully --as well as the adaptive re-weighting fit ones. In \cite{MEDEIROS2016255}, the authors recommend optimizing the BIC on a hyperparameter grid. Given the sheer amount of data, conducting adaLASSO on a fine four dimensional grid of \((\lambda_1, \lambda_2, \alpha, \tau)\) becomes prohibitively expensive. To mitigate this, a train/validation partition is created to measure the quality of the initial elastic-net fit hyperparameters, yielding  \(\hat{\lambda}_1 \left( B^B_{d, k} \right)\) and \(\hat{\alpha}\left( B^B_{d, k} \right)\). Fixing these hyperparameters, select \(\hat{\lambda}_2\left( B^B_{d, k} \right)\) and \(\hat{\tau}\left( B^B_{d,k} \right)\) from a grid by minimizing the average BIC across the adapter time bars contained in \(B^B_{d,k}\). This process is only carried out in Global Retrain mode. In the Local Adapt mode, transfer the learned hyperparameters from the aligned backbone time bar of the previous day. Regime shifts are flagged when the selected covariate set or coefficient significance profile changes persistently across adapter bars.
 
-In the Global Retrain Mode, the learned Hyperparameters are used as described in Stage 2 below to finalize the model subspace selection process. In the Local Adapt Mode, the learned hyperparameters are transferred to help assess the model's structure stability.
+In the Global Retrain mode, the learned Hyperparameters are used as described in Stage 2 below to finalize the model subspace selection process. In the Local Adapt mode, the learned hyperparameters are transferred to help assess the model's structure stability.
 \medskip
 
 \noindent\textbf{Stage 2: Flexible adaLASSO-OLS Screening.} Theorem 3 in \cite{MEDEIROS2016255} hints that the Flexible adaLASSO possesses the oracle property which establishes that
 $$
     \sqrt{J} \left[\hat{\tilde{\mathbf{b}}}_{\mathrm{FaL},S} \left( B^A_{d, k, \ell} \right) - \tilde{\mathbf{b}}_S \right] \xrightarrow[J \rightarrow \infty]{\mathcal{L}}\\ \sqrt{J} \left[\hat{\tilde{\mathbf{b}}}_{OLS, S} \left( B^A_{d, k, \ell} \right) - \tilde{\mathbf{b}}_S\right],
 $$
-where $\hat{\tilde{\mathbf{b}}}_{\mathrm{FaL},S}\left( B^A_{d, k, \ell} \right)$ is the subset of non-zero coefficients in $\hat{\tilde{\mathbf{b}}}_{\mathrm{FaL,S}}\left( B^A_{d, k, \ell} \right)$\footnote{In this particular context, $x \in \R$ is non-zero if $\aval{x} > \varepsilon$ for some small $\varepsilon > 0$} and $\hat{\tilde{\mathbf{b}}}_{OLS, S}\left( B^A_{d, k, \ell} \right)$ is the $S$-restricted ordinary least squares estimator of the model in equation~\eqref{eq:surrogate} computed on the covariates selected by the flexible adaLASSO. Under mild conditions on the covariate process and residuals (see Proposition~8.3. in \cite{hamilton_time_1994}), it can be shown that
+where $\hat{\tilde{\mathbf{b}}}_{\mathrm{FaL},S}\left( B^A_{d, k, \ell} \right)$ is the subset of non-zero coefficients in $\hat{\tilde{\mathbf{b}}}_{\mathrm{FaL,S}}\left( B^A_{d, k, \ell} \right)$\footnote{In this particular context, $x \in \R$ is non-zero if $\aval{x} > \varepsilon$ for some small $\varepsilon > 0$} and $\hat{\tilde{\mathbf{b}}}_{OLS, S}\left( B^A_{d, k, \ell} \right)$ is the $S$-restricted ordinary least squares estimator of the model in Equation~\eqref{eq:surrogate} computed on the covariates selected by the flexible adaLASSO. Under mild conditions on the covariate process and residuals (see Proposition~8.3. in \cite{hamilton_time_1994}), it can be shown that
 
 $$
     \sqrt{J}\left[\hat{\tilde{\mathbf{b}}}_{OLS,S} \left( B^A_{d, k, \ell} \right) - \tilde{\mathbf{b}}_S \right]  \xrightarrow[J \rightarrow \infty]{\mathcal{L}} N(\mathbf{0}, V_S),
@@ -1004,7 +1010,7 @@ and
     \,\tilde{\mathbf{X}}_{S}(B^A_{d,k,\ell})                                                                                                                                                                                          \\
     \mathbf{\Omega}_S\left(B^A_{d,k,\ell}\right) & = \lim_{J \rightarrow \infty} \frac{1}{J} \sum^J_{j = 1} \E \left \{ \tilde{\mathbf{x}}_{S,d,k,\ell,j} \tilde{\mathbf{x}}_{S,d,k,\ell,j}^T \varepsilon^2_{d, k, \ell, j} \right\}.
 \end{align*}
-Here, the the subscript $S$ is used to denote that the base expression is restricted to the variables in $S$. A consistent estimator of $V_S\left( B^A_{d,k,\ell} \right)$, called the heteroskedastic-consistent covariance matrix, is given by
+Here, the subscript $S$ is used to denote that the base expression is restricted to the variables in $S$. A consistent estimator of $V_S\left( B^A_{d,k,\ell} \right)$, called the heteroskedastic-consistent covariance matrix, is given by
 
 \begin{align*}
     \hat{V}_{\mathrm{HC},\,S} \left( B^A_{d, k, \ell} \right)
@@ -1032,12 +1038,12 @@ where \(z_{1-\alpha/2}\) denotes the \(1-\tfrac\alpha2\) quantile of the standar
 \[
     \aval*{ \left\{\ell : t_{\nu,d,k,\ell} > z_{1 - \alpha/2}\right\}} > \alpha\,L \;+\; z_{1-\gamma}\,\sqrt{L\,\alpha\,(1-\alpha)},
 \]
-where \(\gamma>0\) is a small constant. This screening procedure yields a set of covariates $S\left( B^B_{d,k,\ell,j} \right)$ to be used by the adapter module in the next trading session aligned backbone time bar in the Local Adapt Mode.
+where \(\gamma>0\) is a small constant. This screening procedure yields a set of covariates $S\left( B^B_{d,k,\ell,j} \right)$ to be used by the adapter module in the next trading session aligned backbone time bar in the Local Adapt mode.
 
 % \subsubsection{Structural Break Detection}
 % \label{subsubsec:structural_break}
 
-% In the local adapt mode, the Flexible adaLASSO can be used as a structural break detector. In the adapter bar $B^A_{d,k,\ell}$, the variables from the previous trading session aligned backbone bar, that is $B^B_{d - 1,k}$, are used. Likewise, the hyperparameters tuned in $B^B_{d - 1, k}$, \(\left( \hat{\lambda}_1, \hat{\lambda}_2, \hat{\alpha}, \hat{\tau} \right) \left( B^B_{d - 1,k} \right)\) are plugged in the Flexible adaLASSO procedure to yield a set of covariates $S\left( B^A_{d,k,\ell} \right)$. To monitor structural breaks, a surrogate linear model with heteroskedasticity (see equation~\eqref{eq:surrogate}) is fit on the covariate set $S\left( B^B_{d - 1, k} \right) \cup S\left( B^A_{d,k,\ell} \right)$ via OLS and the following hypotheses are constrasted for $\ell = 1, 2, \dots, L$.
+% In the local adapt mode, the Flexible adaLASSO can be used as a structural break detector. In the adapter bar $B^A_{d,k,\ell}$, the variables from the previous trading session aligned backbone bar, that is $B^B_{d - 1,k}$, are used. Likewise, the hyperparameters tuned in $B^B_{d - 1, k}$, \(\left( \hat{\lambda}_1, \hat{\lambda}_2, \hat{\alpha}, \hat{\tau} \right) \left( B^B_{d - 1,k} \right)\) are plugged in the Flexible adaLASSO procedure to yield a set of covariates $S\left( B^A_{d,k,\ell} \right)$. To monitor structural breaks, a surrogate linear model with heteroskedasticity (see Equation~\eqref{eq:surrogate}) is fit on the covariate set $S\left( B^B_{d - 1, k} \right) \cup S\left( B^A_{d,k,\ell} \right)$ via OLS and the following hypotheses are constrasted for $\ell = 1, 2, \dots, L$.
 
 % \begin{align*}
 % H_{0\ell}: &\quad \mathbf{I}_{\,S\bigl(B^A_{d,k,\ell}\bigr)\setminus S\bigl(B^B_{d-1,k}\bigr)}
@@ -1190,6 +1196,7 @@ Two distinct baselines are employed to assess different aspects of model perform
 
 
 \section{Data}
+\label{sec:data}
 
 \subsection{Data Collection}
 \label{subsec:data_collection}
@@ -1199,7 +1206,7 @@ Two distinct baselines are employed to assess different aspects of model perform
 
 Choosing the sampling frequency remains an open design choice \cite{dutta2023review}. The workflow in Figure~\ref{fig:ttstl} relies on two sampling scales: An event-driven stream providing order-flow imbalances (OFIs) and the micro-price; and a physical-time series containing all features listed in Table~\ref{tab:features}.
 
-For the physical-time series,the sampling time bar width is set to $\delta=100$ units of time (u.o.t.) in synthetic experiments and to $\delta=2$ seconds in market-data experiments (see Section~\ref{subsec:dataset}). Table~\ref{tab:features} summarizes the measurements produced by the market-replay algorithm plus the VIX index measurements. To lighten notation, unless stated otherwise, the subscript $j$ denotes the feature evaluated on sampling bar $B^{S}_{d,k,\ell,j}$. For stock features—i.e., covariates measured at a single time point—the observation is timestamped at the right endpoint of the corresponding sampling bar.
+For the physical-time series,the sampling time bar width is set to $\delta=100$ units of time (uot) in synthetic experiments and to $\delta=2$ seconds in market-data experiments (see Section~\ref{subsec:dataset}). Table~\ref{tab:features} summarizes the measurements produced by the market-replay algorithm plus the VIX index measurements. To lighten notation, unless stated otherwise, the subscript $j$ denotes the feature evaluated on sampling bar $B^{S}_{d,k,\ell,j}$. For stock features—i.e., covariates measured at a single time point—the observation is timestamped at the right endpoint of the corresponding sampling bar.
 
 %For the dataset obtained from the data vendor, a stock-specific approach, inspired by \cite{kolm2023deep, kolm2024improving}, is used. Specifically, the uniform sampling rate  is defined in proportion to the average time between midprice changes:
 
@@ -1359,7 +1366,7 @@ For the physical-time series,the sampling time bar width is set to $\delta=100$ 
     \caption{List of extracted microstructural measures. In this table, $\star \in \{ a, b\}$ denotes the side of the LOB, $h \in \{ 0, 1, \dots, H\}$ denotes the number of ticks away from best bid or ask values, and $t \in \{ 1, \dots, kN \}$ corresponds to the sequence in the time partition $\mathcal{P}^{(U)}_{\delta} = \{ \delta j \}^{k N}_{t = 1}$.} \label{tab:features}
 \end{longtable}
 
-Some features in Table \ref{tab:features} require additional clarification as different sampling schemes interact. To compute the order flow imbalance $l$ ticks away from touch, compute the OFs under the all-events partition $\mathcal{P}^{(E)}$ and denote these as $OF^{\star, \mathcal{P}^{(E)}}_{l,i}$. Then compute the OFI $l$ ticks away from best bid and ask as
+Some features in Table \ref{tab:features} require additional clarification as different sampling schemes interact. To compute the order flow imbalance $l$ ticks away from touch, compute the OFs under the all-events partition $\mathcal{P}^{(E)}$ and denote these as $OF^{\star, \mathcal{P}^{(E)}}_{l,i}$, $\star \in \{a, b\}$. Then compute the OFI $l$ ticks away from best bid and ask as
 
 $$
     OFI^{\mathcal{P}^{(U)}_{\delta}}_{l, j} = \sum_{i \in I_j} OF^{b, \mathcal{P}^{(E)}}_{l,i} - OF^{a, \mathcal{P}^{(E)}}_{l,i},
@@ -1411,9 +1418,9 @@ In summary, two datasets are derived from each trading session, each serving a d
 \subsection{Dataset}
 \label{subsec:dataset}
 
-Following \cite{briola2024deep}, stocks with larger tick sizes are prioritized, as mid-price returns can be imputed more accurately for such instruments. In this context, larger ticks translate to smaller time-weighted average spreads. To identify the optimal instrument, the time-weighted average spreads of the stable NASDAQ 100 constituents\footnote{Stable NASDAQ 100 constituents are defined here as those stocks that remained in the index continuously between July 1st, 2022, and June 30th, 2024.} were computed for the trading sessions on July 1st, 2022, June 30th, 2023, and July 1st, 2024. These rankings were subsequently averaged, identifying INTC as the instrument with the smallest time-weighted average spread. Consequently, Market-By-Order (MBO) data for INTC was extracted for the months of May and June 2024 using the Databento API. It is noted that while INTC is used here as a representative, highly liquid NASDAQ asset, the results should be interpreted as illustrative of the methodology's capabilities rather than universal across all asset classes.
+Following \cite{briola2024deep}, stocks with larger tick sizes are prioritized, as mid-price returns can be imputed more accurately for such instruments. In this context, larger ticks translate to smaller time-weighted average spreads. To identify the optimal instrument, the time-weighted average spreads of the stable NASDAQ 100 constituents\footnote{Stable NASDAQ 100 constituents are defined here as those stocks that remained in the index continuously between July 1st, 2022, and June 30th, 2024.} were computed for the trading sessions on July 1st, 2022, June 30th, 2023, and July 1st, 2024. These rankings were subsequently averaged, identifying INTC as the instrument with the smallest time-weighted average spread. Consequently, MBO data for INTC was extracted for the months of May and June 2024 using the Databento API. It is noted that while INTC is used here as a representative, highly liquid NASDAQ asset, the results should be interpreted as illustrative of the methodology's capabilities rather than universal across all asset classes.
 
-Additionally, VIX index data was retrieved via the Polygon API\footnote{\url{https://polygon.io} (Accessed on 09-18-2025)}. A market replay algorithm (see Section \ref{subsec:data_collection}) was applied to record event-driven order flow features and generate the physical time-driven endogenous features\footnote{With the exception of the VIX indices, which were merged subsequently.}.
+Additionally, VIX index data was retrieved via the Polygon API\footnote{\url{https://polygon.io} (Accessed on 09-18-2025)}. A market replay algorithm, which consists of taking the MBO data and reconstructing the LOB, was applied to record event-driven order flow features and generate the physical time-driven endogenous features\footnote{With the exception of the VIX indices, which were merged subsequently.}.
 
 This process resulted in two distinct datasets per trading session: an event-driven order flow dataset used for the backbone module global update, and a physical time-driven dataset of endogenous features. To ensure data quality, exclusion criteria were applied to avoid contamination from special market events. Specifically, days containing the following were excluded:
 
@@ -1450,7 +1457,7 @@ Neural networks were developed using PyTorch~2.5.0 (CUDA~11.8). Stationarity tes
 
 Further dependencies are listed in the \verb|environment.yml| located at the \verb|ttstl_repo|\footnote{\url{https://github.com/judmejiabe/ttstl_repo.git}} root directory.
 
-To facilitate reproducibility and future research, the complete codebase for this study is open-sourced across three repositories. The core market reconstruction engine is hosted at \url{https://github.com/judmejiabe/MeatPy.git}, a fork of the original \verb|meatpy| library adapted to process Market-By-Order (MBO) data from Databento. Project-specific data manipulation pipelines, which utilize this engine to generate the feature sets described in Section~\ref{subsec:data_collection}, are available at \url{https://github.com/judmejiabe/evolving-microstructural-toolkit-data.git}. Finally, the implementation of the TTSTL framework, including the deep learning backbone, the adapter module, and all experimental scripts required to replicate the results in Section~\ref{subsec:results_intc}, is provided at \url{https://github.com/judmejiabe/ttstl_repo.git}.
+To facilitate reproducibility and future research, the complete codebase for this study is open-sourced across three repositories. The core market reconstruction engine is hosted at \url{https://github.com/judmejiabe/MeatPy.git}, a fork of the original \verb|meatpy| library adapted to process Market-by-Order (MBO) data from Databento. Project-specific data manipulation pipelines, which utilize this engine to generate the feature sets described in Section~\ref{subsec:data_collection}, are available at \url{https://github.com/judmejiabe/evolving-microstructural-toolkit-data.git}. Finally, the implementation of the TTSTL framework, including the deep learning backbone, the adapter module, and all experimental scripts required to replicate the results in Section~\ref{subsec:results_intc}, is provided at \url{https://github.com/judmejiabe/ttstl_repo.git}.
 
 \subsection{Synthetic Study}
 \label{subsec:synthetic_study}
@@ -1468,7 +1475,7 @@ Assuming that both sides of the LOB are non-empty, i.e., $X^+, X^- \neq 0 \in \m
         0.2                                & \text{if } k = b_0(X) + 1, 3 \leq a_0(X) - b_0(X),     \\
         0.01 \exp \left\{ \rho(X) \right\} & \text{if } k = a_0(X),                                 \\
         0                                  & \text{otherwise,}
-    \end{cases}
+    \end{cases},
 \]
 
 and
@@ -1482,7 +1489,7 @@ and
         0.2                                  & \text{if } k = a_0(X) - 1, 3 \leq a_0(X) - b_0(X),     \\
         0.01 \exp \left\{ - \rho(X) \right\} & \text{if } k = b_0(X),                                 \\
         0                                    & \text{otherwise.}
-    \end{cases}
+    \end{cases}.
 \]
 Here, $\rho(X) = \frac{v^b_0(X) - v^a_0(X)}{v^b_0(X) + v^a_0(X)}$ denotes the imbalance in trading volume of the state of the LOB represented through $X$. The order cancellation intensities are given by
 
@@ -1492,7 +1499,7 @@ Here, $\rho(X) = \frac{v^b_0(X) - v^a_0(X)}{v^b_0(X) + v^a_0(X)}$ denotes the im
         0.01 & \text{if } k = b_0(X) - 1, \text{ and } V^b_1(X) \geq 1 \\
         0.1  & \text{if } k = b_0(X), \text{ and } V^b_0(X) \geq 1     \\
         0    & \text{otherwise,}
-    \end{cases}
+    \end{cases},
 \]
 and
 
@@ -1502,7 +1509,7 @@ and
         0.01 & \text{if } k = a_0(X) - 1, \text{ and } V^a_1(X) \geq 1 \\
         0.1  & \text{if } k = a_0(X), \text{ and }  V^a_0(X) \geq 1    \\
         0    & \text{otherwise.}
-    \end{cases}
+    \end{cases}.
 \]
 For all $z > 1$, the intensities are zero: $\lambda_+(k, X, z) = \lambda_-(k, X, z) = C_+(k, X, z) = C_-(k, X, z) = 0$.
 
@@ -1516,7 +1523,7 @@ If the LOB bid side becomes empty ($X^+ = 0$), it is quickly replenished one tic
     \begin{cases}
         1 & \text{if } k = a_0(X) - 1, \text{ and } z = 10, \\
         0 & \text{otherwise,}
-    \end{cases}
+    \end{cases}.
 \]
 Similarly, if the ask side becomes empty ($X^- = 0$):
 
@@ -1525,7 +1532,7 @@ Similarly, if the ask side becomes empty ($X^- = 0$):
     \begin{cases}
         1 & \text{if } k = b_0(X) + 1, \text{ and } z = 10 \\
         0 & \text{otherwise.}
-    \end{cases}
+    \end{cases}.
 \]
 
 Note that between any two consecutive order arrival times $\tau_k$ and $\tau_{k+1}$, the LOB remains unchanged. Hence, $\lambda_{\star}(k, X_t, z)$ and $C_{\star}(k, X_t, z)$ are constant over each interval $[\tau_k, \tau_{k+1})$ for $\star \in \{+, -\}$. Given the LOB state at time $\tau_k$, the waiting time until the next message is exponentially distributed with a rate equal to the sum of all possible intensities. This property justifies the simulation algorithm described below.
@@ -1538,7 +1545,7 @@ Algorithm \ref{algo:lob_simulation} generates simulated MBO data from which the 
     \label{algo:lob_simulation}
     \begin{algorithmic}
         \Require{$T$, $X_0$, $\lambda_+$, $\lambda_-$, $C_+$, $C_-$, $d$, $z^{\max}$}
-        \Ensure{Simulated market-by-order data}
+        \Ensure{Simulated Market-by-Order data}
         \State $t \gets 0$
         \State $i \gets 0$
         \State $X \gets X_0$
@@ -1556,13 +1563,16 @@ Algorithm \ref{algo:lob_simulation} generates simulated MBO data from which the 
     \end{algorithmic}
 \end{algorithm}
 
-The simulations are set to start on a deep and balanced initial LOB state, $p^b_l(0) = 499 - l$, $p^a_l(0) = 501 + l$, and $v^\star_l(0) = 10$ for $l = 0, 1, \dots, 400$ and $\star \in {a, b}$. Two simulated trading sessions of length $T = 10'000.000$ units of time (uot) are generated. The backbone, adapter, and sampling time bar lengths are set as $5'000.000$, $100.000$, and $100$. The data from one simulated trading session is used to fit TTSTL in global update mode and local adapt is applied to the other thus mimicking overnight recalibration. The LOB is reconstructed from the generated MBO data to construct an event-driven dataset of order flows and a physical-time driven dataset with the features presented in Table~\ref{tab:features} with $H = 1$ and leaving the VIX index covariate out.
+The simulations are set to start on a deep and balanced initial LOB state, $p^b_l(0) = 499 - l$, $p^a_l(0) = 501 + l$, and $v^\star_l(0) = 10$ for $l = 0, 1, \dots, 400$ and $\star \in \{a, b\}$. Two simulated trading sessions of length $T = 10{,}000{,}000$ units of time (uot) are generated. The backbone, adapter, and sampling time bar lengths are set as $5{,}000{,}000$, $100{,}000$, and $100$ uot. The data from one simulated trading session is used to fit TTSTL in global update mode and local adapt is applied to the other thus mimicking overnight recalibration. The LOB is reconstructed from the generated MBO data to construct an event-driven dataset of order flows and a physical-time driven dataset with the features presented in Table~\ref{tab:features} with $H = 1$ and leaving the VIX index covariate out.
 
-Twenty-eight different configurations of the TTSTL algorithm are implemented. A base configuration is set featuring an ARMAX(1,1)-GARCH(1,1)-DeepLOB with skewed-t distribution for the errors --the specifics of the base configuration are shown in Table \ref{tab:base_config} in Section~\ref{sec:comp_tables_figs} of the Supplementary material-- and four different update rules interacting with seven covariate configurations are considered. The update rules considered are: Myopic (\verb|M|), Simple Average (\verb|SA|), Power Law with $\alpha = 3.0$ (\verb|PL3|), and Exponential Smoothing with $\alpha = 0.1$ (\verb|ES010|). The covariate configurations are: Full covariate set (\verb|01|), parsimonious covariate set (i.e. considering the CNN-LSTM architecture ouput instead of the generative embedding additional to the microstructural features) (\verb|02|), only microstructural covariates (i.e. $\mathbf{b}^T_{\mathbf{X}} = \mathbf{0}$, \verb|03|), only neural covariates (i.e. $\mathbf{b}^T_{\boldsymbol{\omega}} = \mathbf{0}$, \verb|04|), only CNN-LSTM output as a covariate bypassing the interface module (\verb|05|), no covariates (\verb|06|), and only imbalance in trading volume as a covariate bypassing the interface module (\verb|07|). All of the possible configurations are tested across two simulated trading sessions: a Global Update is applied in session 1, and a Local Adaptation is applied in session 2. The configurations are ranked according to the $\mathrm{RelMAE}$ metric, computed for each adapter time bar within the backbone time bars of session 2 (Local Adapt mode). These backbone-specific rankings are then aggregated into an average ranking, from which the models are re-ranked. These are shown in Table \ref{tab:rankings_relmae_table}. Figure \ref{fig:garch_relmae_vertical} in Section \ref{sec:comp_tables_figs} of the supplementary material displays a comparison of the RelMAR across all combinations of update rules and covariate configurations.
+Twenty-eight different configurations of the TTSTL algorithm are implemented. A base configuration is set featuring an ARMAX(1,1)-GARCH(1,1)-DeepLOB with skewed-t distribution for the errors --the specifics of the base configuration are shown in Table \ref{tab:base_config} in Section~\ref{sec:comp_tables_figs} of the Supplementary material-- and four different update rules interacting with seven covariate configurations are considered. The update rules considered are: Myopic (\verb|M|), Simple Average (\verb|SA|), Power Law with $\alpha = 3.0$ (\verb|PL3|), and Exponential Smoothing with $\alpha = 0.1$ (\verb|ES010|). The covariate configurations are: Full covariate set (\verb|01|), parsimonious covariate set (i.e. considering the CNN-LSTM architecture ouput instead of the generative embedding additional to the microstructural features) (\verb|02|), only microstructural covariates (i.e. $\mathbf{b}^T_{\mathbf{X}} = \mathbf{0}$, \verb|03|), only neural covariates (i.e. $\mathbf{b}^T_{\boldsymbol{\omega}} = \mathbf{0}$, \verb|04|), only CNN-LSTM output as a covariate bypassing the interface module (\verb|05|), no covariates (\verb|06|), and only imbalance in trading volume as a covariate bypassing the interface module (\verb|07|). All of the possible configurations are tested across two simulated trading sessions: a Global Update is applied in session 1, and a Local Adaptation is applied in session 2. The configurations are ranked according to the $\mathrm{RelMAE}$ metric, computed for each adapter time bar within the backbone time bars of session 2 (Local Adapt mode). These backbone-specific rankings are then aggregated into an average ranking, from which the models are re-ranked. These are shown in Table \ref{tab:rankings_relmae_table}. Figure \ref{fig:garch_relmae_vertical} in Section \ref{sec:comp_tables_figs} of the supplementary material displays a comparison of the RelMAE across all combinations of update rules and covariate configurations.
 
 % Please add the following required packages to your document preamble:
 % \usepackage{booktabs}
 \begin{table}[htb]
+  \caption{RelMAE-based overall rankings and average RelMAE values for each TTSTL configuration across the two simulated backbone bars in Local Adapt mode. UR denotes the update rule, CC the covariate configuration, O/A Rank the overall ranking within each backbone bar, and Avg. RelMAE the corresponding average forecasting error.}
+  \label{tab:rankings_relmae_table}
+
     \centering
     \begin{tabular}{@{}cccccc@{}}
         \toprule
@@ -1597,15 +1607,15 @@ Twenty-eight different configurations of the TTSTL algorithm are implemented. A 
         \verb|ES010| & \verb|07| & 22.0         & 96.41\%         & 17.0         & 96.10\%         \\
         \bottomrule
     \end{tabular}
-    \caption{RelMAE-based overall rankings and average RelMAE values for each TTSTL configuration across the two simulated backbone bars in Local Adapt mode. UR denotes the update rule, CC the covariate configuration, O/A Rank the overall ranking within each backbone bar, and Avg. RelMAE the corresponding average forecasting error.}
-    \label{tab:rankings_relmae_table}
+    
+    
 \end{table}
 
 Several observations follow from these results. Models that incorporate a non-myopic update rules exhibit better performance accuracy. This finding is consistent with a heuristic interpretation in terms of variance reduction within the bias–variance decomposition \cite{hastie2017elements}. The combined estimators seem to reduce variance without adding excessive bias to the forecast. The update rule and covariate configuration factors seem to have an interaction effect when explaining the forecasting accuracy. Also, observe that the average RelMAE in the second backbone bar tends to be smaller than the first backbone bar indicating a better TTSTL performance under more stationary environments.
 
 The covariate configuration \verb|05|, which bypasses the interface and forces the CNN-LSTM output into the regression structure, yielded identical results to the parsimonious covariate configuration \verb|02|. These two configurations tied for the most accurate configuration across all Update Rules in both backbone bars. These observations showcase the CNN-LSTM ability to accurately transform LOB features into imputations which correlate with the target variable at least in the simulation framework presented. The equivalence between covariate configurations \verb|02| and \verb|05| showcases the variable filtering-accuracy of the interface module operating the Flexible adaLASSO algorithm.
 
-Configurations \verb|01| and \verb|04| yield the next best accuracy. Determining which one of these two is best is not straightforward as the full configuration outperforms the only generative features configuration in the first backbone bar but the order flips in the second backbone bar. Observe that the maximum difference in the average RelMAE is $0.1\%$ in the first backbone bar and $0.3\%$ in the second one. This signals that the expressivity of the generative features is at least as powerful as that of the manual features. The performance difference between these two configurations and the parsimonious configuration \verb|02| is rather small. In fact, covariate configuration \verb|01| differs from \verb|02| in terms of average RelMAE by at most $0.44\%$ in backbone bar 1 and $1.08\%$ in backbone bar 2. Similarly, covariate configuration \verb|04| differs from \verb|02| by at most $0.52\%$ and $0.81\%$. This illustrates the adapter module's ability to dynamically transform generative features into accurate forecasts. The question remains to whether the adapter module transforms these generative covariates into micro-return forecasts more accurately than the last layer of the CNN-LSTM produces imputations for the same quantity. Figure~\ref{fig:garch_relmae_cnn_lstm_baseline_vertical}, which plots the RelMAE with the raw output of the CNN-LSTM instead of a backbone micro return mean provides insights into this question. Indeed, covariate configurations \verb|01| and \verb|04| with non-myopic update rules outperform the raw CNN-LSTM imputations. Indicating the adequateness of the selection of the ARMAX-GARCH-DeepLOB for the adapter module.
+Configurations \verb|01| and \verb|04| yield the next best accuracy. Determining which one of these two is best is not straightforward as the full configuration outperforms the only generative features configuration in the first backbone bar but the order flips in the second backbone bar. Observe that the maximum difference in the average RelMAE is $0.1\%$ in the first backbone bar and $0.3\%$ in the second one. This signals that the expressivity of the generative features is at least as powerful as that of the manual features. The performance difference between these two configurations and the parsimonious configuration \verb|02| is rather small. In fact, covariate configuration \verb|01| differs from \verb|02| in terms of average RelMAE by at most $0.44\%$ in backbone bar 1 and $1.08\%$ in backbone bar 2. Similarly, covariate configuration \verb|04| differs from \verb|02| by at most $0.52\%$ and $0.81\%$. This illustrates the adapter module's ability to dynamically transform generative features into accurate forecasts. The question remains to whether the adapter module transforms these generative covariates into micro-return forecasts more accurately than the last layer of the CNN-LSTM produces imputations for the same quantity. Figure~\ref{fig:garch_relmae_cnn_lstm_baseline_vertical}, which plots the RelMAE with the raw output of the CNN-LSTM instead of a backbone micro-return mean provides insights into this question. Indeed, covariate configurations \verb|01| and \verb|04| with non-myopic update rules outperform the raw CNN-LSTM imputations. Indicating the adequateness of the selection of the ARMAX-GARCH-DeepLOB for the adapter module.
 
 Circumscribing the analysis to non-myopic update rules, covariate configurations featuring generative features (i.e. configurations \verb|01|, \verb|02|, \verb|04|, and \verb|05|) outperformed configurations which lack of this component. This result however should be interpreted carefully as the models with non generative covariates represent less computational burden\footnote{and therefore less latency} and provide more interpretable insights into the LOB dynamics.
 
@@ -1628,11 +1638,11 @@ Several key patterns emerge from the results. Green rectangles in Figure~\ref{fi
 
 Forecasting accuracy displayed intraday variations; with higher (less accurate) RelMAE scores observed in Backbone Bar 2 compared to Backbone Bar 3, and Backbone Bar 1 typically showing the lowest (most accurate) relative errors. This trend likely reflects the stabilizing effect of the midday trading lull, where the baseline average model becomes more effective compared to the more volatile open and close periods.
 
-Analysis of atypical RelMAE behavior reveals a strong correlation between performance degradation and backbone updates. As seen in Figure~\ref{fig:sequential_boxplot_intc_data} (Supplement), outstanding underperformance in configuration \texttt{05} frequently coincided with dates where the CNN-LSTM weights had been updated during the preceding global adaptation phase. This suggests that the model may have overfit to the specific dynamics of the previous day, failing to generalize to the new regime. This instability casts some doubt on the robustness of the standalone CNN-LSTM architecture for daily retraining without improved regularization.
+Analysis of atypical RelMAE behavior reveals a strong correlation between performance degradation and backbone updates. As seen in Figure~\ref{fig:sequential_boxplot_intc_data} in Section~\ref{sec:comp_tables_figs} of the Supplementary Material, outstanding underperformance in configuration \texttt{05} frequently coincided with dates where the CNN-LSTM weights had been updated during the preceding global adaptation phase. This suggests that the model may have overfit to the specific dynamics of the previous day, failing to generalize to the new regime. This instability casts some doubt on the robustness of the standalone CNN-LSTM architecture for daily retraining without improved regularization.
 
 To investigate potential exogenous drivers of this instability, aggregate statistics (mean, standard deviation, skewness, kurtosis) for the micro-return $r^w_j$, CNN-LSTM output $\mathrm{CNNLSTM}_{\mathbf{W}}\!\left(\widetilde{\mathbf{OF}}^{\mathcal{P}^{(E)}}_{i_{j}-99:i_{j}}\right)$, and order flow imbalance $OFI_{0, j}$ were examined (see Figures~\ref{fig:covariate_aggregate_mean}--\ref{fig:covariate_aggregate_kurtosis} in the Supplement). No obvious distributional shifts in these covariates alone explain the calibration issues. However, the VIX series (Figures~\ref{fig:vix_aggregate_mean}--\ref{fig:vix_aggregate_kurtosis} in the Supplement) reveals a significant anomaly: the VIX curve inverted on June 12th in anticipation of the CPI release and FOMC decision. This ``double header'' event seemed to have introduced heightened macro-uncertainty, known to drain liquidity and alter LOB dynamics, potentially contributing to the observed instability around these dates.
 
-News analysis provides further context for the atypical sessions. The anomalies on June 5th followed the announcement of the Intel-Apollo joint venture, a positive catalyst. Similarly, the volatility on June 24th and 25th coincided with a broader Nvidia-led semiconductor selloff and rebound. These event-driven shifts underscore the CNN-LSTM architecture instability and the adapter's module ability to adapt under globally nonstationary but locally stationary regimes. This is likely due to the more efficient data usage and parsimonious structure.
+News analysis provides further context for the atypical sessions. The anomalies on June 5th followed the announcement of the Intel-Apollo joint venture, a positive catalyst. Similarly, the volatility on June 24th and 25th coincided with a broader Nvidia-led semiconductor selloff and rebound. These event-driven shifts underscore the CNN-LSTM architecture instability and the adapter's module ability to adapt under globally non-stationary but locally stationary regimes. This is likely due to the more efficient data usage and parsimonious structure.
 
 The utility of the hybrid approach is evident when comparing the TTSTL forecasts against the raw neural network output. First, a key distinction between the baselines and the proposed framework lies in the nature of their outputs. While pure deep learning models typically produce deterministic point imputations, the Hybrid ARMAX-GARCH-DeepLOB model yields conditional predictive distributions. This capability allows for the construction of formal confidence intervals and the modeling of time-varying volatility, thereby bridging the gap between black-box signal extraction and rigorous econometric inference. Figure~\ref{fig:sequential_boxplot_intc_data_nn_baseline} (Supplement) demonstrates that the forecasting accuracy of the TTSTL forecasts is consistently lower than the imputation accuracy of the raw CNN-LSTM imputations across all covariate configurations by a significant margin. This confirms that the adapter module successfully refines the noisy, potentially biased neural network imputations into more accurate and statistically grounded forecasts.
 
@@ -1643,7 +1653,7 @@ Finally, it is acknowledged that the empirical analysis is limited to a single h
 
 In this work, the Two Time Scale Transfer Learning (TTSTL) framework was introduced. TTSTL can be interpreted as a modular statistical learning architecture separating representation learning from inference. By integrating deep learning-based feature extraction with a time series regression adapter, the framework addresses the dual challenges of non-stationarity and computational complexity inherent in high-frequency financial data.
 
-The empirical results on simulated and INTC Market-By-Order data demonstrate that the TTSTL framework effectively refines generative imputations from the CNN-LSTM architecture into statistical forecasts. The adapter module consistently improved upon the raw neural network outputs, correcting for biases and local regime shifts that pure deep learning models often fail to capture. Furthermore, the interface module, utilizing the flexible adaLASSO, proved to be a capable stochastic filter, dynamically selecting relevant covariates and enhancing the parsimony of the forecasting model.
+The empirical results on simulated and INTC Market-by-Order data demonstrate that the TTSTL framework effectively refines generative imputations from the CNN-LSTM architecture into statistical forecasts. The adapter module consistently improved upon the raw neural network outputs, correcting for biases and local regime shifts that pure deep learning models often fail to capture. Furthermore, the interface module, utilizing the flexible adaLASSO, proved to be a capable stochastic filter, dynamically selecting relevant covariates and enhancing the parsimony of the forecasting model.
 
 The standalone CNN-LSTM architecture exhibited instability following daily retraining, wherein overfitting to prior-day dynamics led to performance degradation in subsequent sessions. This finding casts doubt on the practicality of frequent, unconstrained retraining of complex deep learning models for LOB prediction, suggesting that simpler, more robust specifications or stronger regularization may be required for live deployment.
 
