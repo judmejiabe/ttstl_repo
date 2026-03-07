@@ -16,7 +16,7 @@
 \usepackage{xurl} % best together with hyperref
 \usepackage{commath}
 \usepackage{bm}
-\usepackage{natbib}
+\usepackage[numbers]{natbib}
 \usepackage{booktabs}
 \usepackage{makecell, caption}
 \usepackage{footnote}  
@@ -1237,6 +1237,8 @@ This section lists the dates excluded from the analysis as a consequence of meet
 % \usepackage{longtable}
 
 \begin{longtable}{@{}lll@{}}
+\caption{Base configuration used in synthetic data experiments.} 
+\label{tab:base_config} \\
 \toprule
 \textbf{Category} & \textbf{Parameter} & \textbf{Value} \\ \midrule
 \endfirsthead
@@ -1286,10 +1288,8 @@ This section lists the dates excluded from the analysis as a consequence of meet
 \multirow{3}{*}{Adapter} 
  & ARMA order & (1,1) \\
  & GARCH order & (1,1) \\
- & Error distribution & Skewed t \\ \midrule\\
-\caption{Base configuration used in synthetic data experiments.} 
-\label{tab:base_config}
-\end{longtable}
+ & Error distribution & Skewed t \\
+\end{longtable} 
 
 \begin{figure}[ht!]
 \centering
@@ -1337,6 +1337,8 @@ This section lists the dates excluded from the analysis as a consequence of meet
 
 
 \begin{longtable}{@{}lll@{}}
+\caption{Base configuration used in the experiments with market data.} 
+\label{tab:base_config_market_data} \\
 \toprule
 \textbf{Category} & \textbf{Parameter} & \textbf{Value} \\ \midrule
 \endfirsthead
@@ -1387,9 +1389,7 @@ This section lists the dates excluded from the analysis as a consequence of meet
  & ARMA order & (0,1) \\
  & \textbf{EGARCH} order & (1,1) \\
  & Error distribution & Negative Inverse Gaussian \\ 
- & Update Rule & Exponential Smoothing \\ \midrule\\
-\caption{Base configuration used in the experiments with market data.} 
-\label{tab:base_config_market_data}
+ & Update Rule & Exponential Smoothing \\
 \end{longtable}
 
 % Add this to your preamble:

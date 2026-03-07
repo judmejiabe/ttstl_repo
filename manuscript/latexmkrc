@@ -53,8 +53,8 @@ push @file_not_found, '^No file\\s*(.+)\s*$';
 
 add_cus_dep( 'tex', 'aux', 0, 'makeexternaldocument' );
 sub makeexternaldocument {
-    if ( $root_filename ne $_[0] )  {
-        my ($base_name, $path) = fileparse( $_[0] );
+    my ($base_name, $path) = fileparse( $_[0] );
+    if ( $root_filename ne $_[0] && $root_filename ne "$_[0].tex" && $root_filename ne $base_name && $root_filename ne "$base_name.tex" )  {
         pushd $path;
         my $return = system "latexmk",
                             @sub_doc_options,
