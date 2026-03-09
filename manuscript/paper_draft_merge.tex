@@ -1677,8 +1677,33 @@ During the preparation of this project, the authors utilized AI-assisted technol
 \section*{Declaration of Interest Statement}
 The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
 
+\newpage
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\newpage
+
 \clearpage
 \appendix
+
+% --- SUPPLEMENTARY MATERIAL TITLE ---
+\vspace*{2em}
+\begin{center}
+    \LARGE \textbf{Supplementary Material} \\[0.5em]
+\end{center}
+\vspace{2em}
+
+% --- RESET COUNTERS FOR SUPPLEMENT ---
+% This ensures your supplement figures/tables are numbered S1, S2, etc.
+\setcounter{table}{0}
+\renewcommand{\thetable}{S\arabic{table}}
+\setcounter{figure}{0}
+\renewcommand{\thefigure}{S\arabic{figure}}
+\setcounter{equation}{0}
+\renewcommand{\theequation}{S\arabic{equation}}
+\setcounter{page}{1} % Optional: resets page numbering to 1 for the supplement
+% -------------------------------------
 
 \section{Mathematical Representation of the Order Flow Sequence and Limit Order Book}
 \label{ap:matreplob}
@@ -3230,14 +3255,6 @@ $r^w_j$ $\mathrm{CNNLSTM}_{\mathbf{W}}\!\left(\widetilde{\mathbf{OF}}^{\mathcal{
 %     \caption{Cross correlation function of the Hybrid ARMAX-GARCH-DeepLOB with distributed lags model covariates.}
 %     \label{fig:ccf_armax_garch_dl}
 % \end{figure}
-
-
-\newpage
-
-\bibliographystyle{plain}
-\bibliography{references}
-
-\newpage
 
 
 \end{document}
