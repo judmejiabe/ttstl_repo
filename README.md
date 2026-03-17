@@ -331,12 +331,12 @@ The verification process is very sensitive to the software environment. Even min
 If you use this code in your research, please cite the following working paper:
 
 ```bibtex
-@misc{mejiabecerra2026twotimescale,
+@article{mejiabecerra2026twotimescale,
   title = {Two-Time-Scale Transfer Learning for Market-by-Order Micro-Return Forecasting},
   author = {Mejia Becerra, Juan Diego and Peters, Gareth W. and Hu, Ruimeng},
   year = {2026},
-  month = {January},
-  institution = {University of California, Santa Barbara},
-  note = {Working Paper}
+  journal = {SSRN Electronic Journal},
+  doi = {10.2139/ssrn.6424798},
+  url = {https://ssrn.com/abstract=6424798}
 }
 ```
