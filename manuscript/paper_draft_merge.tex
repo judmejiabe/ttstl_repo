@@ -143,6 +143,8 @@
 
 \noindent \textbf{Keywords:} Market Microstructure, ARMAX-GARCH, Transfer Learning, Time Series Forecasting, High-Frequency Data, Limit Order Book
 
+\noindent\textbf{JEL:} C58; G14; G17; C45; C53; C55.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Introduction}
@@ -477,7 +479,7 @@ Here, $\phi(z) = 1 - \phi_1 z - \phi_2 z^2 - \dots - \phi_p z^p$ and $\theta(z) 
 \end{equation}
 where $\omega > 0$, $\alpha_k, \beta_k \geq 0$, and $\{ \eta_j\}_{j \in \Z}$, is a sequence of i.i.d. random variables with zero mean and unit variance. The last equation can be rewritten as $\theta(B) \sigma^2_j = \omega + \alpha(B) \varepsilon^2_j$ where $\alpha(z) := \sum^Q_{k = 1} \alpha_k z^k$ and $\beta(z) := 1 - \sum^P_{k = 1} \beta_k z^k$.
 
-To ensure the stability of the processes in Eq.~\eqref{eq:armax} and \eqref{eq:garch}, and to guarantee the asymptotic efficiency of the CMLE estimators, further restrictions must be imposed on the roots of the polynomials $\alpha(\cdot)$, $\beta(\cdot)$, $\phi(\cdot)$, and $\theta(\cdot)$ (for a detailed technical discussion, see \cite{mejia2025asymptotic}). The dynamics of equation \eqref{eq:garch} can be re-expressed as
+To ensure the stability of the processes in Eq.~\eqref{eq:armax} and \eqref{eq:garch}, and to guarantee the asymptotic efficiency of the CMLE estimators, further restrictions must be imposed on the roots of the polynomials $\alpha(\cdot)$, $\beta(\cdot)$, $\phi(\cdot)$, and $\theta(\cdot)$ (for a detailed technical discussion, see \cite{mejia2026asymptotic}). The dynamics of equation \eqref{eq:garch} can be re-expressed as
 
 \begin{equation}
     \mathbf{z}_j = \boldsymbol{\eta}_j + \mathbf{A}_j \mathbf{z}_{j - 1},
@@ -516,9 +518,9 @@ where\footnote{For the sake of precision, note that $\boldsymbol{\eta}_j$ is a v
         0                 & 0                 & \cdots & 0                       & 0                 & 0                & 0                & \cdots & 1                      & 0
     \end{pmatrix}.
 \]
- This representation for the GARCH dynamic is useful as it allows one to define via the eigen structure of the transition matrix, the stability of the time series evolution. Consider the top Lyapunov exponent, which is defined as $\rho(\mathbf{A}) = \lim_{j \rightarrow \infty} \frac{1}{j} \E \left \{  \log\norma{\mathbf{A}_j \mathbf{A}_{j - 1} \cdots \mathbf{A}_1} \right \}$ with $\norma{\cdot}$ any matrix norm in the space of $(p + q) \times (p + q)$ matrices. Then, it can be shown that a necessary and sufficient condition for the existence of a strictly stationary solution to \eqref{eq:garch} is given by $\rho(\mathbf{A}) < 0$ \citep[thm.~2.4.]{francq2019garch}. For $P = Q = 1$, the top Lyapunov exponent condition $\rho(\mathbf{A}) < 0$ reduces to $\E \left\{ \log \left( \alpha \eta_1^2 + \beta \right) \right\} < 0$. In contrast, the condition $\alpha + \beta < 1$ is necessary and sufficient for second-order stationarity \citep[thm.~2.5.]{francq2019garch}.
+ This representation for the GARCH dynamic is useful as it allows one to define via the eigen structure of the transition matrix, the stability of the time series evolution. Consider the top Lyapunov exponent, which is defined as $\gamma(\mathbf{A}) = \lim_{j \rightarrow \infty} \frac{1}{j} \E \left \{  \log\norma{\mathbf{A}_j \mathbf{A}_{j - 1} \cdots \mathbf{A}_1} \right \}$ with $\norma{\cdot}$ any matrix norm in the space of $(p + q) \times (p + q)$ matrices. Then, it can be shown that a necessary and sufficient condition for the existence of a strictly stationary solution to \eqref{eq:garch} is given by $\gamma(\mathbf{A}) < 0$ \citep[thm.~2.4.]{francq2019garch}. For $P = Q = 1$, the top Lyapunov exponent condition $\gamma(\mathbf{A}) < 0$ reduces to $\E \left\{ \log \left( \alpha \eta_1^2 + \beta \right) \right\} < 0$. In contrast, the condition $\alpha + \beta < 1$ is necessary and sufficient for second-order stationarity \citep[thm.~2.5.]{francq2019garch}.
 
-Ergodicity is an important property that helps ensuring desirable properties of statistical estimators \citep[see~p.~367]{francq2019garch}. Determining ergodicity in a general GARCH(\(P\), \(Q\)) process is often more complicated than establishing its stationarity. Early studies addressed mixing properties \cite{boussama1998ergodicite, carrasco2002mixing}. A straightforward application of Theorem~2.8 from \cite{straumann_quasi-maximum-likelihood_2006} demonstrates that \(\rho(\mathbf{A}) < 0\) is sufficient to guarantee the ergodicity of the process \(\{\varepsilon_j\}_{j \in \mathbb{Z}}\).
+Ergodicity is an important property that helps ensuring desirable properties of statistical estimators \citep[see~p.~367]{francq2019garch}. Determining ergodicity in a general GARCH(\(P\), \(Q\)) process is often more complicated than establishing its stationarity. Early studies addressed mixing properties \cite{boussama1998ergodicite, carrasco2002mixing}. A straightforward application of Theorem~2.8 from \cite{straumann_quasi-maximum-likelihood_2006} demonstrates that \(\gamma(\mathbf{A}) < 0\) is sufficient to guarantee the ergodicity of the process \(\{\varepsilon_j\}_{j \in \mathbb{Z}}\).
 
 Now, assuming that $\phi(z)$ is invertible, the solution to \eqref{eq:armax} is given by
 $$
@@ -689,7 +691,7 @@ Here, $\tilde{\mathcal{L}}_{T}$ denotes the Conditional Log-Likelihood Function 
      & \tilde{\sigma}^2_j(\boldsymbol{\varphi}) = \omega + \sum^Q_{k = 1} \alpha_k \tilde{\varepsilon}^2_{j - k}(\boldsymbol{\varphi}) + \sum^P_{k = 1} \beta_k \tilde{\sigma}^2_{j - k}(\boldsymbol{\varphi}), \hspace{2mm} j \geq 1,                                                                     \\
      & \tilde{\sigma}^2_j(\boldsymbol{\varphi}) = c'_j \in [0, \infty), \hspace{2mm} j = 0, -1, \dots, -P.
 \end{align*}
-Here $g$ is the probability density function of $\eta_j$. Standard results imply that the influence of initialization constants $c_j$ and $c'_j$ vanishes asymptotically and is negligible for sufficiently long adapter windows. Several properties of $\hat{\boldsymbol{\varphi}}_{\mathrm{CMLE}, T}$ are given in \cite{mejia2025asymptotic}. For instance, it is shown that the residuals $\tilde{\varepsilon}_j(\cdot)$ and $\tilde{\sigma}_j(\cdot)$ uniformly converge to their \textit{infinite history} counterparts. This validates the approach taken in Section~\ref{sec:forecasting} to approximate the residuals. Some regularity conditions are sufficient to guarantee the asymptotic efficiency of the CMLE. These regularity conditions include, but are not limited to the polynomials $\phi(\cdot)$ and $\theta(\cdot)$ in equation \eqref{eq:armax} not having roots in common and such roots being outside the complex unit disk, $\alpha(\cdot)$ and $\beta(\cdot)$ in equation \eqref{eq:garch} not having roots in common, the top Lyapunov exponent being negative, and the joint process $\left\{ \left( \varepsilon_j, \mathbf{x}_j \right)  \right\}_{j \in \Z}$ being ergodic and strictly stationary. The reader is invited to consult \cite{mejia2025asymptotic} for the technical details. The main results in \cite{mejia2025asymptotic} are paraphrased below
+Here $g$ is the probability density function of $\eta_j$. Standard results imply that the influence of initialization constants $c_j$ and $c'_j$ vanishes asymptotically and is negligible for sufficiently long adapter windows. Several properties of $\hat{\boldsymbol{\varphi}}_{\mathrm{CMLE}, T}$ are given in \cite{mejia2026asymptotic}. For instance, it is shown that the residuals $\tilde{\varepsilon}_j(\cdot)$ and $\tilde{\sigma}_j(\cdot)$ uniformly converge to their \textit{infinite history} counterparts. This validates the approach taken in Section~\ref{sec:forecasting} to approximate the residuals. Some regularity conditions are sufficient to guarantee the asymptotic efficiency of the CMLE. These regularity conditions include, but are not limited to the polynomials $\phi(\cdot)$ and $\theta(\cdot)$ in equation \eqref{eq:armax} not having roots in common and such roots being outside the complex unit disk, $\alpha(\cdot)$ and $\beta(\cdot)$ in equation \eqref{eq:garch} not having roots in common, the top Lyapunov exponent being negative, and the joint process $\left\{ \left( \varepsilon_j, \mathbf{x}_j \right)  \right\}_{j \in \Z}$ being ergodic and strictly stationary. The reader is invited to consult \cite{mejia2026asymptotic} for the technical details. The main results in \cite{mejia2026asymptotic} are paraphrased below
 
 \begin{theorem}
     Under proper conditions, it follows that
@@ -1682,7 +1684,7 @@ The authors declare that they have no known competing financial interests or per
 
 \newpage
 
-\bibliographystyle{plain}
+\bibliographystyle{plainnat}
 \bibliography{references}
 
 \newpage
