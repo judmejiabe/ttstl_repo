@@ -180,7 +180,7 @@ data/
 data.nosync/
 
 # Manuscript privacy settings
-/manuscript/*
-!/manuscript/build/
+#/manuscript/*
+#!/manuscript/build/
 /manuscript/build/*
-!/manuscript/build/paper_draft_merge.pdf
+#!/manuscript/build/paper_draft_merge.pdf
