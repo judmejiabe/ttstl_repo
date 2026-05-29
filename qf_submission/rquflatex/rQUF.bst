@@ -550,19 +550,7 @@ FUNCTION {format.url}
 {
  url empty$
     { "" }
-    { add.urlprelim
-      url #1 #1 substring$
-      duplicate$ "{" =
-        'skip$
-        { output.state mid.sentence =
-          { "u" }
-          { "l" }
-        if$
-        change.case$
-        }
-      if$
-      url #2 global.max$ substring$ * "url" bibinfo.check
-    }
+    { " Available online at: " url * }
   if$
 }
 
@@ -834,7 +822,7 @@ FUNCTION {format.unpubyear}
   if$
   extra.label *
   before.all 'output.state :=
-  " " swap$ * "." *
+  " " swap$ * "" *
 }
 
 FUNCTION {format.plaindate}
@@ -1656,12 +1644,16 @@ FUNCTION {unpublished}
   author format.key output
   format.unpubtitle "title" output.check
   end.quote.title
-  format.address "address" output.check
-  end.quote.title
-  format.unpubpublisher "publisher" output.check
   format.unpubyear "year" output.check
-  format.url "url" output.check
-  format.unpubdate output
+  note "note" bibinfo.check output
+  url empty$
+    'skip$
+    { " Available online at: " url * output }
+  if$
+  accessed empty$
+    'skip$
+    { " (accessed " accessed * ")" * output }
+  if$
   fin.entry
 }
 

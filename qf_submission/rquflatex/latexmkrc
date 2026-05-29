@@ -35,6 +35,9 @@
 #--------------------
 # Configurable choices for compilation of external documents
 
+$out_dir = 'build';
+$aux_dir = 'build';
+
 # Subdirectory for output files from compilation of external documents:
 $sub_doc_output = 'output-subdoc';
 
