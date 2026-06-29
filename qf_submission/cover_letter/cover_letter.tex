@@ -1,0 +1,53 @@
+\documentclass[ucsb,pstat, 12pt,letterpaper]{ucletter}
+\textwidth 6.6truein \textheight 8.8truein \hoffset 0.1truein \voffset 0.05truein
+\usepackage{amsfonts,amsmath,url,verbatim}
+\newcommand\E{\ensuremath{\mathbb{E}}}
+\newcommand\PP{\ensuremath{\mathbb{P}}}
+\newcommand\w{\ensuremath{\mathbf{w}}}
+\newcommand\e{\ensuremath{\mathrm{e}}}
+\setlength{\parskip }{ 0.7ex} % %\setlength{\parindent }{ 1em} %\pagestyle{empty}
+
+\usepackage{enumerate}
+
+
+%	
+%\fancypagestyle{plain}{
+%\fancyhf{}
+%\fancyhead[C]{\includegraphics[width=0.7\textwidth, keepaspectratio=true]{logo_3.jpeg}}
+%}
+
+%\fancypagestyle{plain}{\fancyhf{}\fancyhead[]{}}
+
+
+\begin{document}
+\begin{letter}{}
+	
+\date{\today}
+
+\signature{Juan Diego Mej\'{i}a Becerra\\\mbox{PhD (Cand.), Department of Statistics and Applied Probability}  \\\mbox{University of California, Santa Barbara} \\
+	Email: jmejiabecerra@ucsb.edu}
+
+
+\opening{\vspace{0pt}Dear Editors of Quantitative Finance,}
+
+\medskip
+
+\vspace{0pt}
+
+I am pleased to submit an original research article entitled ``Two-Time-Scale Transfer Learning for Market-by-Order Micro-Return Forecasting,'' co-authored with Gareth Peters and Ruimeng Hu (both of UCSB), for consideration for publication in Quantitative Finance.
+
+\medskip
+
+This paper aligns with the journal's aims and scope concerning market microstructure: it introduces a hybrid time series regression model suited to micro-return forecasting in the high-frequency domain. The model addresses the ambiguity present in neural network approaches, where an imputation is generated rather than a formal forecast. It features a backbone-adapter architecture that achieves low-latency online estimation while enabling automatic non-linear feature engineering. The model's architectural flexibility supports multiple configurations, which we compare to identify the one yielding the best forecasting performance. We address the simulation-to-reality gap noted in prior work by operationalizing the limit order book simulation framework of Cont et al. (2025) and fitting it to publicly available market-by-order data for performance quantification, thereby significantly advancing the understanding of hybrid model construction for tactical alpha extraction.
+
+\medskip
+
+We have closely followed the submission checklist in the author instructions. While the manuscript slightly exceeds the 35-page soft limit, this length was necessary to accommodate the mathematical formulation of the hybrid model. The manuscript is not under review for publication elsewhere, all authors have read and approved the final document, and we declare no competing financial interests. Furthermore, the accompanying codebase is openly available to support transparency and replicability, and our use of Generative AI for code development and language polishing is fully detailed in the manuscript's AI Usage Statement.
+
+\medskip
+My co-authors and I hope you find the submission an enjoyable read. Thank you for your time and consideration.
+
+
+\closing{Sincerely yours,}
+\end{letter}
+\end{document}
