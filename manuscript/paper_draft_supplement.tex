@@ -225,15 +225,15 @@ Observe that $J$ models changes in the LOB right before matching. The matching p
 
 \begin{equation*}
     \mathcal{C}(X)^+ = \begin{cases}
-        \tau_{p_B(X)}(X^+) & \text{if } g_X(p_B(X)) \leq - X^+_{p_B(X)},\\
-        \tau_{p_B(X) - 1}(X^+) - \min(0, g_X(p_B(X))) e_{p_B}(X) & \text{if } g_X(p_B(X)) > - X^+_{p_B(X)}.  
+        \tau_{p_B(X)}(X^+)                                       & \text{if } g_X(p_B(X)) \leq - X^+_{p_B(X)}, \\
+        \tau_{p_B(X) - 1}(X^+) - \min(0, g_X(p_B(X))) e_{p_B(X)} & \text{if } g_X(p_B(X)) > - X^+_{p_B(X)}.
     \end{cases}
 \end{equation*}
 
 \begin{equation*}
     \mathcal{C}(X)^- = \begin{cases}
-        \tau^{p_A(X)}(X^+) & \text{if } g_X(p_A(X)) \geq X^-_{p_A(X)},\\
-        \tau^{p_A(X) - 1}(X^+) + \max(0, g_X(p_A(X))) e_{p_A}(X) & \text{if } g_X(p_A(X)) <  X^-_{p_A(X)},  
+        \tau^{p_A(X)}(X^-)                                       & \text{if } g_X(p_A(X)) \geq X^-_{p_A(X)}, \\
+        \tau^{p_A(X) + 1}(X^-) + \max(0, g_X(p_A(X))) e_{p_A(X)} & \text{if } g_X(p_A(X)) <  X^-_{p_A(X)},
     \end{cases}
 \end{equation*}
 where $X \in E$ is the set of limit orders. Let $B_X(k) = \nu^+[k, \infty)$, $S_X(k) = \nu^-_X[0, k]$, $g(k) = S_X(k) - B_X(k)$, and
