@@ -1853,7 +1853,7 @@ We have assumed a fixed message sequence $\mathbf{o} \in \mathcal{O}$ and recons
 \begin{definition}
 Let $\tau$ be a $\Fil$-stopping time and $\pi$, $\zeta$, $\iota$, $\sigma$ and $\kappa$; $\SigAl_{\tau}$-adapted random variables with values in $\N_{0:d}$, $\N$, $\N$, $\{-1, 1\}$, and $\{L, C, M\}$ respectively. The corresponding stochastic message is denoted as  $\omega = (\pi, \zeta, \tau, \iota, \sigma, \kappa)$.
 
-Analogously, for a sequence of non-explosive increasing sequence of $\Fil$-adapted stopping times $(\tau_i)^{\infty}_{i = 1}$ and $\SigAl_{\tau_i}$-measurable random variables $\pi_i$, $\omega_i$, $\sigma_i$, $\iota_i$ and $\kappa_i$ for which assumptions (A1) and (A2) hold, define the stochastic message sequence
+Analogously, for a sequence of non-explosive increasing sequence of $\Fil$-adapted stopping times $(\tau_i)^{\infty}_{i = 1}$ and $\SigAl_{\tau_i}$-measurable random variables $\pi_i$, $\zeta_i$, $\iota_i$, $\sigma_i$, and $\kappa_i$ for which assumptions (A1) and (A2) hold, define the stochastic message sequence
 
 \begin{equation*}
 \boldsymbol{\omega} = (\omega_i : \tau_i \leq T),
@@ -2480,7 +2480,7 @@ Here, $w_k = \left| \theta_{I, k} \right|^{-\tau}$ are computed from $\tau > 0$ 
      \E\bigl|x_{it}\,u_t\bigr|^m\;\le c_m \quad \forall t\in \Z, i \in1:n_T.
   \]
 
-  \item[(DESIGN1)] $\mathbf{\theta}_0$ is an open subset $\boldsymbol{\Theta}_{n_T} \subseteq \R^{n_T}$ which contains $\mathbf{0} \in \R^{n_T}$.
+  \item[(DESIGN1)] The true parameter $\boldsymbol{\theta}_0$ belongs to an open subset $\boldsymbol{\Theta}_{n_T} \subseteq \mathbb{R}^{n_T}$ that contains the origin.
   \item[(DESIGN2)] There exists $\theta_{\min} > 0$ such that $\min_{i\le s_T}|\theta_{0,i}|>\theta_{\min}$.
   \item[(DESIGN3)] Denote $\hat{\boldsymbol{\Omega}}_{11} := \frac{1}{T}\mathbf{X}^T(1) \mathbf{X}(1)$ and $\boldsymbol{\Omega}_{11} := \E \left\{ \mathbf{x}_t(1) \mathbf{x}^T_t(1) \right\}$
     \begin{enumerate}
@@ -2500,7 +2500,7 @@ Here, $w_k = \left| \theta_{I, k} \right|^{-\tau}$ are computed from $\tau > 0$ 
   with probability converging to one
   \item[(WEIGHTS2)] The weights on the active set are uniformly bounded: 
   \[
-     \sum_{i=1}^{s_T} w_i^2 < s\,w_{\max, T}^2,\quad w_{\max, T}<T^{\xi/2},
+     \sum_{i=1}^{s_T} w_i^2 < s_T \,w_{\max, T}^2,\quad w_{\max, T}<T^{\xi/2},
   \]
   with probability converging to one.
 \end{itemize}
