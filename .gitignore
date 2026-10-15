@@ -184,3 +184,4 @@ data.nosync/
 #!/manuscript/build/
 /manuscript/build/*
 #!/manuscript/build/paper_draft_merge.pdf
+/qf_submission/
